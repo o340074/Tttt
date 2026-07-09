@@ -178,7 +178,7 @@
   .pcard .thumb { height: 116px; border-radius: var(--r-md); margin-bottom: 14px; position: relative;
     display: grid; place-items: center; overflow: hidden;
     background: linear-gradient(135deg, var(--surface2), var(--surface3)); }
-  .pcard .thumb .glyph { font-size: 38px; filter: drop-shadow(0 6px 14px rgba(0,0,0,.4)); }
+  .pcard .thumb .glyph { display: inline-flex; }
   .pcard .thumb::after { content: ""; position: absolute; inset: 0; background: var(--sheen);
     transform: translateX(-130%); }
   .pcard:hover .thumb::after { animation: sheen 1s ease; }
@@ -226,7 +226,7 @@
   .cat { padding: 20px; border-radius: var(--r-lg); background: var(--surface); border: 1px solid var(--border);
     cursor: pointer; transition: transform .18s, box-shadow .18s, border-color .18s; }
   .cat:hover { transform: translateY(-3px); border-color: var(--volt); box-shadow: var(--glow-volt); }
-  .cat .g { font-size: 26px; margin-bottom: 10px; }
+  .cat .g { display: inline-flex; margin-bottom: 12px; }
   .cat .t { font-weight: 700; color: var(--text-hi); font-size: 15px; }
   .cat .c { font-size: 12.5px; color: var(--text-dim); }
 
@@ -250,7 +250,7 @@
   .pd { display: grid; grid-template-columns: 1fr 400px; gap: 34px; align-items: start; }
   .pd .gallery { border-radius: var(--r-lg); background: linear-gradient(135deg, var(--surface2), var(--surface3));
     height: 320px; display: grid; place-items: center; position: relative; overflow: hidden; border: 1px solid var(--border); }
-  .pd .gallery .glyph { font-size: 84px; filter: drop-shadow(0 12px 30px rgba(0,0,0,.5)); }
+  .pd .gallery .glyph { display: inline-flex; }
   .pd .buybox { padding: 24px; position: sticky; top: 130px; }
   .sku-row { display: flex; gap: 8px; flex-wrap: wrap; margin: 8px 0 18px; }
   .sku { padding: 8px 14px; border-radius: var(--r-md); border: 1px solid var(--border2); background: var(--surface2);
@@ -355,6 +355,22 @@
   .empty { text-align: center; padding: 56px 20px; color: var(--text-lo); }
   .empty .g { font-size: 44px; margin-bottom: 14px; opacity: .8; }
 
+  /* ============================= ICONS ============================= */
+  .svgic { width: 20px; height: 20px; display: inline-block; vertical-align: -.16em; flex: none; }
+  .logo .mark .svgic { width: 19px; height: 19px; }
+  .searchbar .ic { top: 0; bottom: 0; height: auto; display: flex; align-items: center; }
+  .searchbar .ic .svgic { width: 18px; height: 18px; }
+  .icon-btn .svgic { width: 18px; height: 18px; }
+  .eyebrow .svgic { width: 14px; height: 14px; color: var(--pulse); }
+  .cat-ic { width: 34px; height: 34px; }
+  .glyph-ic { width: 52px; height: 52px; filter: drop-shadow(0 8px 16px rgba(0,0,0,.45)); }
+  .gallery-ic { width: 94px; height: 94px; filter: drop-shadow(0 14px 32px rgba(0,0,0,.5)); }
+  .k-l .svgic { width: 18px; height: 18px; }
+  .guarantee .gi .svgic { width: 16px; height: 16px; }
+  .toast .ico .svgic { width: 15px; height: 15px; }
+  .mini-btn .svgic { width: 14px; height: 14px; }
+  .btn .svgic { width: 16px; height: 16px; }
+
   /* ============================= KEYFRAMES ============================= */
   @keyframes sheen { 0% { transform: translateX(-120%); } 60%,100% { transform: translateX(220%); } }
   @keyframes pulse { 0%,100% { transform: scale(1); opacity: 1; } 50% { transform: scale(1.5); opacity: .55; } }
@@ -386,19 +402,52 @@
 </style>
 
 <div class="app" data-mode="dark" id="app">
+  <!-- ================= ICON SPRITE ================= -->
+  <svg width="0" height="0" style="position:absolute" aria-hidden="true" focusable="false">
+    <defs>
+      <linearGradient id="ig-aurora" x1="2" y1="2" x2="22" y2="22" gradientUnits="userSpaceOnUse">
+        <stop offset="0" stop-color="#5B5BF6"/><stop offset="0.5" stop-color="#9B4DF0"/><stop offset="1" stop-color="#E24BF0"/>
+      </linearGradient>
+    </defs>
+    <!-- Filled feature icons (solid Aurora gradient, cut-out detail via evenodd) -->
+    <symbol id="ic-ads" viewBox="0 0 24 24"><g fill="url(#ig-aurora)"><rect x="3" y="13" width="4.4" height="8" rx="1.4"/><rect x="9.8" y="8.5" width="4.4" height="12.5" rx="1.4"/><rect x="16.6" y="4" width="4.4" height="17" rx="1.4"/></g></symbol>
+    <symbol id="ic-briefcase" viewBox="0 0 24 24"><g fill="url(#ig-aurora)"><rect x="8.5" y="4" width="7" height="4.6" rx="1.7"/><path fill-rule="evenodd" d="M5 7h14a2 2 0 0 1 2 2v9a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V9a2 2 0 0 1 2-2Zm5.6 5h2.8v3h-2.8z"/></g></symbol>
+    <symbol id="ic-clock" viewBox="0 0 24 24"><path fill="url(#ig-aurora)" fill-rule="evenodd" d="M12 3a9 9 0 1 0 0 18 9 9 0 0 0 0-18ZM11.2 6.8h1.6v6h-1.6zM12.4 11.6h4v1.6h-4z"/></symbol>
+    <symbol id="ic-globe" viewBox="0 0 24 24"><path fill="url(#ig-aurora)" fill-rule="evenodd" d="M12 3a9 9 0 1 0 0 18 9 9 0 0 0 0-18ZM11.2 4.4h1.6v15.2h-1.6zM4.4 11.2h15.2v1.6H4.4z"/></symbol>
+    <symbol id="ic-verify" viewBox="0 0 24 24"><path fill="url(#ig-aurora)" fill-rule="evenodd" d="M12 2.5l7.5 3.2v5.1c0 4.8-3.2 8-7.5 9.6-4.3-1.6-7.5-4.8-7.5-9.6V5.7L12 2.5Zm-1.1 12.9l4.6-4.6-1.3-1.3-3.3 3.3-1.5-1.5-1.3 1.3 2.8 2.8Z"/></symbol>
+    <symbol id="ic-revenue" viewBox="0 0 24 24"><path fill="url(#ig-aurora)" fill-rule="evenodd" d="M2.5 6h19A1.5 1.5 0 0 1 23 7.5v9A1.5 1.5 0 0 1 21.5 18h-19A1.5 1.5 0 0 1 1 16.5v-9A1.5 1.5 0 0 1 2.5 6Zm9.5 3.2a2.8 2.8 0 1 0 0 5.6 2.8 2.8 0 0 0 0-5.6Z"/></symbol>
+    <symbol id="ic-box" viewBox="0 0 24 24"><path fill="url(#ig-aurora)" fill-rule="evenodd" d="M12 2l9 5v10l-9 5-9-5V7l9-5ZM11.2 12.3h1.6v8.1h-1.6z"/></symbol>
+    <symbol id="ic-hourglass" viewBox="0 0 24 24"><path fill="url(#ig-aurora)" d="M5 3h14a1 1 0 0 1 0 2h-1v2.3L13 12l5 4.7V19h1a1 1 0 0 1 0 2H5a1 1 0 0 1 0-2h1v-2.3L11 12 6 7.3V5H5a1 1 0 0 1 0-2Z"/></symbol>
+    <symbol id="ic-chat" viewBox="0 0 24 24"><path fill="url(#ig-aurora)" fill-rule="evenodd" d="M5 4h14a3 3 0 0 1 3 3v6a3 3 0 0 1-3 3h-6.2L8 19.5V16H5a3 3 0 0 1-3-3V7a3 3 0 0 1 3-3Zm3 5.1a1.1 1.1 0 1 0 0 2.2 1.1 1.1 0 0 0 0-2.2Zm4 0a1.1 1.1 0 1 0 0 2.2 1.1 1.1 0 0 0 0-2.2Zm4 0a1.1 1.1 0 1 0 0 2.2 1.1 1.1 0 0 0 0-2.2Z"/></symbol>
+    <!-- Line UI icons (2px, currentColor) -->
+    <symbol id="ic-shield" viewBox="0 0 24 24"><g fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3l7 3v5c0 4.5-3 7.5-7 9-4-1.5-7-4.5-7-9V6l7-3Z"/><path d="M9 12l2 2 4-4"/></g></symbol>
+    <symbol id="ic-search" viewBox="0 0 24 24"><g fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="7"/><path d="M16.8 16.8L21 21"/></g></symbol>
+    <symbol id="ic-theme" viewBox="0 0 24 24"><circle cx="12" cy="12" r="8" fill="none" stroke="currentColor" stroke-width="2"/><path d="M12 4a8 8 0 0 1 0 16Z" fill="currentColor"/></symbol>
+    <symbol id="ic-cart" viewBox="0 0 24 24"><g fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 4h2l2.2 11.2a1.5 1.5 0 0 0 1.5 1.2h8.1a1.5 1.5 0 0 0 1.5-1.2L21 7H6"/></g><circle cx="9.5" cy="20" r="1.5" fill="currentColor"/><circle cx="18" cy="20" r="1.5" fill="currentColor"/></symbol>
+    <symbol id="ic-copy" viewBox="0 0 24 24"><g fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round"><rect x="9" y="9" width="11" height="11" rx="2.4"/><path d="M5 15H4a1 1 0 0 1-1-1V4a1 1 0 0 1 1-1h10a1 1 0 0 1 1 1v1"/></g></symbol>
+    <symbol id="ic-download" viewBox="0 0 24 24"><g fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3v11"/><path d="M7 10l5 5 5-5"/><path d="M4 20h16"/></g></symbol>
+    <symbol id="ic-check" viewBox="0 0 24 24"><path d="M4.5 12.5l5 5 10-11" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"/></symbol>
+    <symbol id="ic-x" viewBox="0 0 24 24"><path d="M6 6l12 12M18 6L6 18" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"/></symbol>
+    <symbol id="ic-info" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9" fill="none" stroke="currentColor" stroke-width="2"/><path d="M12 11.2v4.6" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"/><circle cx="12" cy="7.8" r="1.15" fill="currentColor"/></symbol>
+    <symbol id="ic-spark" viewBox="0 0 24 24"><path fill="currentColor" d="M12 2l1.8 5.7a3.6 3.6 0 0 0 2.5 2.5L22 12l-5.7 1.8a3.6 3.6 0 0 0-2.5 2.5L12 22l-1.8-5.7a3.6 3.6 0 0 0-2.5-2.5L2 12l5.7-1.8a3.6 3.6 0 0 0 2.5-2.5L12 2Z"/></symbol>
+    <symbol id="ic-arrow-right" viewBox="0 0 24 24"><g fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 12h15"/><path d="M13 6l6 6-6 6"/></g></symbol>
+    <symbol id="ic-plus" viewBox="0 0 24 24"><path d="M12 5v14M5 12h14" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"/></symbol>
+    <symbol id="ic-bolt" viewBox="0 0 24 24"><path fill="currentColor" d="M13 2L4 14h6l-1 8 9-12h-6l1-8Z"/></symbol>
+  </svg>
+
   <!-- ================= TOP BAR ================= -->
   <header class="topbar">
     <div class="wrap row">
       <div class="logo">
-        <span class="mark">A</span><span>Ad<span class="v">Vault</span></span>
+        <span class="mark"><svg class="svgic"><use href="#ic-shield"></use></svg></span><span>Ad<span class="v">Vault</span></span>
       </div>
       <div class="searchbar">
-        <span class="ic">⌕</span>
+        <span class="ic"><svg class="svgic"><use href="#ic-search"></use></svg></span>
         <input type="text" placeholder="Search accounts, geos, categories…" aria-label="Search" />
       </div>
       <div class="actions">
         <div class="balance-chip"><span class="dot"></span><span id="topBal">$1,240.00</span></div>
-        <button class="icon-btn" id="themeBtn" title="Toggle theme" aria-label="Toggle theme">◐</button>
+        <button class="icon-btn" id="themeBtn" title="Toggle theme" aria-label="Toggle theme"><svg class="svgic"><use href="#ic-theme"></use></svg></button>
         <button class="icon-btn" title="Language" aria-label="Language">EN</button>
         <div class="avatar">AV</div>
       </div>
@@ -423,11 +472,11 @@
       <div class="hero">
         <div class="aurora"></div>
         <div class="inner">
-          <span class="eyebrow">✦ Verified &amp; guaranteed · Instant delivery</span>
+          <span class="eyebrow"><svg class="svgic"><use href="#ic-spark"></use></svg> Verified &amp; guaranteed · Instant delivery</span>
           <h1>Premium ad accounts.<br><span class="grad-text">Unlocked instantly.</span></h1>
           <p class="lead">Buy verified advertising accounts with crypto. Automated delivery from stock, guaranteed replacement, 24/7 support.</p>
           <div class="cta-row">
-            <button class="btn btn-primary btn-lg" data-goto="catalog">Browse catalog →</button>
+            <button class="btn btn-primary btn-lg" data-goto="catalog">Browse catalog <svg class="svgic"><use href="#ic-arrow-right"></use></svg></button>
             <button class="btn btn-secondary btn-lg">Sign up</button>
           </div>
           <div class="trust">
@@ -441,11 +490,11 @@
 
       <h3 class="section-title">Categories</h3>
       <div class="grid cats">
-        <div class="cat"><div class="g">🟦</div><div class="t">Google Ads</div><div class="c">312 offers</div></div>
-        <div class="cat"><div class="g">🔷</div><div class="t">Agency accounts</div><div class="c">86 offers</div></div>
-        <div class="cat"><div class="g">🟪</div><div class="t">Aged &amp; spent</div><div class="c">124 offers</div></div>
-        <div class="cat"><div class="g">🟨</div><div class="t">Proxies</div><div class="c">57 offers</div></div>
-        <div class="cat"><div class="g">🟩</div><div class="t">Verifications</div><div class="c">40 offers</div></div>
+        <div class="cat"><div class="g"><svg class="svgic cat-ic"><use href="#ic-ads"></use></svg></div><div class="t">Google Ads</div><div class="c">312 offers</div></div>
+        <div class="cat"><div class="g"><svg class="svgic cat-ic"><use href="#ic-briefcase"></use></svg></div><div class="t">Agency accounts</div><div class="c">86 offers</div></div>
+        <div class="cat"><div class="g"><svg class="svgic cat-ic"><use href="#ic-clock"></use></svg></div><div class="t">Aged &amp; spent</div><div class="c">124 offers</div></div>
+        <div class="cat"><div class="g"><svg class="svgic cat-ic"><use href="#ic-globe"></use></svg></div><div class="t">Proxies</div><div class="c">57 offers</div></div>
+        <div class="cat"><div class="g"><svg class="svgic cat-ic"><use href="#ic-verify"></use></svg></div><div class="t">Verifications</div><div class="c">40 offers</div></div>
       </div>
 
       <h3 class="section-title">Popular right now</h3>
@@ -496,7 +545,7 @@
   <section class="screen" id="s-product" role="tabpanel">
     <div class="wrap pd">
       <div>
-        <div class="gallery"><span class="glyph">🟦</span></div>
+        <div class="gallery"><span class="glyph"><svg class="svgic gallery-ic"><use href="#ic-ads"></use></svg></span></div>
         <div style="margin-top:24px">
           <h3 style="margin-bottom:12px">Google Ads — Verified US account</h3>
           <p style="color:var(--text-lo)">Aged verified Google Ads account, US billing, no spend history, ready for immediate use. Delivered with full credentials, recovery email and setup guide. Guaranteed replacement within 48h.</p>
@@ -523,13 +572,13 @@
         <div style="color:var(--text-dim);font-size:13px;margin-bottom:18px">≈ 42.00 USDT · instant delivery</div>
         <div style="display:flex;gap:10px">
           <button class="btn btn-primary" style="flex:1" id="buyNow">Buy now</button>
-          <button class="btn btn-secondary" id="addCart">＋ Cart</button>
+          <button class="btn btn-secondary" id="addCart"><svg class="svgic"><use href="#ic-plus"></use></svg> Cart</button>
         </div>
         <div class="guarantee">
-          <div><span class="gi">✓</span> Instant automatic delivery</div>
-          <div><span class="gi">✓</span> 48h guaranteed replacement</div>
-          <div><span class="gi">✓</span> Pay with crypto or balance</div>
-          <div><span class="gi">✓</span> 24/7 priority support</div>
+          <div><span class="gi"><svg class="svgic"><use href="#ic-check"></use></svg></span> Instant automatic delivery</div>
+          <div><span class="gi"><svg class="svgic"><use href="#ic-check"></use></svg></span> 48h guaranteed replacement</div>
+          <div><span class="gi"><svg class="svgic"><use href="#ic-check"></use></svg></span> Pay with crypto or balance</div>
+          <div><span class="gi"><svg class="svgic"><use href="#ic-check"></use></svg></span> 24/7 priority support</div>
         </div>
       </div>
     </div>
@@ -570,7 +619,7 @@
             <div class="qr"></div>
             <div style="font-size:13px;color:var(--text-lo);margin-bottom:8px">Send exactly <b style="color:var(--text-hi)" id="paySum">100 USDT</b> · expires 14:58</div>
             <div class="addr">TXk9aVault7d8Qm3Rn2pZfL4sB6hW1cY0uE</div>
-            <button class="btn btn-success btn-sm" style="margin-top:14px" id="simConfirm">◉ Simulate confirmation</button>
+            <button class="btn btn-success btn-sm" style="margin-top:14px" id="simConfirm"><svg class="svgic"><use href="#ic-bolt"></use></svg> Simulate confirmation</button>
           </div>
         </div>
       </div>
@@ -581,12 +630,12 @@
   <section class="screen" id="s-dash" role="tabpanel">
     <div class="wrap">
       <div class="grid kpis">
-        <div class="kpi card"><div class="k-l">💰 Revenue (30d)</div><div class="k-v">$28,410</div><div class="k-t up">▲ 12.4% vs prev</div>
+        <div class="kpi card"><div class="k-l"><svg class="svgic"><use href="#ic-revenue"></use></svg> Revenue (30d)</div><div class="k-v">$28,410</div><div class="k-t up">▲ 12.4% vs prev</div>
           <div class="spark"><span style="height:40%"></span><span style="height:55%"></span><span style="height:35%"></span><span style="height:70%"></span><span style="height:60%"></span><span style="height:85%"></span><span style="height:100%"></span></div></div>
-        <div class="kpi card"><div class="k-l">📦 Orders</div><div class="k-v">1,284</div><div class="k-t up">▲ 8.1%</div>
+        <div class="kpi card"><div class="k-l"><svg class="svgic"><use href="#ic-box"></use></svg> Orders</div><div class="k-v">1,284</div><div class="k-t up">▲ 8.1%</div>
           <div class="spark"><span style="height:50%"></span><span style="height:45%"></span><span style="height:65%"></span><span style="height:55%"></span><span style="height:75%"></span><span style="height:70%"></span><span style="height:90%"></span></div></div>
-        <div class="kpi card"><div class="k-l">⏳ Awaiting delivery</div><div class="k-v">7</div><div class="k-t down">needs action</div></div>
-        <div class="kpi card"><div class="k-l">🎫 Open tickets</div><div class="k-v">3</div><div class="k-t">2 pending reply</div></div>
+        <div class="kpi card"><div class="k-l"><svg class="svgic"><use href="#ic-hourglass"></use></svg> Awaiting delivery</div><div class="k-v">7</div><div class="k-t down">needs action</div></div>
+        <div class="kpi card"><div class="k-l"><svg class="svgic"><use href="#ic-chat"></use></svg> Open tickets</div><div class="k-v">3</div><div class="k-t">2 pending reply</div></div>
       </div>
 
       <h3 class="section-title">Recent orders</h3>
@@ -611,13 +660,13 @@
               <td>Google Ads · US Verified</td>
               <td><div class="secret"><span class="val">•••••••••••••</span></div></td>
               <td>Jul 8, 2026</td>
-              <td><button class="mini-btn copy-btn">⧉ Copy</button> <button class="mini-btn">⭳</button></td>
+              <td><button class="mini-btn copy-btn"><svg class="svgic"><use href="#ic-copy"></use></svg> Copy</button> <button class="mini-btn"><svg class="svgic"><use href="#ic-download"></use></svg></button></td>
             </tr>
             <tr>
               <td>Aged account · Global</td>
               <td><div class="secret"><span class="val">•••••••••••••</span></div></td>
               <td>Jul 5, 2026</td>
-              <td><button class="mini-btn copy-btn">⧉ Copy</button> <button class="mini-btn">⭳</button></td>
+              <td><button class="mini-btn copy-btn"><svg class="svgic"><use href="#ic-copy"></use></svg> Copy</button> <button class="mini-btn"><svg class="svgic"><use href="#ic-download"></use></svg></button></td>
             </tr>
           </tbody>
         </table>
@@ -696,7 +745,7 @@
             <button class="btn btn-secondary btn-sm" data-toast="error">Error toast</button>
             <button class="btn btn-secondary btn-sm" data-toast="info">Info toast</button>
           </div>
-          <div style="margin-top:14px"><button class="btn btn-primary btn-sm" id="flashBtn">✦ Trigger success flash</button></div>
+          <div style="margin-top:14px"><button class="btn btn-primary btn-sm" id="flashBtn"><svg class="svgic"><use href="#ic-spark"></use></svg> Trigger success flash</button></div>
         </div>
 
         <div class="demo card">
@@ -722,7 +771,7 @@
   var reduce = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
 
   /* ---------- Product data ---------- */
-  var glyphs = ['🟦','🔷','🟪','🟨','🟩','🟦','🔷','🟪'];
+  var glyphs = ['ic-ads','ic-briefcase','ic-clock','ic-ads','ic-globe','ic-clock','ic-briefcase','ic-verify'];
   var names = ['Google Ads · US Verified','Agency account · EU','Aged account · Global',
     'Google Ads · EU Verified','Proxy pack ×5','Aged &amp; spent · US','Agency · Global','Verification kit'];
   var attrs = ['US · Aged · Auto','EU · Agency · Manual','Global · Aged · Auto','EU · Verified · Auto',
@@ -736,7 +785,7 @@
       : (i % 3 === 1 ? '<span class="badge b-pre">Made to order</span>'
       : '<span class="badge b-stock"><span class="d"></span>In stock: ' + stock[i] + '</span>');
     return '<div class="pcard" data-open="'+i+'">' +
-      '<div class="thumb"><span class="glyph">'+glyphs[i]+'</span></div>' +
+      '<div class="thumb"><span class="glyph"><svg class="svgic glyph-ic"><use href="#'+glyphs[i]+'"></use></svg></span></div>' +
       '<div style="margin-bottom:8px">'+badge+'</div>' +
       '<h4>'+names[i]+'</h4>' +
       '<div class="attrs">'+attrs[i]+'</div>' +
@@ -775,12 +824,13 @@
   });
 
   /* ---------- Toasts ---------- */
-  var icons = { success: '✓', error: '✕', info: 'ℹ' };
+  function iconSvg(id) { return '<svg class="svgic"><use href="#' + id + '"></use></svg>'; }
+  var icons = { success: 'ic-check', error: 'ic-x', info: 'ic-info' };
   function toast(type, msg) {
     var box = document.getElementById('toasts');
     var el = document.createElement('div');
     el.className = 'toast ' + type;
-    el.innerHTML = '<span class="ico">' + icons[type] + '</span><span>' + msg + '</span><span class="bar"></span>';
+    el.innerHTML = '<span class="ico">' + iconSvg(icons[type]) + '</span><span>' + msg + '</span><span class="bar"></span>';
     box.appendChild(el);
     setTimeout(function () { el.classList.add('leaving'); setTimeout(function () { el.remove(); }, 260); }, 4000);
   }
@@ -885,10 +935,10 @@
     b.addEventListener('click', function () {
       var val = b.closest('tr').querySelector('.val');
       val.textContent = 'user_9f3@mail · P@ss…';
-      b.innerHTML = '✓ Copied'; b.style.color = 'var(--success)'; b.style.borderColor = 'var(--success)';
+      b.innerHTML = iconSvg('ic-check') + ' Copied'; b.style.color = 'var(--success)'; b.style.borderColor = 'var(--success)';
       flash(false);
       toast('success', 'Copied to clipboard.');
-      setTimeout(function () { b.innerHTML = '⧉ Copy'; b.style.color = ''; b.style.borderColor = ''; val.textContent = '•••••••••••••'; }, 2200);
+      setTimeout(function () { b.innerHTML = iconSvg('ic-copy') + ' Copy'; b.style.color = ''; b.style.borderColor = ''; val.textContent = '•••••••••••••'; }, 2200);
     });
   });
 
