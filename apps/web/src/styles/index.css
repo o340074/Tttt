@@ -1,0 +1,152 @@
+@import 'tailwindcss';
+
+/*
+ * AdVault design tokens — source of truth: docs/design/01-design-tokens.md.
+ * Colors/radii/shadows live in @theme: Tailwind emits them as CSS variables
+ * (--color-void, …) and utilities (bg-void, text-volt, rounded-lg, …).
+ * Dark theme is the default; light theme overrides via [data-theme="light"].
+ */
+@theme {
+  --color-*: initial;
+
+  /* Backgrounds */
+  --color-void: #080a1a;
+  --color-bg-1: #0c0f24;
+  --color-surface: #12152e;
+  --color-surface-2: #191d3c;
+  --color-surface-3: #22274f;
+  --color-overlay: rgba(8, 10, 26, 0.72);
+
+  /* Brand accents */
+  --color-volt: #5b5bf6;
+  --color-volt-600: #4b49e8;
+  --color-volt-400: #7c7dfa;
+  --color-pulse: #e24bf0;
+  --color-beam: #22d3ee;
+
+  /* Semantic */
+  --color-success: #2bd9a6;
+  --color-warning: #f5b740;
+  --color-danger: #ff4d6d;
+  --color-info: #4cb2ff;
+
+  /* Text */
+  --color-text-hi: #eef1ff;
+  --color-text: #c7ccec;
+  --color-text-lo: #9ba1c9;
+  --color-text-dim: #6b7099;
+
+  /* Borders / dividers */
+  --color-border: rgba(155, 161, 201, 0.14);
+  --color-border-2: rgba(155, 161, 201, 0.24);
+  --color-border-glow: rgba(91, 91, 246, 0.55);
+
+  --color-white: #ffffff;
+
+  /* Typography */
+  --font-display: 'Space Grotesk', 'Sora', system-ui, sans-serif;
+  --font-body: 'Inter', system-ui, -apple-system, sans-serif;
+  --font-mono: 'JetBrains Mono', 'IBM Plex Mono', monospace;
+
+  /* Radii */
+  --radius-*: initial;
+  --radius-xs: 6px;
+  --radius-sm: 8px;
+  --radius-md: 12px;
+  --radius-lg: 16px;
+  --radius-xl: 24px;
+  --radius-pill: 999px;
+
+  /* Elevation */
+  --shadow-*: initial;
+  --shadow-1: 0 1px 2px rgba(0, 0, 0, 0.4);
+  --shadow-2: 0 4px 16px rgba(0, 0, 0, 0.45);
+  --shadow-3: 0 12px 40px rgba(0, 0, 0, 0.55);
+  --shadow-modal: 0 24px 80px rgba(0, 0, 0, 0.6);
+  --shadow-glow-volt: 0 0 0 1px rgba(91, 91, 246, 0.35), 0 8px 30px rgba(91, 91, 246, 0.45);
+  --shadow-glow-pulse: 0 0 24px rgba(226, 75, 240, 0.55);
+  --shadow-glow-beam: 0 0 24px rgba(34, 211, 238, 0.5);
+  --shadow-glow-success: 0 0 22px rgba(43, 217, 166, 0.5);
+  --shadow-glow-danger: 0 0 22px rgba(255, 77, 109, 0.5);
+}
+
+/* Tokens that Tailwind has no namespace for: gradients + motion. */
+:root {
+  --grad-aurora: linear-gradient(135deg, #5b5bf6 0%, #9b4df0 50%, #e24bf0 100%);
+  --grad-beam: linear-gradient(135deg, #22d3ee 0%, #5b5bf6 100%);
+  --grad-sheen: linear-gradient(
+    120deg,
+    transparent 30%,
+    rgba(255, 255, 255, 0.14) 50%,
+    transparent 70%
+  );
+  --grad-surface: linear-gradient(180deg, rgba(255, 255, 255, 0.04), rgba(255, 255, 255, 0));
+
+  --dur-instant: 80ms;
+  --dur-fast: 140ms;
+  --dur-base: 220ms;
+  --dur-slow: 360ms;
+  --dur-slower: 600ms;
+  --ease-standard: cubic-bezier(0.2, 0, 0, 1);
+  --ease-emphasized: cubic-bezier(0.2, 0, 0, 1.2);
+  --ease-spring: cubic-bezier(0.34, 1.56, 0.64, 1);
+}
+
+/* Light theme (secondary) — overrides the emitted theme variables. */
+:root[data-theme='light'] {
+  --color-void: #f5f6fb;
+  --color-surface: #ffffff;
+  --color-surface-2: #f0f2fa;
+  --color-text-hi: #0f1230;
+  --color-text: #303463;
+  --color-text-lo: #5a6088;
+  --color-border: rgba(15, 18, 48, 0.1);
+}
+
+@layer base {
+  html {
+    font-family: var(--font-body);
+    background: var(--color-void);
+    color: var(--color-text);
+    line-height: 1.55;
+    -webkit-font-smoothing: antialiased;
+  }
+
+  h1,
+  h2,
+  h3,
+  h4 {
+    font-family: var(--font-display);
+    color: var(--color-text-hi);
+    line-height: 1.15;
+  }
+
+  :focus-visible {
+    outline: 2px solid var(--color-volt);
+    outline-offset: 2px;
+    border-radius: 4px;
+  }
+}
+
+@layer components {
+  /* Signature gradient — logo and key accents only (docs/design/01 §rules). */
+  .text-aurora {
+    background: var(--grad-aurora);
+    background-clip: text;
+    -webkit-background-clip: text;
+    color: transparent;
+  }
+
+  .bg-aurora {
+    background: var(--grad-aurora);
+  }
+
+  /* Icon sizing per docs/design/08. */
+  .svgic {
+    display: inline-block;
+    width: 1.25em;
+    height: 1.25em;
+    vertical-align: -0.25em;
+    flex-shrink: 0;
+  }
+}

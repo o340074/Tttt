@@ -36,6 +36,7 @@ security:
   - bearerAuth: []
 
 tags:
+  - name: System
   - name: Auth
   - name: Users
   - name: Catalog
@@ -90,6 +91,29 @@ components:
       schema: { type: integer }
 
   schemas:
+    HealthResponse:
+      type: object
+      required: [status, version, uptime, timestamp, dependencies]
+      properties:
+        status:
+          type: string
+          enum: [ok, degraded]
+        version:
+          type: string
+          example: "0.1.0"
+        uptime:
+          type: number
+          description: Секунды с момента старта процесса.
+        timestamp:
+          type: string
+          format: date-time
+        dependencies:
+          type: object
+          required: [database, redis]
+          properties:
+            database: { type: string, enum: [up, down] }
+            redis: { type: string, enum: [up, down] }
+
     Money:
       type: string
       description: Денежная величина, строка с двумя знаками после точки.
@@ -485,6 +509,24 @@ components:
 # Paths
 # ============================================================
 paths:
+  # ---------------- System ----------------
+  /health:
+    get:
+      tags: [System]
+      summary: Проверка живости API и зависимостей (db, redis)
+      security: []
+      responses:
+        '200':
+          description: Сервис работает; статусы зависимостей внутри.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/HealthResponse' }
+        '503':
+          description: Сервис деградирован — одна из зависимостей недоступна.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/HealthResponse' }
+
   # ---------------- Auth ----------------
   /auth/register:
     post:

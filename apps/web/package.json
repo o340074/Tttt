@@ -1,0 +1,35 @@
+{
+  "name": "@advault/web",
+  "version": "0.1.0",
+  "private": true,
+  "description": "AdVault storefront (React + Vite)",
+  "type": "module",
+  "scripts": {
+    "dev": "vite",
+    "build": "vite build",
+    "preview": "vite preview",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "test": "vitest run"
+  },
+  "dependencies": {
+    "@advault/types": "workspace:*",
+    "@tanstack/react-query": "^5.66.0",
+    "i18next": "^24.2.0",
+    "i18next-browser-languagedetector": "^8.0.0",
+    "react": "^19.0.0",
+    "react-dom": "^19.0.0",
+    "react-i18next": "^15.4.0",
+    "react-router-dom": "^7.1.0"
+  },
+  "devDependencies": {
+    "@advault/config": "workspace:*",
+    "@tailwindcss/vite": "^4.0.0",
+    "@types/react": "^19.0.0",
+    "@types/react-dom": "^19.0.0",
+    "@vitejs/plugin-react": "^4.3.0",
+    "tailwindcss": "^4.0.0",
+    "typescript": "^5.8.0",
+    "vite": "^6.1.0",
+    "vitest": "^3.0.0"
+  }
+}

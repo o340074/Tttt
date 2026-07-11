@@ -1,0 +1,37 @@
+{
+  "brand": {
+    "name": "AdVault",
+    "tagline": "Premium digital goods, delivered instantly"
+  },
+  "nav": {
+    "home": "Home",
+    "catalog": "Catalog",
+    "language": "Language"
+  },
+  "home": {
+    "heroTitle": "The vault for premium ad accounts",
+    "heroSubtitle": "Ready-to-run Google Ads accounts from stock or warmed to order by our operators — with proxies, browser profiles and guides in one bundle.",
+    "statusHeading": "System status"
+  },
+  "health": {
+    "title": "API status",
+    "loading": "Checking API…",
+    "error": "API is unreachable",
+    "ok": "All systems operational",
+    "degraded": "Service degraded",
+    "database": "Database",
+    "redis": "Redis",
+    "version": "Version",
+    "up": "up",
+    "down": "down",
+    "retry": "Retry"
+  },
+  "notFound": {
+    "title": "Page not found",
+    "description": "The page you are looking for does not exist.",
+    "backHome": "Back to home"
+  },
+  "footer": {
+    "rights": "All rights reserved."
+  }
+}

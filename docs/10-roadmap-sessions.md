@@ -13,15 +13,15 @@
 - ✅ Видение, границы, фичи, стек, архитектура, модель данных, дизайн, API, оплата,
   безопасность, дорожная карта задокументированы.
 
-## Фаза 1 — Каркас проекта (Сессия 1)
+## Фаза 1 — Каркас проекта (Сессия 1) — ✅ готово (эпик E0)
 Цель: поднять монорепо и «hello world» с обеих сторон.
-- ⬜ Инициализировать pnpm-монорепо (`apps/web`, `apps/api`, `packages/*`).
-- ⬜ Настроить ESLint/Prettier/tsconfig, общие конфиги.
-- ⬜ `apps/api`: NestJS-скелет, health-check, подключение Postgres (Prisma) и Redis.
-- ⬜ `apps/web`: Vite + React + Tailwind + роутинг + i18n (EN/RU), базовый лейаут.
-- ⬜ Docker Compose (postgres, redis, api, web) + локальный запуск.
-- ⬜ CI (GitHub Actions): линт + сборка.
-- **Выход:** локально поднимается, фронт видит `/health` бэка.
+- ✅ Инициализировать pnpm-монорепо (`apps/web`, `apps/api`, `packages/*`).
+- ✅ Настроить ESLint/Prettier/tsconfig, общие конфиги.
+- ✅ `apps/api`: NestJS-скелет, health-check, подключение Postgres (Prisma) и Redis.
+- ✅ `apps/web`: Vite + React + Tailwind + роутинг + i18n (EN/RU), базовый лейаут.
+- ✅ Docker Compose (postgres, redis, api, web) + локальный запуск.
+- ✅ CI (GitHub Actions): линт + typecheck + тесты + сборка.
+- **Выход:** локально поднимается, фронт видит `/health` бэка. ✅ Проверено.
 
 ## Фаза 2 — Аутентификация и пользователи (Сессия 2)
 - ⬜ Prisma-схема: User, роли, статусы.

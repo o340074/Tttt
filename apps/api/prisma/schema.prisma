@@ -1,0 +1,12 @@
+// AdVault — Prisma schema.
+// Contract source of truth: docs/backend/prisma-schema.md.
+// E0: connection scaffold only; domain models arrive with their epics (E1+).
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}

@@ -7,17 +7,17 @@
 
 ## 📍 Текущий статус
 
-- **Фаза:** планирование завершено → переход к разработке.
-- **Следующий эпик:** **E0 — Каркас монорепо** (см. `docs/16-development-plan.md` §4).
-- **Ветка:** планирование велось в `claude/digital-marketplace-planning-uegdn8`.
-  Разработку эпиков вести на feature-ветках per эпик (напр. `feat/E0-scaffold`).
+- **Фаза:** разработка. Каркас (E0) готов и проверен end-to-end.
+- **Следующий эпик:** **E1 — Аутентификация и аккаунты** (см. `docs/16-development-plan.md` §4).
+- **Ветка:** E0 сделан на `claude/advault-e0-scaffold-0xtyx4`. Разработку следующих
+  эпиков вести на feature-ветках per эпик от актуальной базы.
 - **Прогресс по эпикам (из `docs/16`):**
 
 | Эпик | Название | Статус |
 |------|----------|--------|
 | — | Планирование и документация | ✅ готово |
-| E0 | Каркас монорепо + CI | ⬜ следующий |
-| E1 | Аутентификация и аккаунты | ⬜ |
+| E0 | Каркас монорепо + CI | ✅ готово |
+| E1 | Аутентификация и аккаунты | ⬜ следующий |
 | E2 | Каталог и продуктовая модель | ⬜ |
 | E3 | Кошелёк и пополнение криптой | ⬜ |
 | E4 | Корзина, заказы, оплата с баланса | ⬜ |
@@ -34,6 +34,37 @@
 ---
 
 ## Записи
+
+### Сессия — Каркас монорепо + CI (эпик E0)
+- **Сделано:** pnpm-монорепо: `apps/web` (React 19 + Vite 6 + Tailwind 4),
+  `apps/api` (NestJS 11 + Prisma 6 + ioredis + Swagger), `packages/types`
+  (общие контракты: `HealthResponse`, `ApiError`, `Money`, пагинация),
+  `packages/config` (базовый tsconfig). Root: ESLint 9 (flat) + Prettier +
+  строгий tsconfig. `docker-compose.yml` (postgres 17, redis 7, api, web) +
+  Dockerfile'ы. CI `.github/workflows/ci.yml`: lint → format → typecheck →
+  test → build. Контракт `/health` добавлен в `docs/backend/openapi.md`
+  (тег System + схема HealthResponse) до кода.
+- **API:** префикс `/api/v1`, ValidationPipe, конфиг через `@nestjs/config` +
+  zod-валидация env, `GET /api/v1/health` (200 ok / 503 degraded, статусы db и
+  redis), Swagger UI на `/api/docs`. API поднимается и при недоступных
+  зависимостях (health честно показывает `down`). Prisma-схема пока без моделей
+  (модели приходят со своими эпиками, контракт — `docs/backend/prisma-schema.md`).
+- **Web:** дизайн-токены Aurora из `docs/design/01` в Tailwind `@theme`
+  (dark default + light override), базовый лейаут (Header/Footer), React Router,
+  react-i18next (EN default + RU, детектор + localStorage), SVG-спрайт иконок из
+  прототипа (`<Icon name="…"/>`, без эмодзи), TanStack Query, карточка статуса
+  API на главной (loading/error/data). Vite-прокси `/api` → API.
+- **Решения:** React 19 / Tailwind 4 / ESLint 9 flat (актуальные мажоры вместо
+  версий из docs/03 — контракты и подход не меняются); vitest как единый
+  тест-раннер (web + api); правило `consistent-type-imports` отключено для api
+  (конфликт с DI/emitDecoratorMetadata).
+- **Проверено:** lint/format/typecheck/тесты (5) /build зелёные; postgres+redis
+  в docker + api локально: `/health` = 200 ok, при остановке redis — 503
+  degraded, после старта — снова 200; Swagger 200; фронт через прокси рендерит
+  статус (скриншот-проверка Chromium), переключение EN→RU работает.
+- **Проблемы/долги:** CI прогонится при первом push (локально все шаги зелёные);
+  прод-сборка web (nginx-статика) — ближе к деплою, сейчас dev-образ.
+- **Дальше:** **E1 — Аутентификация и аккаунты** (промт в `docs/NEXT-SESSION-PROMPT.md`).
 
 ### Сессия — Консолидация веток
 - **Проблема:** новая сессия не видела проект — вся работа была в

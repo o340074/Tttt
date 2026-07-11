@@ -20,7 +20,10 @@
 
 - ✅ **Фаза планирования завершена** (продукт, дизайн, архитектура, модель прогрева,
   админка, план разработки, прототипы, бэкенд-контракты).
-- 🔜 **Следующий шаг — разработка, эпик E0 (каркас монорепо)**. Далее строго по
+- ✅ **E0 — каркас монорепо готов**: `apps/web` (React+Vite+Tailwind, i18n EN/RU,
+  токены Aurora), `apps/api` (NestJS, /health, Prisma+Redis, Swagger),
+  `packages/{types,config}`, docker-compose, CI.
+- 🔜 **Следующий шаг — эпик E1 (аутентификация и аккаунты)**. Далее строго по
   порядку эпиков/вех из `docs/16-development-plan.md`.
 - Живой статус и «что дальше» — всегда в `docs/SESSION-LOG.md`.
 
@@ -29,6 +32,10 @@
 ```
 CLAUDE.md                     ← этот файл (ориентир)
 README.md                     ← индекс всей документации
+apps/web · apps/api           ← код: фронт (React+Vite+Tailwind) и бэк (NestJS)
+packages/{types,config}       ← общие контракты/типы и базовые tsconfig
+docker-compose.yml            ← dev-окружение (postgres, redis, api, web)
+.github/workflows/ci.yml      ← CI: lint + typecheck + test + build
 docs/00..10                   ← продукт: обзор, видение, фичи, стек, архитектура,
                                  модель данных, дизайн-обзор, API, оплата/выдача,
                                  безопасность, краткая дорожная карта
