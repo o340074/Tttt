@@ -1,0 +1,956 @@
+<title>AdVault — Prototype</title>
+<style>
+  /* ============================================================
+     AdVault — интерактивный прототип / style-guide
+     Self-contained: без внешних шрифтов, картинок и скриптов.
+     Дизайн: premium-dark «Aurora», flash/glow-эстетика.
+     ============================================================ */
+
+  *, *::before, *::after { box-sizing: border-box; }
+  html, body { margin: 0; padding: 0; }
+
+  .app {
+    /* ---- Tokens (dark, default) ---- */
+    --void: #080A1A; --bg1: #0C0F24; --surface: #12152E; --surface2: #191D3C;
+    --surface3: #22274F; --overlay: rgba(6,8,20,.72);
+    --volt: #5B5BF6; --volt400: #7C7DFA; --pulse: #E24BF0; --beam: #22D3EE;
+    --success: #2BD9A6; --warning: #F5B740; --danger: #FF4D6D; --info: #4CB2FF;
+    --text-hi: #EEF1FF; --text: #C7CCEC; --text-lo: #9BA1C9; --text-dim: #6B7099;
+    --border: rgba(155,161,201,.14); --border2: rgba(155,161,201,.26);
+    --grad-aurora: linear-gradient(135deg,#5B5BF6 0%,#9B4DF0 50%,#E24BF0 100%);
+    --grad-beam: linear-gradient(135deg,#22D3EE 0%,#5B5BF6 100%);
+    --sheen: linear-gradient(120deg,transparent 30%,rgba(255,255,255,.16) 50%,transparent 70%);
+    --shadow2: 0 4px 16px rgba(0,0,0,.45); --shadow3: 0 14px 44px rgba(0,0,0,.55);
+    --glow-volt: 0 0 0 1px rgba(91,91,246,.35), 0 8px 30px rgba(91,91,246,.5);
+    --glow-pulse: 0 0 26px rgba(226,75,240,.55);
+    --glow-beam: 0 0 24px rgba(34,211,238,.5);
+    --glow-success: 0 0 24px rgba(43,217,166,.55);
+    --r-sm: 8px; --r-md: 12px; --r-lg: 16px; --r-xl: 24px; --r-pill: 999px;
+    --font-display: "Space Grotesk", ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
+    --font-body: "Inter", ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
+    --font-mono: ui-monospace, "JetBrains Mono", "SFMono-Regular", Menlo, monospace;
+
+    font-family: var(--font-body);
+    color: var(--text);
+    background:
+      radial-gradient(1100px 600px at 12% -8%, rgba(91,91,246,.22), transparent 60%),
+      radial-gradient(900px 520px at 98% 4%, rgba(226,75,240,.18), transparent 58%),
+      radial-gradient(700px 500px at 60% 110%, rgba(34,211,238,.10), transparent 60%),
+      var(--void);
+    min-height: 100vh;
+    -webkit-font-smoothing: antialiased;
+    line-height: 1.55;
+    position: relative;
+    overflow-x: hidden;
+  }
+
+  /* ---- Light mode ---- */
+  .app[data-mode="light"] {
+    --void: #F4F5FC; --bg1: #EEF0FA; --surface: #FFFFFF; --surface2: #F5F6FD;
+    --surface3: #EAEDFA; --overlay: rgba(20,22,48,.4);
+    --text-hi: #0F1230; --text: #2E3260; --text-lo: #5A6088; --text-dim: #8790B5;
+    --border: rgba(15,18,48,.10); --border2: rgba(15,18,48,.18);
+    --shadow2: 0 4px 16px rgba(30,34,90,.10); --shadow3: 0 16px 44px rgba(30,34,90,.14);
+    background:
+      radial-gradient(1000px 560px at 10% -8%, rgba(91,91,246,.14), transparent 60%),
+      radial-gradient(820px 480px at 98% 2%, rgba(226,75,240,.12), transparent 58%),
+      var(--void);
+  }
+
+  .app { padding-bottom: 64px; }
+  .wrap { max-width: 1200px; margin: 0 auto; padding: 0 24px; }
+
+  h1,h2,h3,h4 { font-family: var(--font-display); color: var(--text-hi);
+    line-height: 1.12; margin: 0; text-wrap: balance; letter-spacing: -.02em; font-weight: 700; }
+  p { margin: 0; }
+  a { color: inherit; text-decoration: none; }
+  button { font-family: inherit; }
+
+  .grad-text {
+    background: var(--grad-aurora); -webkit-background-clip: text; background-clip: text;
+    color: transparent;
+  }
+
+  /* ============================= TOP BAR ============================= */
+  .topbar {
+    position: sticky; top: 0; z-index: 100;
+    backdrop-filter: blur(14px);
+    background: color-mix(in srgb, var(--void) 72%, transparent);
+    border-bottom: 1px solid var(--border);
+  }
+  .topbar .row { display: flex; align-items: center; gap: 18px; height: 66px; }
+  .logo { display: flex; align-items: center; gap: 11px; font-family: var(--font-display);
+    font-weight: 800; font-size: 20px; color: var(--text-hi); letter-spacing: -.01em; }
+  .logo .mark {
+    width: 34px; height: 34px; border-radius: 10px; background: var(--grad-aurora);
+    box-shadow: var(--glow-volt); display: grid; place-items: center;
+    color: #fff; font-weight: 800; position: relative; overflow: hidden; flex: none;
+  }
+  .logo .mark::after { content: ""; position: absolute; inset: 0; background: var(--sheen);
+    transform: translateX(-120%); animation: sheen 4.5s ease-in-out infinite; }
+  .logo .v { background: var(--grad-aurora); -webkit-background-clip: text; background-clip: text; color: transparent; }
+  .searchbar { flex: 1; max-width: 420px; margin: 0 auto; position: relative; }
+  .searchbar input {
+    width: 100%; height: 40px; border-radius: var(--r-pill); border: 1px solid var(--border);
+    background: var(--surface); color: var(--text); padding: 0 16px 0 40px; font-size: 14px;
+    transition: border-color .14s, box-shadow .14s;
+  }
+  .searchbar input::placeholder { color: var(--text-dim); }
+  .searchbar input:focus { outline: none; border-color: var(--volt); box-shadow: var(--glow-volt); }
+  .searchbar .ic { position: absolute; left: 14px; top: 11px; color: var(--text-dim); }
+  .topbar .actions { display: flex; align-items: center; gap: 10px; }
+  .balance-chip {
+    display: flex; align-items: center; gap: 8px; height: 40px; padding: 0 14px;
+    border-radius: var(--r-pill); border: 1px solid var(--border2); background: var(--surface);
+    font-weight: 600; color: var(--text-hi); font-variant-numeric: tabular-nums;
+  }
+  .balance-chip .dot { width: 7px; height: 7px; border-radius: 50%; background: var(--success);
+    box-shadow: var(--glow-success); animation: pulse 2.2s ease-in-out infinite; }
+  .icon-btn {
+    width: 40px; height: 40px; border-radius: var(--r-pill); border: 1px solid var(--border);
+    background: var(--surface); color: var(--text); display: grid; place-items: center;
+    cursor: pointer; font-size: 16px; transition: transform .12s, box-shadow .14s, border-color .14s;
+  }
+  .icon-btn:hover { transform: translateY(-1px); border-color: var(--border2); box-shadow: var(--shadow2); }
+  .avatar { width: 40px; height: 40px; border-radius: 50%; background: var(--grad-beam);
+    display: grid; place-items: center; color: #04121a; font-weight: 700; cursor: pointer; }
+
+  /* ============================= TABS ============================= */
+  .tabs { position: sticky; top: 66px; z-index: 90; background: color-mix(in srgb, var(--void) 80%, transparent);
+    backdrop-filter: blur(10px); border-bottom: 1px solid var(--border); }
+  .tabs .row { display: flex; gap: 4px; overflow-x: auto; scrollbar-width: none; }
+  .tabs .row::-webkit-scrollbar { display: none; }
+  .tab { position: relative; padding: 15px 16px; background: none; border: none; cursor: pointer;
+    color: var(--text-lo); font-size: 14px; font-weight: 600; white-space: nowrap;
+    transition: color .16s; }
+  .tab:hover { color: var(--text-hi); }
+  .tab[aria-selected="true"] { color: var(--text-hi); }
+  .tab .under { position: absolute; left: 12px; right: 12px; bottom: 0; height: 3px; border-radius: 3px 3px 0 0;
+    background: var(--grad-aurora); box-shadow: 0 0 14px rgba(91,91,246,.7); transform: scaleX(0);
+    transition: transform .28s cubic-bezier(.2,0,0,1); transform-origin: center; }
+  .tab[aria-selected="true"] .under { transform: scaleX(1); }
+
+  /* ============================= SCREENS ============================= */
+  .screen { display: none; padding: 40px 0; }
+  .screen.active { display: block; animation: fadeUp .34s cubic-bezier(0,0,.2,1) both; }
+  .section-title { font-size: 13px; text-transform: uppercase; letter-spacing: .12em;
+    color: var(--text-dim); font-family: var(--font-body); font-weight: 700; margin: 0 0 16px; }
+
+  /* ---- Buttons ---- */
+  .btn { position: relative; display: inline-flex; align-items: center; justify-content: center; gap: 8px;
+    height: 44px; padding: 0 22px; border-radius: var(--r-md); border: 1px solid transparent;
+    font-weight: 600; font-size: 15px; cursor: pointer; overflow: hidden;
+    transition: transform .12s cubic-bezier(.34,1.56,.64,1), box-shadow .16s, background .16s; user-select: none; }
+  .btn:active { transform: scale(.97); }
+  .btn:focus-visible { outline: none; box-shadow: 0 0 0 3px rgba(91,91,246,.5); }
+  .btn-primary { background: var(--grad-aurora); color: #fff; box-shadow: var(--glow-volt); }
+  .btn-primary:hover { transform: translateY(-1px); box-shadow: 0 0 0 1px rgba(91,91,246,.4), 0 12px 36px rgba(91,91,246,.6); }
+  .btn-primary::after { content: ""; position: absolute; inset: 0; background: var(--sheen);
+    transform: translateX(-120%); }
+  .btn-primary:hover::after { animation: sheen .8s ease; }
+  .btn-secondary { background: var(--surface2); color: var(--text-hi); border-color: var(--border2); }
+  .btn-secondary:hover { transform: translateY(-1px); box-shadow: var(--shadow2); border-color: var(--volt); }
+  .btn-ghost { background: transparent; color: var(--text); border-color: transparent; }
+  .btn-ghost:hover { background: var(--surface2); color: var(--text-hi); }
+  .btn-danger { background: var(--danger); color: #fff; }
+  .btn-success { background: var(--success); color: #04211a; }
+  .btn-sm { height: 36px; padding: 0 16px; font-size: 14px; }
+  .btn-lg { height: 52px; padding: 0 30px; font-size: 16px; }
+  .btn[disabled] { opacity: .45; pointer-events: none; }
+  .btn .spin { width: 16px; height: 16px; border: 2px solid rgba(255,255,255,.35);
+    border-top-color: #fff; border-radius: 50%; animation: spin .7s linear infinite; }
+
+  /* ---- Cards ---- */
+  .card { background: var(--surface); border: 1px solid var(--border); border-radius: var(--r-lg);
+    box-shadow: var(--shadow2); }
+  .grid { display: grid; gap: 22px; }
+
+  /* ---- Product card ---- */
+  .products { grid-template-columns: repeat(auto-fill, minmax(240px, 1fr)); }
+  .pcard { position: relative; padding: 18px; border-radius: var(--r-lg); background: var(--surface);
+    border: 1px solid var(--border); overflow: hidden; cursor: pointer;
+    transition: transform .2s cubic-bezier(.2,0,0,1), box-shadow .2s, border-color .2s; }
+  .pcard::before { content: ""; position: absolute; inset: 0; border-radius: inherit; padding: 1px;
+    background: var(--grad-aurora); -webkit-mask: linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0);
+    -webkit-mask-composite: xor; mask-composite: exclude; opacity: 0; transition: opacity .2s; pointer-events: none; }
+  .pcard:hover { transform: translateY(-5px); box-shadow: var(--shadow3); }
+  .pcard:hover::before { opacity: 1; }
+  .pcard .thumb { height: 116px; border-radius: var(--r-md); margin-bottom: 14px; position: relative;
+    display: grid; place-items: center; overflow: hidden;
+    background: linear-gradient(135deg, var(--surface2), var(--surface3)); }
+  .pcard .thumb .glyph { display: inline-flex; }
+  .pcard .thumb::after { content: ""; position: absolute; inset: 0; background: var(--sheen);
+    transform: translateX(-130%); }
+  .pcard:hover .thumb::after { animation: sheen 1s ease; }
+  .pcard h4 { font-size: 16px; margin-bottom: 6px; font-family: var(--font-body); font-weight: 700; }
+  .pcard .attrs { color: var(--text-lo); font-size: 13px; margin-bottom: 12px; }
+  .pcard .foot { display: flex; align-items: center; justify-content: space-between; }
+  .price { font-family: var(--font-display); font-weight: 700; font-size: 20px; color: var(--text-hi);
+    font-variant-numeric: tabular-nums; }
+  .price small { font-size: 12px; color: var(--text-dim); font-weight: 500; }
+
+  /* ---- Badges ---- */
+  .badge { display: inline-flex; align-items: center; gap: 6px; height: 24px; padding: 0 10px;
+    border-radius: var(--r-pill); font-size: 12px; font-weight: 600; }
+  .badge .d { width: 6px; height: 6px; border-radius: 50%; }
+  .b-stock { background: rgba(43,217,166,.14); color: var(--success); }
+  .b-stock .d { background: var(--success); box-shadow: var(--glow-success); animation: pulse 2s infinite; }
+  .b-pre { background: rgba(245,183,64,.14); color: var(--warning); }
+  .b-out { background: rgba(255,77,109,.14); color: var(--danger); }
+  .b-beam { background: rgba(34,211,238,.14); color: var(--beam); }
+  .b-volt { background: rgba(124,125,250,.16); color: var(--volt400); }
+
+  /* ---- HERO ---- */
+  .hero { position: relative; border-radius: var(--r-xl); overflow: hidden; padding: 64px 40px;
+    border: 1px solid var(--border); margin-bottom: 44px; }
+  .hero .aurora { position: absolute; inset: -40%; z-index: 0; filter: blur(70px); opacity: .55;
+    background:
+      radial-gradient(closest-side, rgba(91,91,246,.9), transparent 70%) 20% 30%/55% 55% no-repeat,
+      radial-gradient(closest-side, rgba(226,75,240,.8), transparent 70%) 78% 20%/50% 50% no-repeat,
+      radial-gradient(closest-side, rgba(34,211,238,.7), transparent 70%) 55% 90%/50% 50% no-repeat;
+    animation: aurora 14s ease-in-out infinite; }
+  .hero .inner { position: relative; z-index: 1; max-width: 620px; }
+  .hero .eyebrow { display: inline-flex; align-items: center; gap: 8px; height: 30px; padding: 0 14px;
+    border-radius: var(--r-pill); border: 1px solid var(--border2); background: color-mix(in srgb, var(--surface) 70%, transparent);
+    font-size: 12.5px; font-weight: 600; color: var(--text-hi); margin-bottom: 20px; }
+  .hero h1 { font-size: clamp(34px, 5vw, 56px); font-weight: 800; margin-bottom: 16px; }
+  .hero p.lead { font-size: 18px; color: var(--text-lo); margin-bottom: 28px; max-width: 500px; }
+  .hero .cta-row { display: flex; gap: 12px; flex-wrap: wrap; }
+  .trust { display: flex; gap: 34px; flex-wrap: wrap; margin-top: 40px; position: relative; z-index: 1; }
+  .trust .n { font-family: var(--font-display); font-weight: 800; font-size: 26px; color: var(--text-hi);
+    font-variant-numeric: tabular-nums; }
+  .trust .l { font-size: 13px; color: var(--text-lo); }
+
+  /* ---- Categories ---- */
+  .cats { grid-template-columns: repeat(auto-fill, minmax(160px, 1fr)); margin-bottom: 44px; }
+  .cat { padding: 20px; border-radius: var(--r-lg); background: var(--surface); border: 1px solid var(--border);
+    cursor: pointer; transition: transform .18s, box-shadow .18s, border-color .18s; }
+  .cat:hover { transform: translateY(-3px); border-color: var(--volt); box-shadow: var(--glow-volt); }
+  .cat .g { display: inline-flex; margin-bottom: 12px; }
+  .cat .t { font-weight: 700; color: var(--text-hi); font-size: 15px; }
+  .cat .c { font-size: 12.5px; color: var(--text-dim); }
+
+  /* ---- Catalog layout ---- */
+  .catalog { display: grid; grid-template-columns: 250px 1fr; gap: 28px; align-items: start; }
+  .filters { position: sticky; top: 130px; padding: 20px; }
+  .filter-group { padding: 14px 0; border-bottom: 1px solid var(--border); }
+  .filter-group:last-child { border-bottom: none; }
+  .filter-group h5 { margin: 0 0 12px; font-size: 13px; color: var(--text-hi); font-family: var(--font-body);
+    text-transform: uppercase; letter-spacing: .06em; }
+  .check { display: flex; align-items: center; gap: 10px; padding: 6px 0; color: var(--text); font-size: 14px; cursor: pointer; }
+  .check input { accent-color: var(--volt); width: 16px; height: 16px; }
+  .chips { display: flex; gap: 8px; flex-wrap: wrap; margin-bottom: 18px; }
+  .chip { display: inline-flex; align-items: center; gap: 7px; height: 30px; padding: 0 12px;
+    border-radius: var(--r-pill); background: var(--surface2); border: 1px solid var(--border2);
+    font-size: 13px; color: var(--text); cursor: pointer; }
+  .chip.on { background: rgba(91,91,246,.16); border-color: var(--volt); color: var(--text-hi); }
+  .chip .x { color: var(--text-dim); }
+
+  /* ---- Product detail ---- */
+  .pd { display: grid; grid-template-columns: 1fr 400px; gap: 34px; align-items: start; }
+  .pd .gallery { border-radius: var(--r-lg); background: linear-gradient(135deg, var(--surface2), var(--surface3));
+    height: 320px; display: grid; place-items: center; position: relative; overflow: hidden; border: 1px solid var(--border); }
+  .pd .gallery .glyph { display: inline-flex; }
+  .pd .buybox { padding: 24px; position: sticky; top: 130px; }
+  .sku-row { display: flex; gap: 8px; flex-wrap: wrap; margin: 8px 0 18px; }
+  .sku { padding: 8px 14px; border-radius: var(--r-md); border: 1px solid var(--border2); background: var(--surface2);
+    color: var(--text); font-size: 13.5px; font-weight: 600; cursor: pointer; transition: all .15s; }
+  .sku.on { border-color: var(--volt); background: rgba(91,91,246,.16); color: var(--text-hi); box-shadow: var(--glow-volt); }
+  .price-big { font-family: var(--font-display); font-weight: 800; font-size: 40px; color: var(--text-hi);
+    font-variant-numeric: tabular-nums; margin: 6px 0; }
+  .guarantee { display: flex; flex-direction: column; gap: 10px; margin-top: 20px; padding-top: 18px; border-top: 1px solid var(--border); }
+  .guarantee div { display: flex; align-items: center; gap: 10px; font-size: 13.5px; color: var(--text-lo); }
+  .guarantee .gi { color: var(--success); }
+
+  /* ---- Wallet / top-up ---- */
+  .wallet { display: grid; grid-template-columns: 1fr 1fr; gap: 24px; align-items: start; }
+  .bal-card { padding: 28px; position: relative; overflow: hidden; }
+  .bal-card .aurora-mini { position: absolute; inset: -50%; filter: blur(60px); opacity: .4; z-index: 0;
+    background: radial-gradient(closest-side, rgba(91,91,246,.9), transparent) 20% 20%/60% 60% no-repeat,
+      radial-gradient(closest-side, rgba(226,75,240,.7), transparent) 80% 60%/55% 55% no-repeat;
+    animation: aurora 16s ease-in-out infinite; }
+  .bal-card .bc-inner { position: relative; z-index: 1; }
+  .bal-amt { font-family: var(--font-display); font-weight: 800; font-size: 46px; color: var(--text-hi);
+    font-variant-numeric: tabular-nums; letter-spacing: -.02em; }
+  .topup-form { padding: 24px; }
+  .field { margin-bottom: 16px; }
+  .field label { display: block; font-size: 13px; color: var(--text-lo); margin-bottom: 7px; font-weight: 600; }
+  .field input { width: 100%; height: 46px; border-radius: var(--r-md); border: 1px solid var(--border);
+    background: var(--surface2); color: var(--text-hi); padding: 0 14px; font-size: 16px; transition: border-color .14s, box-shadow .14s; }
+  .field input:focus { outline: none; border-color: var(--volt); box-shadow: var(--glow-volt); }
+  .asset-row { display: flex; gap: 8px; }
+  .asset { flex: 1; text-align: center; padding: 10px; border-radius: var(--r-md); border: 1px solid var(--border2);
+    background: var(--surface2); cursor: pointer; font-weight: 600; font-size: 13px; color: var(--text); transition: all .15s; }
+  .asset.on { border-color: var(--beam); background: rgba(34,211,238,.12); color: var(--beam); box-shadow: var(--glow-beam); }
+  .qr { width: 150px; height: 150px; border-radius: var(--r-md); margin: 0 auto 14px;
+    background:
+      conic-gradient(from 0deg, var(--text-hi) 0 25%, transparent 0 50%, var(--text-hi) 0 75%, transparent 0) 0 0/20px 20px,
+      var(--surface); background-blend-mode: normal; border: 8px solid #fff; position: relative; }
+  .addr { font-family: var(--font-mono); font-size: 12.5px; background: var(--surface2); border: 1px solid var(--border);
+    border-radius: var(--r-md); padding: 12px; color: var(--text); word-break: break-all; text-align: center; }
+
+  /* ---- Dashboard ---- */
+  .kpis { grid-template-columns: repeat(auto-fill, minmax(200px, 1fr)); margin-bottom: 28px; }
+  .kpi { padding: 20px; }
+  .kpi .k-l { font-size: 13px; color: var(--text-lo); display: flex; align-items: center; gap: 8px; margin-bottom: 10px; }
+  .kpi .k-v { font-family: var(--font-display); font-weight: 800; font-size: 30px; color: var(--text-hi);
+    font-variant-numeric: tabular-nums; }
+  .kpi .k-t { font-size: 12.5px; margin-top: 6px; }
+  .up { color: var(--success); } .down { color: var(--danger); }
+  .spark { display: flex; align-items: flex-end; gap: 3px; height: 34px; margin-top: 12px; }
+  .spark span { flex: 1; background: var(--grad-aurora); border-radius: 2px; opacity: .8; }
+
+  table.tbl { width: 100%; border-collapse: collapse; font-size: 14px; }
+  table.tbl th { text-align: left; padding: 12px 14px; color: var(--text-dim); font-weight: 600; font-size: 12px;
+    text-transform: uppercase; letter-spacing: .05em; border-bottom: 1px solid var(--border); }
+  table.tbl td { padding: 13px 14px; border-bottom: 1px solid var(--border); color: var(--text); }
+  table.tbl tr:hover td { background: var(--surface2); }
+  .tbl-wrap { overflow-x: auto; border-radius: var(--r-lg); border: 1px solid var(--border); background: var(--surface); }
+  .mono { font-family: var(--font-mono); font-size: 13px; }
+
+  /* ---- Vault secret ---- */
+  .secret { display: flex; align-items: center; gap: 8px; }
+  .secret .val { font-family: var(--font-mono); font-size: 13px; background: var(--surface2);
+    padding: 7px 12px; border-radius: var(--r-sm); border: 1px solid var(--border); letter-spacing: 1px; }
+  .mini-btn { height: 30px; padding: 0 10px; border-radius: var(--r-sm); border: 1px solid var(--border2);
+    background: var(--surface2); color: var(--text); font-size: 12.5px; font-weight: 600; cursor: pointer;
+    display: inline-flex; align-items: center; gap: 5px; transition: all .14s; }
+  .mini-btn:hover { border-color: var(--volt); color: var(--text-hi); }
+
+  /* ---- Components showcase ---- */
+  .demo-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(280px, 1fr)); gap: 22px; }
+  .demo { padding: 22px; }
+  .demo h4 { font-size: 15px; margin-bottom: 16px; font-family: var(--font-body); }
+  .row-wrap { display: flex; gap: 10px; flex-wrap: wrap; align-items: center; }
+  .swatches { display: grid; grid-template-columns: repeat(auto-fill, minmax(84px,1fr)); gap: 10px; }
+  .sw { border-radius: var(--r-md); height: 62px; border: 1px solid var(--border); display: flex; align-items: flex-end;
+    padding: 7px; font-size: 11px; font-weight: 600; color: #fff; text-shadow: 0 1px 3px rgba(0,0,0,.5); }
+  .toggle { width: 46px; height: 26px; border-radius: var(--r-pill); background: var(--surface3); border: 1px solid var(--border2);
+    position: relative; cursor: pointer; transition: background .2s; }
+  .toggle::after { content: ""; position: absolute; top: 2px; left: 2px; width: 20px; height: 20px; border-radius: 50%;
+    background: var(--text-lo); transition: transform .24s cubic-bezier(.34,1.56,.64,1), background .2s; }
+  .toggle.on { background: rgba(91,91,246,.35); border-color: var(--volt); }
+  .toggle.on::after { transform: translateX(20px); background: var(--volt400); box-shadow: var(--glow-volt); }
+
+  /* ---- Toast ---- */
+  .toasts { position: fixed; left: 20px; bottom: 20px; z-index: 1200; display: flex; flex-direction: column; gap: 10px; }
+  .toast { min-width: 260px; max-width: 340px; padding: 14px 16px; border-radius: var(--r-md); background: var(--surface2);
+    border: 1px solid var(--border2); box-shadow: var(--shadow3); display: flex; align-items: center; gap: 12px;
+    color: var(--text-hi); font-size: 14px; font-weight: 500; animation: toastIn .3s cubic-bezier(.34,1.56,.64,1) both; overflow: hidden; position: relative; }
+  .toast .ico { width: 26px; height: 26px; border-radius: 50%; display: grid; place-items: center; flex: none; font-size: 14px; }
+  .toast.success .ico { background: rgba(43,217,166,.18); color: var(--success); }
+  .toast.error .ico { background: rgba(255,77,109,.18); color: var(--danger); }
+  .toast.info .ico { background: rgba(34,211,238,.18); color: var(--beam); }
+  .toast .bar { position: absolute; bottom: 0; left: 0; height: 3px; background: var(--grad-aurora); animation: toastbar 4s linear forwards; }
+  .toast.leaving { animation: toastOut .25s ease forwards; }
+
+  /* ---- Flash overlay ---- */
+  .flash { position: fixed; inset: 0; z-index: 1500; pointer-events: none; opacity: 0;
+    background: radial-gradient(circle at center, rgba(43,217,166,.28), transparent 60%); }
+  .flash.go { animation: flash .7s ease; }
+  .flash.aurora-flash { background: radial-gradient(circle at center, rgba(91,91,246,.32), rgba(226,75,240,.18) 45%, transparent 68%); }
+  .particle { position: fixed; z-index: 1490; width: 9px; height: 9px; border-radius: 2px; pointer-events: none; }
+
+  /* ---- Empty state ---- */
+  .empty { text-align: center; padding: 56px 20px; color: var(--text-lo); }
+  .empty .g { font-size: 44px; margin-bottom: 14px; opacity: .8; }
+
+  /* ============================= ICONS ============================= */
+  .svgic { width: 20px; height: 20px; display: inline-block; vertical-align: -.16em; flex: none; }
+  .logo .mark .svgic { width: 19px; height: 19px; }
+  .searchbar .ic { top: 0; bottom: 0; height: auto; display: flex; align-items: center; }
+  .searchbar .ic .svgic { width: 18px; height: 18px; }
+  .icon-btn .svgic { width: 18px; height: 18px; }
+  .eyebrow .svgic { width: 14px; height: 14px; color: var(--pulse); }
+  .cat-ic { width: 34px; height: 34px; }
+  .glyph-ic { width: 52px; height: 52px; filter: drop-shadow(0 8px 16px rgba(0,0,0,.45)); }
+  .gallery-ic { width: 94px; height: 94px; filter: drop-shadow(0 14px 32px rgba(0,0,0,.5)); }
+  .k-l .svgic { width: 18px; height: 18px; }
+  .guarantee .gi .svgic { width: 16px; height: 16px; }
+  .toast .ico .svgic { width: 15px; height: 15px; }
+  .mini-btn .svgic { width: 14px; height: 14px; }
+  .btn .svgic { width: 16px; height: 16px; }
+
+  /* ============================= KEYFRAMES ============================= */
+  @keyframes sheen { 0% { transform: translateX(-120%); } 60%,100% { transform: translateX(220%); } }
+  @keyframes pulse { 0%,100% { transform: scale(1); opacity: 1; } 50% { transform: scale(1.5); opacity: .55; } }
+  @keyframes spin { to { transform: rotate(360deg); } }
+  @keyframes fadeUp { from { opacity: 0; transform: translateY(14px); } to { opacity: 1; transform: none; } }
+  @keyframes aurora { 0%,100% { transform: translate(0,0) rotate(0deg); } 33% { transform: translate(4%,-3%) rotate(6deg); }
+    66% { transform: translate(-3%,4%) rotate(-5deg); } }
+  @keyframes toastIn { from { opacity: 0; transform: translateY(20px) scale(.96); } to { opacity: 1; transform: none; } }
+  @keyframes toastOut { to { opacity: 0; transform: translateX(-20px); } }
+  @keyframes toastbar { from { width: 100%; } to { width: 0; } }
+  @keyframes flash { 0% { opacity: 0; } 18% { opacity: 1; } 100% { opacity: 0; } }
+  @keyframes fall { to { transform: translateY(90vh) rotate(540deg); opacity: 0; } }
+  @keyframes shake { 0%,100% { transform: translateX(0); } 25% { transform: translateX(-8px); } 75% { transform: translateX(8px); } }
+  .shake { animation: shake .32s ease; }
+
+  /* ============================= RESPONSIVE ============================= */
+  @media (max-width: 900px) {
+    .catalog { grid-template-columns: 1fr; }
+    .filters { position: static; }
+    .pd { grid-template-columns: 1fr; }
+    .pd .buybox { position: static; }
+    .wallet { grid-template-columns: 1fr; }
+    .searchbar { display: none; }
+  }
+  @media (prefers-reduced-motion: reduce) {
+    *, *::before, *::after { animation-duration: .001ms !important; animation-iteration-count: 1 !important;
+      transition-duration: .001ms !important; }
+  }
+</style>
+
+<div class="app" data-mode="dark" id="app">
+  <!-- ================= ICON SPRITE ================= -->
+  <svg width="0" height="0" style="position:absolute" aria-hidden="true" focusable="false">
+    <defs>
+      <linearGradient id="ig-aurora" x1="2" y1="2" x2="22" y2="22" gradientUnits="userSpaceOnUse">
+        <stop offset="0" stop-color="#5B5BF6"/><stop offset="0.5" stop-color="#9B4DF0"/><stop offset="1" stop-color="#E24BF0"/>
+      </linearGradient>
+    </defs>
+    <!-- Filled feature icons (solid Aurora gradient, cut-out detail via evenodd) -->
+    <symbol id="ic-ads" viewBox="0 0 24 24"><g fill="url(#ig-aurora)"><rect x="3" y="13" width="4.4" height="8" rx="1.4"/><rect x="9.8" y="8.5" width="4.4" height="12.5" rx="1.4"/><rect x="16.6" y="4" width="4.4" height="17" rx="1.4"/></g></symbol>
+    <symbol id="ic-briefcase" viewBox="0 0 24 24"><g fill="url(#ig-aurora)"><rect x="8.5" y="4" width="7" height="4.6" rx="1.7"/><path fill-rule="evenodd" d="M5 7h14a2 2 0 0 1 2 2v9a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V9a2 2 0 0 1 2-2Zm5.6 5h2.8v3h-2.8z"/></g></symbol>
+    <symbol id="ic-clock" viewBox="0 0 24 24"><path fill="url(#ig-aurora)" fill-rule="evenodd" d="M12 3a9 9 0 1 0 0 18 9 9 0 0 0 0-18ZM11.2 6.8h1.6v6h-1.6zM12.4 11.6h4v1.6h-4z"/></symbol>
+    <symbol id="ic-globe" viewBox="0 0 24 24"><path fill="url(#ig-aurora)" fill-rule="evenodd" d="M12 3a9 9 0 1 0 0 18 9 9 0 0 0 0-18ZM11.2 4.4h1.6v15.2h-1.6zM4.4 11.2h15.2v1.6H4.4z"/></symbol>
+    <symbol id="ic-verify" viewBox="0 0 24 24"><path fill="url(#ig-aurora)" fill-rule="evenodd" d="M12 2.5l7.5 3.2v5.1c0 4.8-3.2 8-7.5 9.6-4.3-1.6-7.5-4.8-7.5-9.6V5.7L12 2.5Zm-1.1 12.9l4.6-4.6-1.3-1.3-3.3 3.3-1.5-1.5-1.3 1.3 2.8 2.8Z"/></symbol>
+    <symbol id="ic-revenue" viewBox="0 0 24 24"><path fill="url(#ig-aurora)" fill-rule="evenodd" d="M2.5 6h19A1.5 1.5 0 0 1 23 7.5v9A1.5 1.5 0 0 1 21.5 18h-19A1.5 1.5 0 0 1 1 16.5v-9A1.5 1.5 0 0 1 2.5 6Zm9.5 3.2a2.8 2.8 0 1 0 0 5.6 2.8 2.8 0 0 0 0-5.6Z"/></symbol>
+    <symbol id="ic-box" viewBox="0 0 24 24"><path fill="url(#ig-aurora)" fill-rule="evenodd" d="M12 2l9 5v10l-9 5-9-5V7l9-5ZM11.2 12.3h1.6v8.1h-1.6z"/></symbol>
+    <symbol id="ic-hourglass" viewBox="0 0 24 24"><path fill="url(#ig-aurora)" d="M5 3h14a1 1 0 0 1 0 2h-1v2.3L13 12l5 4.7V19h1a1 1 0 0 1 0 2H5a1 1 0 0 1 0-2h1v-2.3L11 12 6 7.3V5H5a1 1 0 0 1 0-2Z"/></symbol>
+    <symbol id="ic-chat" viewBox="0 0 24 24"><path fill="url(#ig-aurora)" fill-rule="evenodd" d="M5 4h14a3 3 0 0 1 3 3v6a3 3 0 0 1-3 3h-6.2L8 19.5V16H5a3 3 0 0 1-3-3V7a3 3 0 0 1 3-3Zm3 5.1a1.1 1.1 0 1 0 0 2.2 1.1 1.1 0 0 0 0-2.2Zm4 0a1.1 1.1 0 1 0 0 2.2 1.1 1.1 0 0 0 0-2.2Zm4 0a1.1 1.1 0 1 0 0 2.2 1.1 1.1 0 0 0 0-2.2Z"/></symbol>
+    <!-- Line UI icons (2px, currentColor) -->
+    <symbol id="ic-shield" viewBox="0 0 24 24"><g fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3l7 3v5c0 4.5-3 7.5-7 9-4-1.5-7-4.5-7-9V6l7-3Z"/><path d="M9 12l2 2 4-4"/></g></symbol>
+    <symbol id="ic-search" viewBox="0 0 24 24"><g fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="7"/><path d="M16.8 16.8L21 21"/></g></symbol>
+    <symbol id="ic-theme" viewBox="0 0 24 24"><circle cx="12" cy="12" r="8" fill="none" stroke="currentColor" stroke-width="2"/><path d="M12 4a8 8 0 0 1 0 16Z" fill="currentColor"/></symbol>
+    <symbol id="ic-cart" viewBox="0 0 24 24"><g fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 4h2l2.2 11.2a1.5 1.5 0 0 0 1.5 1.2h8.1a1.5 1.5 0 0 0 1.5-1.2L21 7H6"/></g><circle cx="9.5" cy="20" r="1.5" fill="currentColor"/><circle cx="18" cy="20" r="1.5" fill="currentColor"/></symbol>
+    <symbol id="ic-copy" viewBox="0 0 24 24"><g fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round"><rect x="9" y="9" width="11" height="11" rx="2.4"/><path d="M5 15H4a1 1 0 0 1-1-1V4a1 1 0 0 1 1-1h10a1 1 0 0 1 1 1v1"/></g></symbol>
+    <symbol id="ic-download" viewBox="0 0 24 24"><g fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3v11"/><path d="M7 10l5 5 5-5"/><path d="M4 20h16"/></g></symbol>
+    <symbol id="ic-check" viewBox="0 0 24 24"><path d="M4.5 12.5l5 5 10-11" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"/></symbol>
+    <symbol id="ic-x" viewBox="0 0 24 24"><path d="M6 6l12 12M18 6L6 18" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"/></symbol>
+    <symbol id="ic-info" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9" fill="none" stroke="currentColor" stroke-width="2"/><path d="M12 11.2v4.6" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"/><circle cx="12" cy="7.8" r="1.15" fill="currentColor"/></symbol>
+    <symbol id="ic-spark" viewBox="0 0 24 24"><path fill="currentColor" d="M12 2l1.8 5.7a3.6 3.6 0 0 0 2.5 2.5L22 12l-5.7 1.8a3.6 3.6 0 0 0-2.5 2.5L12 22l-1.8-5.7a3.6 3.6 0 0 0-2.5-2.5L2 12l5.7-1.8a3.6 3.6 0 0 0 2.5-2.5L12 2Z"/></symbol>
+    <symbol id="ic-arrow-right" viewBox="0 0 24 24"><g fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 12h15"/><path d="M13 6l6 6-6 6"/></g></symbol>
+    <symbol id="ic-plus" viewBox="0 0 24 24"><path d="M12 5v14M5 12h14" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"/></symbol>
+    <symbol id="ic-bolt" viewBox="0 0 24 24"><path fill="currentColor" d="M13 2L4 14h6l-1 8 9-12h-6l1-8Z"/></symbol>
+  </svg>
+
+  <!-- ================= TOP BAR ================= -->
+  <header class="topbar">
+    <div class="wrap row">
+      <div class="logo">
+        <span class="mark"><svg class="svgic"><use href="#ic-shield"></use></svg></span><span>Ad<span class="v">Vault</span></span>
+      </div>
+      <div class="searchbar">
+        <span class="ic"><svg class="svgic"><use href="#ic-search"></use></svg></span>
+        <input type="text" placeholder="Search accounts, geos, categories…" aria-label="Search" />
+      </div>
+      <div class="actions">
+        <div class="balance-chip"><span class="dot"></span><span id="topBal">$1,240.00</span></div>
+        <button class="icon-btn" id="themeBtn" title="Toggle theme" aria-label="Toggle theme"><svg class="svgic"><use href="#ic-theme"></use></svg></button>
+        <button class="icon-btn" title="Language" aria-label="Language">EN</button>
+        <div class="avatar">AV</div>
+      </div>
+    </div>
+  </header>
+
+  <!-- ================= TABS ================= -->
+  <nav class="tabs" aria-label="Prototype screens">
+    <div class="wrap row" role="tablist">
+      <button class="tab" role="tab" aria-selected="true" data-screen="store">Storefront<span class="under"></span></button>
+      <button class="tab" role="tab" aria-selected="false" data-screen="catalog">Catalog<span class="under"></span></button>
+      <button class="tab" role="tab" aria-selected="false" data-screen="product">Product<span class="under"></span></button>
+      <button class="tab" role="tab" aria-selected="false" data-screen="wallet">Wallet<span class="under"></span></button>
+      <button class="tab" role="tab" aria-selected="false" data-screen="dash">Dashboard<span class="under"></span></button>
+      <button class="tab" role="tab" aria-selected="false" data-screen="components">Components<span class="under"></span></button>
+    </div>
+  </nav>
+
+  <!-- ================= STOREFRONT ================= -->
+  <section class="screen active" id="s-store" role="tabpanel">
+    <div class="wrap">
+      <div class="hero">
+        <div class="aurora"></div>
+        <div class="inner">
+          <span class="eyebrow"><svg class="svgic"><use href="#ic-spark"></use></svg> Verified &amp; guaranteed · Instant delivery</span>
+          <h1>Premium ad accounts.<br><span class="grad-text">Unlocked instantly.</span></h1>
+          <p class="lead">Buy verified advertising accounts with crypto. Automated delivery from stock, guaranteed replacement, 24/7 support.</p>
+          <div class="cta-row">
+            <button class="btn btn-primary btn-lg" data-goto="catalog">Browse catalog <svg class="svgic"><use href="#ic-arrow-right"></use></svg></button>
+            <button class="btn btn-secondary btn-lg">Sign up</button>
+          </div>
+          <div class="trust">
+            <div><div class="n">48,200+</div><div class="l">Accounts delivered</div></div>
+            <div><div class="n">99.9%</div><div class="l">Uptime</div></div>
+            <div><div class="n">&lt; 30s</div><div class="l">Avg. delivery</div></div>
+            <div><div class="n">4.9★</div><div class="l">Rating</div></div>
+          </div>
+        </div>
+      </div>
+
+      <h3 class="section-title">Categories</h3>
+      <div class="grid cats">
+        <div class="cat"><div class="g"><svg class="svgic cat-ic"><use href="#ic-ads"></use></svg></div><div class="t">Google Ads</div><div class="c">312 offers</div></div>
+        <div class="cat"><div class="g"><svg class="svgic cat-ic"><use href="#ic-briefcase"></use></svg></div><div class="t">Agency accounts</div><div class="c">86 offers</div></div>
+        <div class="cat"><div class="g"><svg class="svgic cat-ic"><use href="#ic-clock"></use></svg></div><div class="t">Aged &amp; spent</div><div class="c">124 offers</div></div>
+        <div class="cat"><div class="g"><svg class="svgic cat-ic"><use href="#ic-globe"></use></svg></div><div class="t">Proxies</div><div class="c">57 offers</div></div>
+        <div class="cat"><div class="g"><svg class="svgic cat-ic"><use href="#ic-verify"></use></svg></div><div class="t">Verifications</div><div class="c">40 offers</div></div>
+      </div>
+
+      <h3 class="section-title">Popular right now</h3>
+      <div class="grid products" id="popGrid"></div>
+    </div>
+  </section>
+
+  <!-- ================= CATALOG ================= -->
+  <section class="screen" id="s-catalog" role="tabpanel">
+    <div class="wrap catalog">
+      <aside class="filters card">
+        <div class="filter-group">
+          <h5>Category</h5>
+          <label class="check"><input type="checkbox" checked> Google Ads</label>
+          <label class="check"><input type="checkbox"> Agency</label>
+          <label class="check"><input type="checkbox"> Aged / spent</label>
+          <label class="check"><input type="checkbox"> Proxies</label>
+        </div>
+        <div class="filter-group">
+          <h5>Geo</h5>
+          <label class="check"><input type="checkbox" checked> US</label>
+          <label class="check"><input type="checkbox"> EU</label>
+          <label class="check"><input type="checkbox"> Global</label>
+        </div>
+        <div class="filter-group">
+          <h5>Delivery</h5>
+          <label class="check"><input type="checkbox" checked> Auto (instant)</label>
+          <label class="check"><input type="checkbox"> Made to order</label>
+        </div>
+        <div class="filter-group">
+          <h5>In stock only</h5>
+          <label class="check"><input type="checkbox" checked> Show available</label>
+        </div>
+      </aside>
+      <div>
+        <div class="chips">
+          <span class="chip on">Google Ads <span class="x">✕</span></span>
+          <span class="chip on">US <span class="x">✕</span></span>
+          <span class="chip on">Auto <span class="x">✕</span></span>
+          <span class="chip">Reset all</span>
+        </div>
+        <div class="grid products" id="catGrid"></div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ================= PRODUCT ================= -->
+  <section class="screen" id="s-product" role="tabpanel">
+    <div class="wrap pd">
+      <div>
+        <div class="gallery"><span class="glyph"><svg class="svgic gallery-ic"><use href="#ic-ads"></use></svg></span></div>
+        <div style="margin-top:24px">
+          <h3 style="margin-bottom:12px">Google Ads — Verified US account</h3>
+          <p style="color:var(--text-lo)">Aged verified Google Ads account, US billing, no spend history, ready for immediate use. Delivered with full credentials, recovery email and setup guide. Guaranteed replacement within 48h.</p>
+          <div class="tbl-wrap" style="margin-top:20px">
+            <table class="tbl">
+              <tr><td style="color:var(--text-lo)">Geo</td><td>United States</td></tr>
+              <tr><td style="color:var(--text-lo)">Type</td><td>Verified · Aged 3–6 mo</td></tr>
+              <tr><td style="color:var(--text-lo)">Delivery</td><td>Automatic from stock</td></tr>
+              <tr><td style="color:var(--text-lo)">Warranty</td><td>48 hours replacement</td></tr>
+            </table>
+          </div>
+        </div>
+      </div>
+      <div class="buybox card">
+        <span class="badge b-stock"><span class="d"></span> In stock: 37</span>
+        <h3 style="margin:14px 0 4px">US Verified · Aged</h3>
+        <div style="color:var(--text-lo);font-size:14px">Choose configuration</div>
+        <div class="sku-row">
+          <button class="sku on">Standard</button>
+          <button class="sku">Aged 6mo</button>
+          <button class="sku">Agency</button>
+        </div>
+        <div class="price-big" id="pdPrice">$42.00</div>
+        <div style="color:var(--text-dim);font-size:13px;margin-bottom:18px">≈ 42.00 USDT · instant delivery</div>
+        <div style="display:flex;gap:10px">
+          <button class="btn btn-primary" style="flex:1" id="buyNow">Buy now</button>
+          <button class="btn btn-secondary" id="addCart"><svg class="svgic"><use href="#ic-plus"></use></svg> Cart</button>
+        </div>
+        <div class="guarantee">
+          <div><span class="gi"><svg class="svgic"><use href="#ic-check"></use></svg></span> Instant automatic delivery</div>
+          <div><span class="gi"><svg class="svgic"><use href="#ic-check"></use></svg></span> 48h guaranteed replacement</div>
+          <div><span class="gi"><svg class="svgic"><use href="#ic-check"></use></svg></span> Pay with crypto or balance</div>
+          <div><span class="gi"><svg class="svgic"><use href="#ic-check"></use></svg></span> 24/7 priority support</div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ================= WALLET ================= -->
+  <section class="screen" id="s-wallet" role="tabpanel">
+    <div class="wrap">
+      <div class="wallet">
+        <div class="bal-card card">
+          <div class="aurora-mini"></div>
+          <div class="bc-inner">
+            <div style="color:var(--text-lo);font-size:14px;margin-bottom:6px">Your balance</div>
+            <div class="bal-amt" id="walletBal">$1,240.00</div>
+            <div style="color:var(--text-dim);font-size:13px;margin-top:8px">≈ 1,240 USDT available</div>
+            <div style="display:flex;gap:24px;margin-top:24px">
+              <div><div style="font-family:var(--font-display);font-weight:700;font-size:20px;color:var(--text-hi)">18</div><div style="font-size:12px;color:var(--text-lo)">Orders</div></div>
+              <div><div style="font-family:var(--font-display);font-weight:700;font-size:20px;color:var(--text-hi)">$3,180</div><div style="font-size:12px;color:var(--text-lo)">Total spent</div></div>
+            </div>
+          </div>
+        </div>
+        <div class="topup-form card">
+          <h3 style="margin-bottom:18px">Top up balance</h3>
+          <div class="field">
+            <label>Amount (USD)</label>
+            <input type="text" value="100" id="topAmt" inputmode="decimal" />
+          </div>
+          <div class="field">
+            <label>Asset &amp; network</label>
+            <div class="asset-row">
+              <div class="asset on">USDT<br><small style="color:var(--text-dim)">TRC-20</small></div>
+              <div class="asset">BTC</div>
+              <div class="asset">ETH</div>
+            </div>
+          </div>
+          <button class="btn btn-primary" style="width:100%" id="genPay">Generate payment</button>
+          <div id="payArea" style="display:none;margin-top:22px;text-align:center">
+            <div class="qr"></div>
+            <div style="font-size:13px;color:var(--text-lo);margin-bottom:8px">Send exactly <b style="color:var(--text-hi)" id="paySum">100 USDT</b> · expires 14:58</div>
+            <div class="addr">TXk9aVault7d8Qm3Rn2pZfL4sB6hW1cY0uE</div>
+            <button class="btn btn-success btn-sm" style="margin-top:14px" id="simConfirm"><svg class="svgic"><use href="#ic-bolt"></use></svg> Simulate confirmation</button>
+          </div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ================= DASHBOARD ================= -->
+  <section class="screen" id="s-dash" role="tabpanel">
+    <div class="wrap">
+      <div class="grid kpis">
+        <div class="kpi card"><div class="k-l"><svg class="svgic"><use href="#ic-revenue"></use></svg> Revenue (30d)</div><div class="k-v">$28,410</div><div class="k-t up">▲ 12.4% vs prev</div>
+          <div class="spark"><span style="height:40%"></span><span style="height:55%"></span><span style="height:35%"></span><span style="height:70%"></span><span style="height:60%"></span><span style="height:85%"></span><span style="height:100%"></span></div></div>
+        <div class="kpi card"><div class="k-l"><svg class="svgic"><use href="#ic-box"></use></svg> Orders</div><div class="k-v">1,284</div><div class="k-t up">▲ 8.1%</div>
+          <div class="spark"><span style="height:50%"></span><span style="height:45%"></span><span style="height:65%"></span><span style="height:55%"></span><span style="height:75%"></span><span style="height:70%"></span><span style="height:90%"></span></div></div>
+        <div class="kpi card"><div class="k-l"><svg class="svgic"><use href="#ic-hourglass"></use></svg> Awaiting delivery</div><div class="k-v">7</div><div class="k-t down">needs action</div></div>
+        <div class="kpi card"><div class="k-l"><svg class="svgic"><use href="#ic-chat"></use></svg> Open tickets</div><div class="k-v">3</div><div class="k-t">2 pending reply</div></div>
+      </div>
+
+      <h3 class="section-title">Recent orders</h3>
+      <div class="tbl-wrap" style="margin-bottom:32px">
+        <table class="tbl">
+          <thead><tr><th>Order</th><th>Item</th><th>Amount</th><th>Delivery</th><th>Status</th></tr></thead>
+          <tbody>
+            <tr><td class="mono">#AV-10482</td><td>Google Ads · US Verified</td><td>$42.00</td><td>Auto</td><td><span class="badge b-stock"><span class="d"></span>Delivered</span></td></tr>
+            <tr><td class="mono">#AV-10481</td><td>Agency account · EU</td><td>$180.00</td><td>Manual</td><td><span class="badge b-pre">Preparing</span></td></tr>
+            <tr><td class="mono">#AV-10479</td><td>Aged account · Global</td><td>$96.00</td><td>Auto</td><td><span class="badge b-stock"><span class="d"></span>Delivered</span></td></tr>
+            <tr><td class="mono">#AV-10476</td><td>Proxy pack ×5</td><td>$24.00</td><td>Auto</td><td><span class="badge b-beam">Replaced</span></td></tr>
+          </tbody>
+        </table>
+      </div>
+
+      <h3 class="section-title">Your vault — purchased items</h3>
+      <div class="tbl-wrap">
+        <table class="tbl">
+          <thead><tr><th>Item</th><th>Credentials</th><th>Delivered</th><th></th></tr></thead>
+          <tbody>
+            <tr>
+              <td>Google Ads · US Verified</td>
+              <td><div class="secret"><span class="val">•••••••••••••</span></div></td>
+              <td>Jul 8, 2026</td>
+              <td><button class="mini-btn copy-btn"><svg class="svgic"><use href="#ic-copy"></use></svg> Copy</button> <button class="mini-btn"><svg class="svgic"><use href="#ic-download"></use></svg></button></td>
+            </tr>
+            <tr>
+              <td>Aged account · Global</td>
+              <td><div class="secret"><span class="val">•••••••••••••</span></div></td>
+              <td>Jul 5, 2026</td>
+              <td><button class="mini-btn copy-btn"><svg class="svgic"><use href="#ic-copy"></use></svg> Copy</button> <button class="mini-btn"><svg class="svgic"><use href="#ic-download"></use></svg></button></td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+  </section>
+
+  <!-- ================= COMPONENTS ================= -->
+  <section class="screen" id="s-components" role="tabpanel">
+    <div class="wrap">
+      <h3 class="section-title">Brand palette</h3>
+      <div class="swatches" style="margin-bottom:32px">
+        <div class="sw" style="background:var(--grad-aurora)">Aurora</div>
+        <div class="sw" style="background:#5B5BF6">Volt</div>
+        <div class="sw" style="background:#E24BF0">Pulse</div>
+        <div class="sw" style="background:#22D3EE;color:#04121a;text-shadow:none">Beam</div>
+        <div class="sw" style="background:#2BD9A6;color:#04211a;text-shadow:none">Mint</div>
+        <div class="sw" style="background:#F5B740;color:#211a04;text-shadow:none">Amber</div>
+        <div class="sw" style="background:#FF4D6D">Coral</div>
+        <div class="sw" style="background:#12152E">Surface</div>
+      </div>
+
+      <div class="demo-grid">
+        <div class="demo card">
+          <h4>Buttons</h4>
+          <div class="row-wrap" style="margin-bottom:12px">
+            <button class="btn btn-primary btn-sm">Primary</button>
+            <button class="btn btn-secondary btn-sm">Secondary</button>
+            <button class="btn btn-ghost btn-sm">Ghost</button>
+          </div>
+          <div class="row-wrap">
+            <button class="btn btn-success btn-sm">Success</button>
+            <button class="btn btn-danger btn-sm">Danger</button>
+            <button class="btn btn-secondary btn-sm" disabled>Disabled</button>
+            <button class="btn btn-primary btn-sm" id="loadBtn"><span class="spin"></span>Loading</button>
+          </div>
+        </div>
+
+        <div class="demo card">
+          <h4>Badges &amp; status</h4>
+          <div class="row-wrap">
+            <span class="badge b-stock"><span class="d"></span>In stock</span>
+            <span class="badge b-pre">Preparing</span>
+            <span class="badge b-out">Out of stock</span>
+            <span class="badge b-beam">Replaced</span>
+            <span class="badge b-volt">New</span>
+          </div>
+        </div>
+
+        <div class="demo card">
+          <h4>Inputs</h4>
+          <div class="field"><label>Email</label><input type="email" placeholder="you@example.com"></div>
+          <div class="field" style="margin-bottom:0"><label style="color:var(--danger)">Password (error)</label>
+            <input type="password" value="123" style="border-color:var(--danger)">
+            <div style="color:var(--danger);font-size:12.5px;margin-top:6px">Password is too short.</div></div>
+        </div>
+
+        <div class="demo card">
+          <h4>Toggles &amp; chips</h4>
+          <div class="row-wrap" style="margin-bottom:16px">
+            <div class="toggle on" data-toggle></div>
+            <div class="toggle" data-toggle></div>
+            <span style="color:var(--text-lo);font-size:13px">Click to switch</span>
+          </div>
+          <div class="row-wrap">
+            <span class="chip on">Google Ads ✕</span>
+            <span class="chip">EU</span>
+            <span class="chip">Aged</span>
+          </div>
+        </div>
+
+        <div class="demo card">
+          <h4>Feedback</h4>
+          <div class="row-wrap">
+            <button class="btn btn-secondary btn-sm" data-toast="success">Success toast</button>
+            <button class="btn btn-secondary btn-sm" data-toast="error">Error toast</button>
+            <button class="btn btn-secondary btn-sm" data-toast="info">Info toast</button>
+          </div>
+          <div style="margin-top:14px"><button class="btn btn-primary btn-sm" id="flashBtn"><svg class="svgic"><use href="#ic-spark"></use></svg> Trigger success flash</button></div>
+        </div>
+
+        <div class="demo card">
+          <h4>Motion tokens</h4>
+          <div style="font-size:13.5px;color:var(--text-lo);line-height:1.9">
+            <div>fast · <span class="mono">140ms</span></div>
+            <div>base · <span class="mono">220ms</span></div>
+            <div>slow · <span class="mono">360ms</span></div>
+            <div>spring · <span class="mono">cubic-bezier(.34,1.56,.64,1)</span></div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <div class="toasts" id="toasts"></div>
+  <div class="flash" id="flash"></div>
+</div>
+
+<script>
+(function () {
+  var app = document.getElementById('app');
+  var reduce = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+
+  /* ---------- Product data ---------- */
+  var glyphs = ['ic-ads','ic-briefcase','ic-clock','ic-ads','ic-globe','ic-clock','ic-briefcase','ic-verify'];
+  var names = ['Google Ads · US Verified','Agency account · EU','Aged account · Global',
+    'Google Ads · EU Verified','Proxy pack ×5','Aged &amp; spent · US','Agency · Global','Verification kit'];
+  var attrs = ['US · Aged · Auto','EU · Agency · Manual','Global · Aged · Auto','EU · Verified · Auto',
+    'Global · Proxy · Auto','US · Spent · Auto','Global · Agency · Manual','Any · Verify · Manual'];
+  var prices = [42,180,96,54,24,120,240,18];
+  var stock = [37,4,12,21,88,9,0,15];
+
+  function pcard(i) {
+    var out = stock[i] === 0;
+    var badge = out ? '<span class="badge b-out">Out of stock</span>'
+      : (i % 3 === 1 ? '<span class="badge b-pre">Made to order</span>'
+      : '<span class="badge b-stock"><span class="d"></span>In stock: ' + stock[i] + '</span>');
+    return '<div class="pcard" data-open="'+i+'">' +
+      '<div class="thumb"><span class="glyph"><svg class="svgic glyph-ic"><use href="#'+glyphs[i]+'"></use></svg></span></div>' +
+      '<div style="margin-bottom:8px">'+badge+'</div>' +
+      '<h4>'+names[i]+'</h4>' +
+      '<div class="attrs">'+attrs[i]+'</div>' +
+      '<div class="foot"><span class="price">$'+prices[i].toFixed(2)+'</span>' +
+      '<button class="btn btn-primary btn-sm buy-mini" '+(out?'disabled':'')+'>Buy</button></div>' +
+      '</div>';
+  }
+  var popHtml = '', catHtml = '';
+  for (var i = 0; i < 6; i++) popHtml += pcard(i);
+  for (var j = 0; j < 8; j++) catHtml += pcard(j);
+  document.getElementById('popGrid').innerHTML = popHtml;
+  document.getElementById('catGrid').innerHTML = catHtml;
+
+  /* ---------- Tabs ---------- */
+  var tabs = Array.prototype.slice.call(document.querySelectorAll('.tab'));
+  function show(name) {
+    tabs.forEach(function (t) { t.setAttribute('aria-selected', t.dataset.screen === name ? 'true' : 'false'); });
+    ['store','catalog','product','wallet','dash','components'].forEach(function (n) {
+      document.getElementById('s-' + n).classList.toggle('active', n === name);
+    });
+    window.scrollTo({ top: 0, behavior: reduce ? 'auto' : 'smooth' });
+  }
+  tabs.forEach(function (t) { t.addEventListener('click', function () { show(t.dataset.screen); }); });
+  document.querySelectorAll('[data-goto]').forEach(function (b) {
+    b.addEventListener('click', function () { show(b.dataset.goto); });
+  });
+  document.body.addEventListener('click', function (e) {
+    var open = e.target.closest('[data-open]');
+    if (open && !e.target.closest('.buy-mini')) show('product');
+  });
+
+  /* ---------- Theme toggle ---------- */
+  document.getElementById('themeBtn').addEventListener('click', function () {
+    app.dataset.mode = app.dataset.mode === 'dark' ? 'light' : 'dark';
+    toast('info', 'Switched to ' + app.dataset.mode + ' theme');
+  });
+
+  /* ---------- Toasts ---------- */
+  function iconSvg(id) { return '<svg class="svgic"><use href="#' + id + '"></use></svg>'; }
+  var icons = { success: 'ic-check', error: 'ic-x', info: 'ic-info' };
+  function toast(type, msg) {
+    var box = document.getElementById('toasts');
+    var el = document.createElement('div');
+    el.className = 'toast ' + type;
+    el.innerHTML = '<span class="ico">' + iconSvg(icons[type]) + '</span><span>' + msg + '</span><span class="bar"></span>';
+    box.appendChild(el);
+    setTimeout(function () { el.classList.add('leaving'); setTimeout(function () { el.remove(); }, 260); }, 4000);
+  }
+  document.querySelectorAll('[data-toast]').forEach(function (b) {
+    b.addEventListener('click', function () {
+      toast(b.dataset.toast, b.dataset.toast === 'success' ? 'Payment successful.'
+        : b.dataset.toast === 'error' ? 'Not enough balance.' : 'Heads up — new update available.');
+    });
+  });
+
+  /* ---------- Flash + particles ---------- */
+  function flash(aurora) {
+    var f = document.getElementById('flash');
+    f.className = 'flash' + (aurora ? ' aurora-flash' : '');
+    void f.offsetWidth; f.classList.add('go');
+    if (!reduce) confetti();
+    setTimeout(function () { f.classList.remove('go'); }, 750);
+  }
+  function confetti() {
+    var colors = ['#5B5BF6', '#E24BF0', '#22D3EE', '#2BD9A6', '#F5B740'];
+    for (var i = 0; i < 34; i++) {
+      var p = document.createElement('div');
+      p.className = 'particle';
+      p.style.background = colors[i % colors.length];
+      p.style.left = (35 + Math.random() * 30) + 'vw';
+      p.style.top = '30vh';
+      p.style.opacity = '1';
+      document.body.appendChild(p);
+      (function (p) {
+        var dx = (Math.random() - 0.5) * 60;
+        p.animate([
+          { transform: 'translate(0,0) rotate(0deg)', opacity: 1 },
+          { transform: 'translate(' + dx + 'vw,70vh) rotate(' + (Math.random()*720) + 'deg)', opacity: 0 }
+        ], { duration: 1100 + Math.random() * 700, easing: 'cubic-bezier(.2,.6,.3,1)' });
+      })(p);
+      setTimeout((function (p) { return function () { p.remove(); }; })(p), 1900);
+    }
+  }
+  document.getElementById('flashBtn').addEventListener('click', function () { flash(false); toast('success', 'Your item is ready.'); });
+
+  /* ---------- Count-up ---------- */
+  function countUp(el, from, to, prefix) {
+    if (reduce) { el.textContent = prefix + to.toLocaleString('en-US', {minimumFractionDigits:2}); return; }
+    var start = performance.now(), dur = 900;
+    function step(now) {
+      var t = Math.min((now - start) / dur, 1), e = 1 - Math.pow(1 - t, 3);
+      var v = from + (to - from) * e;
+      el.textContent = prefix + v.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+      if (t < 1) requestAnimationFrame(step);
+    }
+    requestAnimationFrame(step);
+  }
+
+  /* ---------- Buy actions ---------- */
+  function doBuy(btn) {
+    var orig = btn.innerHTML;
+    btn.innerHTML = '<span class="spin"></span>'; btn.disabled = true;
+    setTimeout(function () {
+      btn.disabled = false; btn.innerHTML = orig;
+      flash(false);
+      toast('success', 'Payment successful. Item delivered.');
+      var bal = document.getElementById('topBal');
+      countUp(bal, 1240, 1198, '$');
+      var wb = document.getElementById('walletBal'); if (wb) countUp(wb, 1240, 1198, '$');
+    }, 850);
+  }
+  document.getElementById('buyNow').addEventListener('click', function () { doBuy(this); });
+  document.querySelectorAll('.buy-mini').forEach(function (b) {
+    b.addEventListener('click', function (e) { e.stopPropagation(); doBuy(b); });
+  });
+  document.getElementById('addCart').addEventListener('click', function () { toast('info', 'Added to cart.'); });
+
+  /* ---------- Product SKU ---------- */
+  var skuPrices = { 'Standard': 42, 'Aged 6mo': 68, 'Agency': 150 };
+  document.querySelectorAll('.sku').forEach(function (s) {
+    s.addEventListener('click', function () {
+      document.querySelectorAll('.sku').forEach(function (x) { x.classList.remove('on'); });
+      s.classList.add('on');
+      var p = document.getElementById('pdPrice');
+      var cur = parseFloat(p.textContent.replace('$', '')) || 42;
+      countUp(p, cur, skuPrices[s.textContent] || 42, '$');
+    });
+  });
+
+  /* ---------- Wallet top-up ---------- */
+  document.getElementById('genPay').addEventListener('click', function () {
+    var amt = document.getElementById('topAmt').value || '100';
+    document.getElementById('paySum').textContent = amt + ' USDT';
+    document.getElementById('payArea').style.display = 'block';
+    toast('info', 'Payment address generated.');
+  });
+  document.getElementById('simConfirm').addEventListener('click', function () {
+    flash(true);
+    toast('success', 'Balance topped up.');
+    var amt = parseFloat(document.getElementById('topAmt').value) || 100;
+    countUp(document.getElementById('walletBal'), 1240, 1240 + amt, '$');
+    countUp(document.getElementById('topBal'), 1240, 1240 + amt, '$');
+  });
+
+  /* ---------- Copy secrets ---------- */
+  document.querySelectorAll('.copy-btn').forEach(function (b) {
+    b.addEventListener('click', function () {
+      var val = b.closest('tr').querySelector('.val');
+      val.textContent = 'user_9f3@mail · P@ss…';
+      b.innerHTML = iconSvg('ic-check') + ' Copied'; b.style.color = 'var(--success)'; b.style.borderColor = 'var(--success)';
+      flash(false);
+      toast('success', 'Copied to clipboard.');
+      setTimeout(function () { b.innerHTML = iconSvg('ic-copy') + ' Copy'; b.style.color = ''; b.style.borderColor = ''; val.textContent = '•••••••••••••'; }, 2200);
+    });
+  });
+
+  /* ---------- Toggles ---------- */
+  document.querySelectorAll('[data-toggle]').forEach(function (t) {
+    t.addEventListener('click', function () { t.classList.toggle('on'); });
+  });
+
+  /* ---------- Error demo (shake) ---------- */
+  document.querySelector('[data-toast="error"]').addEventListener('click', function () {
+    var card = this.closest('.demo');
+    if (!reduce) { card.classList.add('shake'); setTimeout(function () { card.classList.remove('shake'); }, 350); }
+  });
+})();
+</script>
