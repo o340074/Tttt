@@ -45,6 +45,17 @@ prototype/index.html          ← живой прототип (Storefront/Catalo
 prototype/screens/*.html      ← checkout, auth, admin, account (полные экраны)
 ```
 
+### ⚠️ Legacy-файлы (не путать)
+`docs/DESIGN_SYSTEM.md`, `docs/DEVELOPMENT_PLAN.md`, `docs/FEATURES_AND_HIGHLIGHTS.md` —
+это ранний черновик из другой сессии, оставлен для истории. **Актуальные источники
+правды — наши доки `docs/00–16`, `docs/design/*`, `docs/backend/*`.** При расхождении
+верь нашим, а не legacy-файлам.
+
+### Ветки
+Проект консолидирован: и default-ветка репозитория (`claude/online-store-7txsf2`), и
+`claude/digital-marketplace-planning-uegdn8` указывают на один и тот же коммит со всем
+проектом. Новая сессия по умолчанию берёт default — там всё есть.
+
 ## Ключевые решения (зафиксированы)
 
 - **Стек:** монорепо TypeScript. Фронт React+Vite+Tailwind, бэк NestJS,
