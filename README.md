@@ -53,6 +53,17 @@
 Кликабельные экраны: **Storefront · Catalog · Product · Wallet · Dashboard ·
 Components**. Открывается в браузере как есть; опубликован как живой Artifact на claude.ai.
 
+Дополнительно — отдельные полноэкранные прототипы в
+[`prototype/screens/`](./prototype/screens): **checkout · auth · admin · account**
+(корзина/оплата, аутентификация/2FA, админ-панель, личный кабинет/vault). Подробности —
+в [prototype/README.md](./prototype/README.md).
+
+### ⚙️ Бэкенд-артефакты (готовы к реализации)
+
+Папка [`docs/backend/`](./docs/backend) — конкретика для старта разработки:
+- [`prisma-schema.md`](./docs/backend/prisma-schema.md) — полная Prisma-схема БД (все модели, enum-ы, связи, индексы, decimal-деньги, ledger).
+- [`openapi.md`](./docs/backend/openapi.md) — детальный контракт API в формате OpenAPI 3.1.
+
 ---
 
 ## 🎯 Ключевые решения (зафиксированы на этапе планирования)

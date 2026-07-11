@@ -26,6 +26,18 @@
   ripple/press, shake при ошибке, копирование с micro-flash.
 - Уважает `prefers-reduced-motion` (анимации отключаются).
 
+## Полноэкранные прототипы (`screens/`)
+
+Отдельные самодостаточные HTML-экраны, построенные в том же стиле (токены и SVG-спрайт
+переиспользованы 1:1 из `index.html`). Открываются в браузере как есть.
+
+| Файл | Экран | Что демонстрирует |
+|------|-------|-------------------|
+| [`screens/checkout.html`](./screens/checkout.html) | Корзина + оформление | Позиции с count-up итога, промокод (success/error+shake), степпер Review→Payment→Done, оплата Balance/Crypto, «хватает/не хватает баланса», Pay → flash+confetti+toast, пустая корзина |
+| [`screens/auth.html`](./screens/auth.html) | Аутентификация | Login/Register/Forgot/Reset/Verify/2FA, плавающие лейблы, индикатор силы пароля, инлайн-валидация+shake, 6-значный код 2FA, демо ошибок (занят email/неверный вход/rate-limit) |
+| [`screens/admin.html`](./screens/admin.html) | Админ-панель | Сайдбар-навигация, KPI+спарклайны, таблица товаров (CRUD+модалки), импорт стока (drag-n-drop+отчёт), очередь ручных выдач (SLA, модалка выдачи), заказы (refund/cancel), пользователи (блокировка, правка баланса) |
+| [`screens/account.html`](./screens/account.html) | Личный кабинет | Dashboard, Orders+детали (статусы выдачи, замена), Vault (secret-поля: show/copy/download+micro-flash), Wallet (транзакции), Tickets (чат), Settings (язык/тема/2FA) |
+
 ## Назначение
 Прототип — визуальный ориентир для реализации. Он соответствует
 [дизайн-документации](../docs/design) (токены, компоненты, анимации, экраны) и
