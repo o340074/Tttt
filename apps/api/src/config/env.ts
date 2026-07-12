@@ -15,6 +15,10 @@ export const envSchema = z.object({
   JWT_ACCESS_TTL: z.coerce.number().int().positive().default(900),
   /** Refresh-token TTL, seconds (30 days). */
   JWT_REFRESH_TTL: z.coerce.number().int().positive().default(2_592_000),
+  /** HMAC-SHA256 secret the payment provider signs webhooks with (E3, sandbox). */
+  PAYMENT_WEBHOOK_SECRET: z.string().min(16).default('advault-dev-webhook-secret-change-me'),
+  /** Payment window for a pending top-up, minutes. */
+  TOPUP_TTL_MINUTES: z.coerce.number().int().positive().default(15),
 });
 
 export type Env = z.infer<typeof envSchema>;
@@ -30,9 +34,10 @@ export function validateEnv(config: Record<string, unknown>): Env {
   if (
     parsed.data.NODE_ENV === 'production' &&
     (parsed.data.JWT_ACCESS_SECRET.includes('change-me') ||
-      parsed.data.JWT_REFRESH_SECRET.includes('change-me'))
+      parsed.data.JWT_REFRESH_SECRET.includes('change-me') ||
+      parsed.data.PAYMENT_WEBHOOK_SECRET.includes('change-me'))
   ) {
-    throw new Error('JWT secrets must be overridden in production');
+    throw new Error('JWT/payment secrets must be overridden in production');
   }
   return parsed.data;
 }

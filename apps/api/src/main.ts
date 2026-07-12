@@ -8,7 +8,8 @@ import { API_VERSION } from './health/health.service';
 import type { Env } from './config/env';
 
 async function bootstrap(): Promise<void> {
-  const app = await NestFactory.create(AppModule);
+  // rawBody keeps the exact webhook bytes available for signature checks.
+  const app = await NestFactory.create(AppModule, { rawBody: true });
   configureApp(app);
   const config = app.get(ConfigService<Env, true>);
 

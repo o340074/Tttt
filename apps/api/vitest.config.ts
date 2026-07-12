@@ -12,6 +12,7 @@ export default defineConfig({
       NODE_ENV: 'test',
       DATABASE_URL: 'postgresql://test:test@localhost:5432/test',
       REDIS_URL: 'redis://localhost:6379',
+      PAYMENT_WEBHOOK_SECRET: 'test-webhook-secret-0123456789ab',
     },
   },
 });

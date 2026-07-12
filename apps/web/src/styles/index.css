@@ -284,6 +284,33 @@
   .fade-up {
     animation: fade-up 340ms var(--ease-standard) both;
   }
+
+  /* ---- Wallet (prototype/index.html → #s-wallet) ---- */
+
+  /* Blurred aurora blobs inside the balance card. */
+  .aurora-mini {
+    position: absolute;
+    inset: -50%;
+    z-index: 0;
+    filter: blur(60px);
+    opacity: 0.4;
+    pointer-events: none;
+    background:
+      radial-gradient(closest-side, rgba(91, 91, 246, 0.9), transparent) 20% 20% / 60% 60% no-repeat,
+      radial-gradient(closest-side, rgba(226, 75, 240, 0.7), transparent) 80% 60% / 55% 55%
+        no-repeat;
+    animation: aurora 16s ease-in-out infinite;
+  }
+
+  /* Full-screen success flash when a credit lands (docs/design/02). */
+  .flash-success {
+    position: fixed;
+    inset: 0;
+    z-index: 1500;
+    pointer-events: none;
+    background: radial-gradient(circle at center, rgba(43, 217, 166, 0.28), transparent 60%);
+    animation: flash 700ms ease both;
+  }
 }
 
 @keyframes aurora {
@@ -310,6 +337,18 @@
   }
 }
 
+@keyframes flash {
+  0% {
+    opacity: 0;
+  }
+  18% {
+    opacity: 1;
+  }
+  100% {
+    opacity: 0;
+  }
+}
+
 @keyframes shake {
   0%,
   100% {
@@ -325,6 +364,8 @@
 
 @media (prefers-reduced-motion: reduce) {
   .aurora-field,
+  .aurora-mini,
+  .flash-success,
   .fade-up,
   .shake {
     animation: none;

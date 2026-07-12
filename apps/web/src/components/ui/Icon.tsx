@@ -22,7 +22,9 @@ export type IconName =
   | 'briefcase'
   | 'clock'
   | 'verify'
-  | 'box';
+  | 'box'
+  | 'wallet'
+  | 'copy';
 
 interface IconProps {
   name: IconName;

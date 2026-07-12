@@ -7,6 +7,7 @@ import { CatalogPage } from './pages/CatalogPage';
 import { HomePage } from './pages/HomePage';
 import { NotFoundPage } from './pages/NotFoundPage';
 import { ProductPage } from './pages/ProductPage';
+import { WalletPage } from './pages/WalletPage';
 import { AuthPage } from './pages/auth/AuthPage';
 import { ForgotPasswordPage } from './pages/auth/ForgotPasswordPage';
 import { ResetPasswordPage } from './pages/auth/ResetPasswordPage';
@@ -21,6 +22,7 @@ export function App() {
         <Route path="product/:slug" element={<ProductPage />} />
         <Route element={<RequireAuth />}>
           <Route path="account" element={<AccountPage />} />
+          <Route path="wallet" element={<WalletPage />} />
         </Route>
         <Route path="*" element={<NotFoundPage />} />
       </Route>

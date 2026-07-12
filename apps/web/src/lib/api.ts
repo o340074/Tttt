@@ -73,10 +73,12 @@ export interface ApiFetchOptions {
   body?: unknown;
   /** Skip bearer + auto-refresh (public endpoints). */
   anonymous?: boolean;
+  /** Extra request headers (e.g. Idempotency-Key). */
+  headers?: Record<string, string>;
 }
 
 export async function apiFetch<T>(path: string, options: ApiFetchOptions = {}): Promise<T> {
-  const { method = 'GET', body, anonymous = false } = options;
+  const { method = 'GET', body, anonymous = false, headers } = options;
 
   const doFetch = (): Promise<Response> =>
     fetch(`/api/v1${path}`, {
@@ -86,6 +88,7 @@ export async function apiFetch<T>(path: string, options: ApiFetchOptions = {}): 
         Accept: 'application/json',
         ...(body !== undefined ? { 'Content-Type': 'application/json' } : {}),
         ...(!anonymous && accessToken ? { Authorization: `Bearer ${accessToken}` } : {}),
+        ...headers,
       },
       ...(body !== undefined ? { body: JSON.stringify(body) } : {}),
     });

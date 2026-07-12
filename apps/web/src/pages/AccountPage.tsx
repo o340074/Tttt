@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { useTranslation } from 'react-i18next';
-import { useNavigate } from 'react-router-dom';
+import { Link, useNavigate } from 'react-router-dom';
 import { Banner } from '../components/ui/Banner';
 import { Button } from '../components/ui/Button';
 import { Icon } from '../components/ui/Icon';
@@ -126,8 +126,14 @@ export function AccountPage() {
             <dt className="mb-1 text-xs font-semibold uppercase tracking-[0.08em] text-text-dim">
               {t('account.balance')}
             </dt>
-            <dd className="font-mono text-[15px] font-medium text-text-hi">
+            <dd className="flex items-center gap-3 font-mono text-[15px] font-medium text-text-hi">
               ${user.balance} {user.currency}
+              <Link
+                to="/wallet"
+                className="inline-flex items-center gap-1 font-sans text-[12.5px] font-semibold text-volt-400 hover:underline"
+              >
+                <Icon name="wallet" className="text-[12px]" /> {t('account.topUp')}
+              </Link>
             </dd>
           </div>
           <div>

@@ -1,7 +1,8 @@
 // AdVault — Prisma schema.
 // Contract source of truth: docs/backend/prisma-schema.md.
 // Models arrive with their epics; E1 brings User (auth & accounts),
-// E2 brings the catalog (Category, Product, ProductVariant + translations).
+// E2 brings the catalog (Category, Product, ProductVariant + translations),
+// E3 brings the wallet (LedgerEntry, TopUp, IdempotencyKey).
 
 generator client {
   provider = "prisma-client-js"
@@ -39,6 +40,26 @@ enum DeliveryType {
 enum FulfillmentType {
   READY_STOCK
   MADE_TO_ORDER
+}
+
+enum LedgerDirection {
+  credit
+  debit
+}
+
+enum LedgerRefType {
+  topup
+  order
+  refund
+  adjustment
+  replacement
+}
+
+enum TopUpStatus {
+  pending
+  paid
+  expired
+  failed
 }
 
 model Category {
@@ -146,7 +167,68 @@ model User {
   createdAt       DateTime   @default(now())
   updatedAt       DateTime   @updatedAt
 
+  ledgerEntries LedgerEntry[]
+  topUps        TopUp[]
+
   @@index([status])
   @@index([role])
   @@map("users")
+}
+
+// ============================================================
+// Wallet / Ledger (двойная запись) — E3
+// ============================================================
+
+model LedgerEntry {
+  id           String          @id @default(uuid()) @db.Uuid
+  userId       String          @db.Uuid
+  direction    LedgerDirection
+  amount       Decimal         @db.Decimal(18, 2) // всегда положительное
+  balanceAfter Decimal         @db.Decimal(18, 2) // снимок баланса после операции
+  refType      LedgerRefType
+  refId        String          @db.Uuid // ссылка на источник (topup/order/...)
+  createdAt    DateTime        @default(now())
+
+  user User @relation(fields: [userId], references: [id], onDelete: Restrict)
+
+  @@unique([refType, refId, direction]) // защита от двойного проведения одного источника
+  @@index([userId, createdAt])
+  @@map("ledger_entries")
+}
+
+model TopUp {
+  id         String      @id @default(uuid()) @db.Uuid
+  userId     String      @db.Uuid
+  provider   String // напр. sandbox, cryptomus
+  externalId String?     @unique // id платежа у эквайринга (идемпотентность); null пока не получен
+  amount     Decimal     @db.Decimal(18, 2)
+  asset      String // USDT-TRC20 / USDT-ERC20 / BTC / ETH
+  fee        Decimal?    @db.Decimal(18, 2) // комиссия эквайринга для сходимости
+  status     TopUpStatus @default(pending)
+  paymentUrl String?
+  address    String?
+  expiresAt  DateTime?
+  createdAt  DateTime    @default(now())
+  paidAt     DateTime?
+
+  user User @relation(fields: [userId], references: [id], onDelete: Restrict)
+
+  @@index([userId, createdAt])
+  @@index([status, expiresAt]) // sweep закрытия просроченных pending
+  @@map("topups")
+}
+
+model IdempotencyKey {
+  id           String   @id @default(uuid()) @db.Uuid
+  key          String // значение заголовка Idempotency-Key
+  userId       String?  @db.Uuid
+  endpoint     String // напр. POST /wallet/topups
+  requestHash  String // хэш тела запроса + userId — защита от коллизий ключа
+  responseCode Int?
+  responseBody Json?    @db.JsonB
+  createdAt    DateTime @default(now())
+
+  @@unique([key, endpoint])
+  @@index([createdAt])
+  @@map("idempotency_keys")
 }

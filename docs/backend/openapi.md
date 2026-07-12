@@ -431,16 +431,20 @@ components:
         currency: { $ref: '#/components/schemas/Currency' }
         recent:
           type: array
+          description: Последние 5 движений ledger (полная история — /wallet/transactions).
           items: { $ref: '#/components/schemas/LedgerEntry' }
 
     CreateTopUpRequest:
       type: object
       required: [amount, asset]
       properties:
-        amount: { $ref: '#/components/schemas/Money' }
+        amount:
+          allOf: [{ $ref: '#/components/schemas/Money' }]
+          description: Сумма зачисления в валюте учёта (USD). Мин. 1.00, макс. 100000.00.
         asset:
           type: string
-          description: Актив и сеть, напр. USDT-TRC20, BTC, ETH.
+          description: Актив и сеть, которыми платит пользователь.
+          enum: [USDT-TRC20, USDT-ERC20, BTC, ETH]
           example: "USDT-TRC20"
 
     TopUp:
@@ -1034,8 +1038,11 @@ paths:
       tags: [Webhooks]
       summary: Приём вебхука эквайринга (сервер→сервер)
       description: >
-        Не требует пользовательского JWT. Проверка подписи провайдера (заголовок).
+        Не требует пользовательского JWT. Проверка подписи провайдера (заголовок;
+        для sandbox-провайдера — X-Signature = HMAC-SHA256(hex) от raw body).
         Идемпотентность по externalId: если TopUp уже paid — выход без повторного зачисления.
+        Неизвестный externalId — 200 с игнорированием (событие не наше). Оплата, пришедшая
+        после expiresAt (TopUp уже expired), всё равно зачисляется — средства получены.
         В транзакции: TopUp=paid + LedgerEntry(credit) + User.balance += amount.
         200 отдаётся только после успешной записи, иначе провайдер повторит.
       security: []

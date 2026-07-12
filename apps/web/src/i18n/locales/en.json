@@ -6,6 +6,7 @@
   "nav": {
     "home": "Home",
     "catalog": "Catalog",
+    "wallet": "Wallet",
     "language": "Language",
     "account": "Account",
     "signIn": "Sign in"
@@ -87,6 +88,7 @@
       "admin": "Administrator"
     },
     "balance": "Balance",
+    "topUp": "Top up",
     "memberSince": "Member since",
     "verified": "Verified",
     "verifyBanner": "Please confirm your email — we sent you a verification link.",
@@ -102,7 +104,53 @@
     "RATE_LIMITED": "Too many attempts. Please wait a minute and try again.",
     "INVALID_CREDENTIALS": "Invalid email or password.",
     "EMAIL_ALREADY_USED": "This email is already registered.",
-    "INVALID_TOKEN": "This link is invalid or has expired."
+    "INVALID_TOKEN": "This link is invalid or has expired.",
+    "IDEMPOTENCY_CONFLICT": "This request was already submitted with different data. Please try again.",
+    "NOT_FOUND": "Not found."
+  },
+  "wallet": {
+    "title": "Wallet",
+    "balanceTitle": "Your balance",
+    "balanceHint": "≈ {{amount}} USDT available",
+    "topup": {
+      "title": "Top up balance",
+      "amount": "Amount (USD)",
+      "amountError": "Enter an amount between {{min}} and {{max}} USD.",
+      "asset": "Asset & network",
+      "submit": "Generate payment",
+      "qrAlt": "QR code with the deposit address",
+      "sendExactly": "Send exactly",
+      "copy": "Copy address",
+      "copied": "Copied!",
+      "expiresIn": "expires in",
+      "waiting": "Waiting for payment confirmation…",
+      "cancel": "Start over",
+      "paidTitle": "Balance topped up",
+      "paidText": "+${{amount}} has been credited to your balance.",
+      "again": "Top up again",
+      "expired": "The payment window has expired. If you already sent funds, the balance will update once the network confirms them.",
+      "failed": "The payment failed. No funds were credited — please try again.",
+      "newPayment": "Create a new payment"
+    },
+    "refType": {
+      "topup": "Top-up",
+      "order": "Order",
+      "refund": "Refund",
+      "adjustment": "Adjustment",
+      "replacement": "Replacement"
+    },
+    "history": {
+      "title": "Transaction history",
+      "empty": "No transactions yet — top up your balance to get started.",
+      "date": "Date",
+      "type": "Type",
+      "amount": "Amount",
+      "balanceAfter": "Balance after",
+      "pagination": "Transaction pages",
+      "page": "Page {{page}} of {{total}}",
+      "prev": "Previous",
+      "next": "Next"
+    }
   },
   "home": {
     "heroEyebrow": "Verified & guaranteed · Instant delivery",

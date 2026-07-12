@@ -33,8 +33,16 @@
   `GET /products` (фильтры/поиск/сортировка/пагинация), `GET /products/:slug`;
   локализация EN/RU по `?locale`/Accept-Language; витрина, каталог с фильтрами,
   карточка товара (вариант, тип выдачи, ETA, комплект); идемпотентный сидер
-  `prisma/seed.ts`. Актуальная база кода — ветка `claude/advault-e2-catalog-m0omaf`.
-- 🔜 **Следующий шаг — эпик E3 (кошелёк и пополнение криптой)**. Далее строго по
+  `prisma/seed.ts`.
+- ✅ **E3 — кошелёк и пополнение криптой готовы**: Prisma LedgerEntry/TopUp/
+  IdempotencyKey, ledger двойной записи (credit + balanceAfter, `User.balance` — кэш),
+  `GET /wallet`, `GET /wallet/transactions`, `POST /wallet/topups` (Idempotency-Key),
+  `GET /wallet/topups/:id`, вебхук `POST /webhooks/payments/:provider` (HMAC по raw
+  body, идемпотентный по externalId, зачисление в одной транзакции), эквайринг за
+  интерфейсом `PaymentProvider` (sandbox-реализация), expiry просроченных pending;
+  экран `/wallet` (QR/адрес/таймер, поллинг, flash, история). Актуальная база кода —
+  ветка `claude/advault-e3-wallet-topups-nkw7y8`.
+- 🔜 **Следующий шаг — эпик E4 (корзина, заказы, оплата с баланса)**. Далее строго по
   порядку эпиков/вех из `docs/16-development-plan.md`.
 - Живой статус и «что дальше» — всегда в `docs/SESSION-LOG.md`.
 

@@ -235,6 +235,19 @@ export function IconSprite() {
           d="M12 2l9 5v10l-9 5-9-5V7l9-5ZM11.2 12.3h1.6v8.1h-1.6z"
         />
       </symbol>
+      <symbol id="ic-wallet" viewBox="0 0 24 24">
+        <g fill="none" stroke="currentColor" strokeWidth="2" strokeLinejoin="round">
+          <path d="M4 7.5A2.5 2.5 0 0 1 6.5 5H18a2 2 0 0 1 2 2v1" />
+          <rect x="3.5" y="7.5" width="17" height="12" rx="2.4" />
+        </g>
+        <circle cx="16.5" cy="13.5" r="1.4" fill="currentColor" />
+      </symbol>
+      <symbol id="ic-copy" viewBox="0 0 24 24">
+        <g fill="none" stroke="currentColor" strokeWidth="2" strokeLinejoin="round">
+          <rect x="9" y="9" width="11" height="11" rx="2.4" />
+          <path d="M5 15H4a1 1 0 0 1-1-1V4a1 1 0 0 1 1-1h10a1 1 0 0 1 1 1v1" />
+        </g>
+      </symbol>
       <symbol id="ic-globe" viewBox="0 0 24 24">
         <path
           fill="url(#ig-aurora)"

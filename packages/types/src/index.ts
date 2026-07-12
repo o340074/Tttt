@@ -209,6 +209,61 @@ export interface ProductListItem {
 /** Sort options for GET /products. */
 export type ProductSort = 'price_asc' | 'price_desc' | 'rating' | 'newest';
 
+// ---------- Wallet & top-ups (E3) ----------
+
+export type LedgerDirection = 'credit' | 'debit';
+
+/** What a ledger entry references (money movement source). */
+export type LedgerRefType = 'topup' | 'order' | 'refund' | 'adjustment' | 'replacement';
+
+export type TopUpStatus = 'pending' | 'paid' | 'expired' | 'failed';
+
+/** Asset + network the customer pays with. */
+export type TopUpAsset = 'USDT-TRC20' | 'USDT-ERC20' | 'BTC' | 'ETH';
+
+/** One double-entry ledger movement (GET /wallet/transactions). */
+export interface LedgerEntry {
+  id: string;
+  direction: LedgerDirection;
+  /** Always positive; direction tells the sign. */
+  amount: Money;
+  /** Balance snapshot right after this entry was posted. */
+  balanceAfter: Money;
+  refType: LedgerRefType;
+  refId: string;
+  /** ISO 8601 date-time. */
+  createdAt: string;
+}
+
+/** GET /wallet — balance plus the 5 most recent movements. */
+export interface Wallet {
+  balance: Money;
+  currency: string;
+  recent: LedgerEntry[];
+}
+
+/** POST /wallet/topups (requires the Idempotency-Key header). */
+export interface CreateTopUpRequest {
+  /** Amount to credit in the accounting currency (USD). Min 1.00, max 100000.00. */
+  amount: Money;
+  asset: TopUpAsset;
+}
+
+/** Top-up as returned by POST /wallet/topups and GET /wallet/topups/:id. */
+export interface TopUp {
+  id: string;
+  provider: string;
+  amount: Money;
+  asset: TopUpAsset;
+  status: TopUpStatus;
+  paymentUrl: string | null;
+  address: string | null;
+  /** ISO 8601 date-time; pending payment window end. */
+  expiresAt: string | null;
+  createdAt: string;
+  paidAt: string | null;
+}
+
 /** Pagination metadata returned by list endpoints. */
 export interface PageMeta {
   total: number;

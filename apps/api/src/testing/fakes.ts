@@ -3,9 +3,12 @@ import { randomUUID } from 'node:crypto';
 import type {
   Category as DbCategory,
   CategoryTranslation,
+  IdempotencyKey as DbIdempotencyKey,
+  LedgerEntry as DbLedgerEntry,
   Product as DbProduct,
   ProductTranslation,
   ProductVariant as DbVariant,
+  TopUp as DbTopUp,
   User as DbUser,
 } from '@prisma/client';
 import type { PrismaService } from '../prisma/prisma.service';
@@ -137,10 +140,25 @@ export class FakeUserStore {
     return Promise.resolve(row);
   }
 
-  async update({ where, data }: { where: { id: string }; data: Partial<DbUser> }): Promise<DbUser> {
+  async update({
+    where,
+    data,
+  }: {
+    where: { id: string };
+    data: Partial<Omit<DbUser, 'balance'>> & {
+      balance?: Prisma.Decimal | { increment: Prisma.Decimal | string };
+    };
+  }): Promise<DbUser> {
     const row = await this.findUnique({ where });
     if (!row) throw new Error('Record not found');
-    Object.assign(row, data, { updatedAt: new Date() });
+    const { balance, ...rest } = data;
+    Object.assign(row, rest, { updatedAt: new Date() });
+    if (balance !== undefined) {
+      row.balance =
+        balance instanceof Prisma.Decimal
+          ? balance
+          : row.balance.plus(new Prisma.Decimal(balance.increment));
+    }
     return row;
   }
 }
@@ -253,17 +271,243 @@ export function makeProductRow(
   };
 }
 
+// ---------- Wallet fakes (E3) ----------
+
+function uniqueViolation(target: string): Prisma.PrismaClientKnownRequestError {
+  return new Prisma.PrismaClientKnownRequestError(`Unique constraint failed on ${target}`, {
+    code: 'P2002',
+    clientVersion: 'fake',
+  });
+}
+
+export class FakeLedgerStore {
+  readonly rows: DbLedgerEntry[] = [];
+
+  create({
+    data,
+  }: {
+    data: Omit<DbLedgerEntry, 'id' | 'createdAt' | 'amount' | 'balanceAfter'> & {
+      amount: Prisma.Decimal | string;
+      balanceAfter: Prisma.Decimal | string;
+    };
+  }): Promise<DbLedgerEntry> {
+    if (
+      this.rows.some(
+        (r) =>
+          r.refType === data.refType && r.refId === data.refId && r.direction === data.direction,
+      )
+    ) {
+      return Promise.reject(uniqueViolation('ledger_entries_refType_refId_direction_key'));
+    }
+    const row: DbLedgerEntry = {
+      id: randomUUID(),
+      createdAt: new Date(),
+      ...data,
+      amount: new Prisma.Decimal(data.amount),
+      balanceAfter: new Prisma.Decimal(data.balanceAfter),
+    };
+    this.rows.push(row);
+    return Promise.resolve(row);
+  }
+
+  findMany(args?: {
+    where?: { userId?: string };
+    orderBy?: { createdAt?: 'asc' | 'desc' };
+    skip?: number;
+    take?: number;
+  }): Promise<DbLedgerEntry[]> {
+    let rows = this.rows.filter((r) => !args?.where?.userId || r.userId === args.where.userId);
+    if (args?.orderBy?.createdAt === 'desc') rows = [...rows].reverse();
+    const skip = args?.skip ?? 0;
+    return Promise.resolve(
+      rows.slice(skip, args?.take !== undefined ? skip + args.take : undefined),
+    );
+  }
+
+  count({ where }: { where?: { userId?: string } } = {}): Promise<number> {
+    return Promise.resolve(
+      this.rows.filter((r) => !where?.userId || r.userId === where.userId).length,
+    );
+  }
+
+  aggregate(args: {
+    where: { userId: string; direction: DbLedgerEntry['direction'] };
+    _sum: { amount: true };
+  }): Promise<{ _sum: { amount: Prisma.Decimal | null } }> {
+    const matched = this.rows.filter(
+      (r) => r.userId === args.where.userId && r.direction === args.where.direction,
+    );
+    const sum = matched.reduce((acc, r) => acc.plus(r.amount), new Prisma.Decimal(0));
+    return Promise.resolve({ _sum: { amount: matched.length ? sum : null } });
+  }
+}
+
+type TopUpStatusFilter = DbTopUp['status'] | { in: DbTopUp['status'][] };
+
+function matchesStatus(row: DbTopUp, filter?: TopUpStatusFilter): boolean {
+  if (filter === undefined) return true;
+  return typeof filter === 'string' ? row.status === filter : filter.in.includes(row.status);
+}
+
+export class FakeTopUpStore {
+  readonly rows: DbTopUp[] = [];
+
+  create({
+    data,
+  }: {
+    data: Partial<Omit<DbTopUp, 'amount'>> & {
+      userId: string;
+      provider: string;
+      asset: string;
+      amount: Prisma.Decimal | string;
+    };
+  }): Promise<DbTopUp> {
+    const row: DbTopUp = {
+      id: randomUUID(),
+      externalId: null,
+      fee: null,
+      status: 'pending',
+      paymentUrl: null,
+      address: null,
+      expiresAt: null,
+      createdAt: new Date(),
+      paidAt: null,
+      ...data,
+      amount: new Prisma.Decimal(data.amount),
+    };
+    this.rows.push(row);
+    return Promise.resolve(row);
+  }
+
+  async update({
+    where,
+    data,
+  }: {
+    where: { id: string };
+    data: Partial<DbTopUp>;
+  }): Promise<DbTopUp> {
+    const row = this.rows.find((r) => r.id === where.id);
+    if (!row) throw new Error('Record not found');
+    Object.assign(row, data);
+    return row;
+  }
+
+  updateMany({
+    where,
+    data,
+  }: {
+    where: { id?: string; status?: TopUpStatusFilter; expiresAt?: { lt: Date } };
+    data: Partial<DbTopUp>;
+  }): Promise<{ count: number }> {
+    const matched = this.rows.filter(
+      (r) =>
+        (where.id === undefined || r.id === where.id) &&
+        matchesStatus(r, where.status) &&
+        (where.expiresAt === undefined ||
+          (r.expiresAt !== null && r.expiresAt.getTime() < where.expiresAt.lt.getTime())),
+    );
+    for (const row of matched) Object.assign(row, data);
+    return Promise.resolve({ count: matched.length });
+  }
+
+  findUnique({ where }: { where: { id?: string; externalId?: string } }): Promise<DbTopUp | null> {
+    return Promise.resolve(
+      this.rows.find((r) =>
+        where.id !== undefined ? r.id === where.id : r.externalId === where.externalId,
+      ) ?? null,
+    );
+  }
+
+  findFirst({ where }: { where: { id: string; userId: string } }): Promise<DbTopUp | null> {
+    return Promise.resolve(
+      this.rows.find((r) => r.id === where.id && r.userId === where.userId) ?? null,
+    );
+  }
+}
+
+export class FakeIdempotencyStore {
+  readonly rows: DbIdempotencyKey[] = [];
+
+  private find(key: string, endpoint: string): DbIdempotencyKey | undefined {
+    return this.rows.find((r) => r.key === key && r.endpoint === endpoint);
+  }
+
+  create({
+    data,
+  }: {
+    data: Pick<DbIdempotencyKey, 'key' | 'endpoint' | 'requestHash'> & { userId?: string | null };
+  }): Promise<DbIdempotencyKey> {
+    if (this.find(data.key, data.endpoint)) {
+      return Promise.reject(uniqueViolation('idempotency_keys_key_endpoint_key'));
+    }
+    const row: DbIdempotencyKey = {
+      id: randomUUID(),
+      userId: data.userId ?? null,
+      responseCode: null,
+      responseBody: null,
+      createdAt: new Date(),
+      ...data,
+    };
+    this.rows.push(row);
+    return Promise.resolve(row);
+  }
+
+  findUnique({
+    where,
+  }: {
+    where: { key_endpoint: { key: string; endpoint: string } };
+  }): Promise<DbIdempotencyKey | null> {
+    return Promise.resolve(this.find(where.key_endpoint.key, where.key_endpoint.endpoint) ?? null);
+  }
+
+  async update({
+    where,
+    data,
+  }: {
+    where: { key_endpoint: { key: string; endpoint: string } };
+    data: Partial<DbIdempotencyKey>;
+  }): Promise<DbIdempotencyKey> {
+    const row = this.find(where.key_endpoint.key, where.key_endpoint.endpoint);
+    if (!row) throw new Error('Record not found');
+    Object.assign(row, data);
+    return row;
+  }
+
+  async delete({
+    where,
+  }: {
+    where: { key_endpoint: { key: string; endpoint: string } };
+  }): Promise<DbIdempotencyKey> {
+    const row = this.find(where.key_endpoint.key, where.key_endpoint.endpoint);
+    if (!row) throw new Error('Record not found');
+    this.rows.splice(this.rows.indexOf(row), 1);
+    return row;
+  }
+}
+
 export interface FakePrismaStores {
   user: FakeUserStore;
   category: FakeCategoryStore;
   product: FakeProductStore;
+  ledgerEntry: FakeLedgerStore;
+  topUp: FakeTopUpStore;
+  idempotencyKey: FakeIdempotencyStore;
 }
 
 export function makeFakePrismaService(): PrismaService & FakePrismaStores {
-  return {
+  const stores = {
     user: new FakeUserStore(),
     category: new FakeCategoryStore(),
     product: new FakeProductStore(),
+    ledgerEntry: new FakeLedgerStore(),
+    topUp: new FakeTopUpStore(),
+    idempotencyKey: new FakeIdempotencyStore(),
+  };
+  return {
+    ...stores,
+    // Single-writer in-memory stores: an interactive transaction is just the
+    // callback over the same stores (no rollback simulation).
+    $transaction: (fn: (tx: unknown) => Promise<unknown>) => fn(stores),
     isHealthy: async () => true,
     onModuleDestroy: async () => undefined,
   } as unknown as PrismaService & FakePrismaStores;
@@ -276,6 +520,8 @@ export const TEST_ENV: Partial<Env> = {
   JWT_ACCESS_TTL: 900,
   JWT_REFRESH_TTL: 3600,
   WEB_URL: 'http://localhost:5173',
+  PAYMENT_WEBHOOK_SECRET: 'test-webhook-secret-0123456789ab',
+  TOPUP_TTL_MINUTES: 15,
 };
 
 export function makeFakeConfigService(overrides: Partial<Env> = {}): ConfigService<Env, true> {
