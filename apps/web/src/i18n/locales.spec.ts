@@ -12,9 +12,16 @@ function flattenKeys(obj: Record<string, unknown>, prefix = ''): string[] {
   });
 }
 
+/** Locales legitimately differ in i18next plural forms (EN: _one/_other, RU: _one/_few/_many). */
+function normalizePlurals(keys: string[]): string[] {
+  return [...new Set(keys.map((k) => k.replace(/_(one|few|many|other)$/, '_plural')))];
+}
+
 describe('i18n locales', () => {
   it('EN and RU expose the same set of keys', () => {
-    expect(flattenKeys(ru).sort()).toEqual(flattenKeys(en).sort());
+    expect(normalizePlurals(flattenKeys(ru)).sort()).toEqual(
+      normalizePlurals(flattenKeys(en)).sort(),
+    );
   });
 
   it('has no empty translations', () => {

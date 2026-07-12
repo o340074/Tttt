@@ -16,7 +16,13 @@ export type IconName =
   | 'eye-off'
   | 'alert'
   | 'refresh'
-  | 'logout';
+  | 'logout'
+  | 'search'
+  | 'ads'
+  | 'briefcase'
+  | 'clock'
+  | 'verify'
+  | 'box';
 
 interface IconProps {
   name: IconName;

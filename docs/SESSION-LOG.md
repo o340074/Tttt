@@ -7,10 +7,11 @@
 
 ## 📍 Текущий статус
 
-- **Фаза:** разработка. E0 (каркас) и E1 (аутентификация) готовы и проверены end-to-end.
-- **Следующий эпик:** **E2 — Каталог и продуктовая модель** (см. `docs/16-development-plan.md` §4).
-- **Ветка:** актуальная база — `claude/advault-e1-auth-88jq5l` (E0+E1; в main код ещё
-  не влит). Разработку следующих эпиков вести на feature-ветках per эпик от неё.
+- **Фаза:** разработка. E0 (каркас), E1 (аутентификация) и E2 (каталог) готовы и
+  проверены end-to-end.
+- **Следующий эпик:** **E3 — Кошелёк и пополнение криптой** (см. `docs/16-development-plan.md` §4).
+- **Ветка:** актуальная база — `claude/advault-e2-catalog-m0omaf` (E0+E1+E2; в main код
+  ещё не влит). Разработку следующих эпиков вести на feature-ветках per эпик от неё.
 - **Прогресс по эпикам (из `docs/16`):**
 
 | Эпик | Название | Статус |
@@ -18,8 +19,8 @@
 | — | Планирование и документация | ✅ готово |
 | E0 | Каркас монорепо + CI | ✅ готово |
 | E1 | Аутентификация и аккаунты | ✅ готово |
-| E2 | Каталог и продуктовая модель | ⬜ следующий |
-| E3 | Кошелёк и пополнение криптой | ⬜ |
+| E2 | Каталог и продуктовая модель | ✅ готово |
+| E3 | Кошелёк и пополнение криптой | ⬜ следующий |
 | E4 | Корзина, заказы, оплата с баланса | ⬜ |
 | E5 | Выдача из стока (READY_STOCK) | ⬜ |
 | E6 | Прогрев: модель и очередь | ⬜ |
@@ -34,6 +35,59 @@
 ---
 
 ## Записи
+
+### Сессия — Каталог и продуктовая модель (эпик E2)
+- **Сделано (контракты):** `docs/backend/prisma-schema.md` — enum `FulfillmentType`
+  (READY_STOCK/MADE_TO_ORDER) и расширения `ProductVariant` из docs/15
+  (`fulfillmentType`, `goal`, `tier`, `bundleSpec`, `etaMinutes`, `warrantyHours`;
+  `deliveryType` оставлен как производный снимок: auto ⇔ READY_STOCK).
+  `docs/backend/openapi.md` — схема `BundleComponent`, расширенные
+  `ProductVariant`/`Product`/`ProductListItem` (categorySlug, fulfillmentTypes,
+  stockCount, etaMinutes, bundle, localized `name` вариантов через
+  `attributes.name_<locale>`), `Category.productCount`, новые параметры `/products`
+  (`category`-slug с потомками, `fulfillment`, `goal`, `inStock`, `locale`). Типы
+  отзеркалены в `@advault/types`.
+- **API:** `schema.prisma` — Category/CategoryTranslation/Product/ProductTranslation/
+  ProductVariant + миграция `20260712100000_catalog` (проверена: `migrate deploy` на
+  локальном Postgres 16, дрифта нет). Модуль `catalog/`: `GET /categories`
+  (локализованное дерево + productCount), `GET /products` (фильтры
+  категория/цена/fulfillment/goal/inStock, поиск по локализованным имени/описанию,
+  сортировки price_asc|price_desc|rating|newest, пагинация), `GET /products/:slug`
+  (варианты по цене, bundle из bundleSpec с валидацией, ETA, гарантия). Все маршруты
+  `@Public()`; локаль: `?locale=` → `Accept-Language` → EN; переводы с фолбэком
+  ru→en→любой. Фильтрация в памяти после выборки published-товаров — осознанный
+  MVP-компромисс (см. долги).
+- **Сидер** `prisma/seed.ts` (`pnpm db:seed`, tsx): 3 демо-юзера, 6 категорий
+  (дерево: google-ads → agency), 6 товаров / 9 вариантов с переводами EN/RU, включая
+  warm-варианты `goal=google_ads` (7d/14d, комплект ACCOUNT+PROXY+OCTO_PROFILE+GUIDE+
+  WARRANTY) и `goal=chrome_extension_dev` (5d). Идемпотентен (upsert по
+  email/slug/sku/(id,locale)); запущен дважды — дублей нет.
+- **Web:** витрина `/` (hero с aurora, категории, «Популярное», CTA в каталог),
+  каталог `/catalog` (сайдбар: категории с каунтами, тип выдачи, цена, «только
+  доступные»; поиск с debounce, сортировка, пагинация; состояние в URL), карточка
+  `/product/:slug` (выбор варианта, цена, badge наличия/под заказ, ETA
+  «~7 дней» с RU-плюралами, состав комплекта, гарантия; Buy заглушен до E4).
+  Иконки добавлены в спрайт (ads, briefcase, clock, verify, box, search) — SVG, без
+  эмодзи. i18n EN/RU полностью; loading-скелетоны/empty/error/404 везде.
+- **Тесты (62):** unit каталога — resolveLocale/pickTranslation, parseBundleSpec,
+  дерево категорий и каунты, фильтры/поиск/сортировки/пагинация, локализация
+  вариантов с фолбэками, 404 для draft; e2e-smoke по HTTP (supertest + фейки из
+  `testing/fakes.ts`, расширены сторами category/product): категории→список с
+  фильтром→карточка→404→VALIDATION_ERROR.
+- **Проверено вживую:** локальные Postgres 16 + Redis + API + Vite; curl по всем
+  эндпоинтам (RU/EN, фильтры, 404) и Chromium/Playwright: витрина→категория→каталог
+  (фильтр «под заказ» = 3, поиск «chrome» = 1, пустое состояние)→карточка→смена
+  варианта (цена обновляется)→RU-локализация→404. Скриншоты сверены с прототипом.
+  lint/format/typecheck/тесты/build зелёные.
+- **Решения:** `fulfillmentType` — источник истины модели выдачи, `deliveryType`
+  остаётся производным снимком для будущих Order/OrderItem (следуем docs/15 «+поля»);
+  имена вариантов — в `attributes.name_en|name_ru` (без отдельной таблицы переводов
+  вариантов); `warmingPlanId` появится в E6 вместе с WarmingPlan.
+- **Проблемы/долги:** фильтры/поиск/сортировка каталога выполняются в памяти после
+  выборки published-товаров — при росте каталога перенести в SQL (полнотекст/индексы);
+  ratingAvg пока сидовая денормализация (реальные отзывы позже); throttler in-memory
+  (из E1).
+- **Дальше:** **E3 — Кошелёк и пополнение криптой** (промт в `docs/NEXT-SESSION-PROMPT.md`).
 
 ### Сессия — Аутентификация и аккаунты (эпик E1)
 - **Сделано (контракты):** в `docs/backend/openapi.md` добавлен

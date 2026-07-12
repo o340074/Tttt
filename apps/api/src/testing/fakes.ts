@@ -1,6 +1,13 @@
 import { Prisma } from '@prisma/client';
 import { randomUUID } from 'node:crypto';
-import type { User as DbUser } from '@prisma/client';
+import type {
+  Category as DbCategory,
+  CategoryTranslation,
+  Product as DbProduct,
+  ProductTranslation,
+  ProductVariant as DbVariant,
+  User as DbUser,
+} from '@prisma/client';
 import type { PrismaService } from '../prisma/prisma.service';
 import type { RedisService } from '../redis/redis.service';
 import type { Env } from '../config/env';
@@ -138,12 +145,128 @@ export class FakeUserStore {
   }
 }
 
-export function makeFakePrismaService(): PrismaService & { user: FakeUserStore } {
+// ---------- Catalog fakes (E2) ----------
+
+export type FakeCategoryRow = DbCategory & { translations: CategoryTranslation[] };
+export type FakeProductRow = DbProduct & {
+  translations: ProductTranslation[];
+  variants: DbVariant[];
+  category: DbCategory;
+};
+
+/**
+ * Supports the query shapes CatalogService issues: findMany with optional
+ * where.status / where.categoryId.in, and findFirst by slug+status.
+ * `include`/`select` are ignored — rows are stored fully nested.
+ */
+export class FakeCategoryStore {
+  readonly rows: FakeCategoryRow[] = [];
+
+  findMany(_args?: unknown): Promise<FakeCategoryRow[]> {
+    return Promise.resolve([...this.rows]);
+  }
+}
+
+export class FakeProductStore {
+  readonly rows: FakeProductRow[] = [];
+
+  findMany(args?: {
+    where?: { status?: string; categoryId?: { in: string[] } };
+  }): Promise<FakeProductRow[]> {
+    let rows = [...this.rows];
+    const where = args?.where;
+    if (where?.status) rows = rows.filter((r) => r.status === where.status);
+    if (where?.categoryId) rows = rows.filter((r) => where.categoryId!.in.includes(r.categoryId));
+    return Promise.resolve(rows);
+  }
+
+  findFirst(args: { where: { slug?: string; status?: string } }): Promise<FakeProductRow | null> {
+    const { slug, status } = args.where;
+    return Promise.resolve(
+      this.rows.find(
+        (r) =>
+          (slug === undefined || r.slug === slug) && (status === undefined || r.status === status),
+      ) ?? null,
+    );
+  }
+}
+
+/** Builders keeping fixtures terse; every unset field gets a sane default. */
+export function makeCategoryRow(
+  overrides: Partial<FakeCategoryRow> & { slug: string },
+): FakeCategoryRow {
+  return {
+    id: randomUUID(),
+    parentId: null,
+    position: 0,
+    translations: [],
+    ...overrides,
+  };
+}
+
+export function makeVariantRow(
+  overrides: Partial<Omit<DbVariant, 'price'>> & { sku: string; price: string },
+): DbVariant {
+  const now = new Date();
+  const fulfillmentType = overrides.fulfillmentType ?? 'READY_STOCK';
+  return {
+    id: randomUUID(),
+    productId: randomUUID(),
+    currency: 'USD',
+    deliveryType: fulfillmentType === 'READY_STOCK' ? 'auto' : 'manual',
+    stockCount: 0,
+    isActive: true,
+    attributes: {},
+    goal: null,
+    tier: null,
+    bundleSpec: [],
+    etaMinutes: null,
+    warrantyHours: null,
+    createdAt: now,
+    updatedAt: now,
+    ...overrides,
+    fulfillmentType,
+    price: new Prisma.Decimal(overrides.price),
+  };
+}
+
+export function makeProductRow(
+  overrides: Partial<Omit<FakeProductRow, 'ratingAvg'>> & {
+    slug: string;
+    category: DbCategory;
+    ratingAvg?: string | null;
+  },
+): FakeProductRow {
+  const now = new Date();
+  const { ratingAvg, ...rest } = overrides;
+  return {
+    id: randomUUID(),
+    categoryId: overrides.category.id,
+    status: 'published',
+    attributes: {},
+    translations: [],
+    variants: [],
+    createdAt: now,
+    updatedAt: now,
+    ...rest,
+    ratingAvg: ratingAvg == null ? null : new Prisma.Decimal(ratingAvg),
+  };
+}
+
+export interface FakePrismaStores {
+  user: FakeUserStore;
+  category: FakeCategoryStore;
+  product: FakeProductStore;
+}
+
+export function makeFakePrismaService(): PrismaService & FakePrismaStores {
   return {
     user: new FakeUserStore(),
+    category: new FakeCategoryStore(),
+    product: new FakeProductStore(),
     isHealthy: async () => true,
     onModuleDestroy: async () => undefined,
-  } as unknown as PrismaService & { user: FakeUserStore };
+  } as unknown as PrismaService & FakePrismaStores;
 }
 
 export const TEST_ENV: Partial<Env> = {

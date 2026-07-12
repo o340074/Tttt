@@ -1,6 +1,7 @@
 // AdVault — Prisma schema.
 // Contract source of truth: docs/backend/prisma-schema.md.
-// Models arrive with their epics; E1 brings User (auth & accounts).
+// Models arrive with their epics; E1 brings User (auth & accounts),
+// E2 brings the catalog (Category, Product, ProductVariant + translations).
 
 generator client {
   provider = "prisma-client-js"
@@ -20,6 +21,116 @@ enum Role {
 enum UserStatus {
   active
   blocked
+}
+
+enum ProductStatus {
+  draft
+  published
+  hidden
+}
+
+enum DeliveryType {
+  auto
+  manual
+}
+
+// Модель выдачи варианта (docs/11): READY_STOCK — мгновенно из стока,
+// MADE_TO_ORDER — прогрев под заказ оператором (очередь, ETA).
+enum FulfillmentType {
+  READY_STOCK
+  MADE_TO_ORDER
+}
+
+model Category {
+  id       String  @id @default(uuid()) @db.Uuid
+  parentId String? @db.Uuid
+  slug     String  @unique
+  position Int     @default(0)
+
+  parent       Category?             @relation("CategoryTree", fields: [parentId], references: [id], onDelete: SetNull)
+  children     Category[]            @relation("CategoryTree")
+  translations CategoryTranslation[]
+  products     Product[]
+
+  @@index([parentId])
+  @@index([position])
+  @@map("categories")
+}
+
+model CategoryTranslation {
+  id         String @id @default(uuid()) @db.Uuid
+  categoryId String @db.Uuid
+  locale     String
+  name       String
+
+  category Category @relation(fields: [categoryId], references: [id], onDelete: Cascade)
+
+  @@unique([categoryId, locale])
+  @@map("category_translations")
+}
+
+model Product {
+  id         String        @id @default(uuid()) @db.Uuid
+  categoryId String        @db.Uuid
+  slug       String        @unique
+  status     ProductStatus @default(draft)
+  ratingAvg  Decimal?      @db.Decimal(3, 2) // денормализация из Review (придёт позже)
+  attributes Json          @default("{}") @db.JsonB // гео, тип аккаунта, лимиты
+  createdAt  DateTime      @default(now())
+  updatedAt  DateTime      @updatedAt
+
+  category     Category             @relation(fields: [categoryId], references: [id], onDelete: Restrict)
+  translations ProductTranslation[]
+  variants     ProductVariant[]
+
+  @@index([categoryId])
+  @@index([status])
+  @@map("products")
+}
+
+model ProductTranslation {
+  id          String  @id @default(uuid()) @db.Uuid
+  productId   String  @db.Uuid
+  locale      String
+  name        String
+  description String? @db.Text
+
+  product Product @relation(fields: [productId], references: [id], onDelete: Cascade)
+
+  @@unique([productId, locale])
+  @@map("product_translations")
+}
+
+model ProductVariant {
+  id           String       @id @default(uuid()) @db.Uuid
+  productId    String       @db.Uuid
+  sku          String       @unique
+  price        Decimal      @db.Decimal(18, 2)
+  currency     String       @default("USD") // валюта учёта
+  deliveryType DeliveryType // производный снимок: auto ⇔ READY_STOCK, manual ⇔ MADE_TO_ORDER
+  stockCount   Int          @default(0) // кэш доступного стока (для READY_STOCK; StockItem придёт в E5)
+  isActive     Boolean      @default(true)
+  attributes   Json         @default("{}") @db.JsonB
+
+  // --- Расширения docs/15 (модель выдачи и прогрев) ---
+  fulfillmentType FulfillmentType @default(READY_STOCK)
+  goal            String? // цель прогрева: google_ads, chrome_extension_dev, … (для MADE_TO_ORDER)
+  tier            String? // тариф прогрева, напр. warm_7d
+  // warmingPlanId придёт в E6 вместе с моделью WarmingPlan.
+  bundleSpec      Json            @default("[]") @db.JsonB // состав комплекта: [{ "type": "ACCOUNT" }, …]
+  etaMinutes      Int? // кэш расчётной ETA (для MADE_TO_ORDER)
+  warrantyHours   Int? // окно гарантии/замены
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  product Product @relation(fields: [productId], references: [id], onDelete: Cascade)
+
+  @@index([productId])
+  @@index([isActive])
+  @@index([fulfillmentType])
+  @@index([goal])
+  @@map("product_variants")
 }
 
 model User {

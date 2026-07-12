@@ -3,8 +3,10 @@ import { AppLayout } from './components/layout/AppLayout';
 import { AuthLayout } from './features/auth/AuthLayout';
 import { RedirectIfAuthed, RequireAuth } from './features/auth/guards';
 import { AccountPage } from './pages/AccountPage';
+import { CatalogPage } from './pages/CatalogPage';
 import { HomePage } from './pages/HomePage';
 import { NotFoundPage } from './pages/NotFoundPage';
+import { ProductPage } from './pages/ProductPage';
 import { AuthPage } from './pages/auth/AuthPage';
 import { ForgotPasswordPage } from './pages/auth/ForgotPasswordPage';
 import { ResetPasswordPage } from './pages/auth/ResetPasswordPage';
@@ -15,6 +17,8 @@ export function App() {
     <Routes>
       <Route element={<AppLayout />}>
         <Route index element={<HomePage />} />
+        <Route path="catalog" element={<CatalogPage />} />
+        <Route path="product/:slug" element={<ProductPage />} />
         <Route element={<RequireAuth />}>
           <Route path="account" element={<AccountPage />} />
         </Route>

@@ -230,19 +230,43 @@ components:
         slug: { type: string }
         position: { type: integer }
         name: { type: string, description: Локализованное имя по Accept-Language/locale }
+        productCount: { type: integer, description: Кол-во опубликованных товаров в категории (без потомков) }
         children:
           type: array
           items: { $ref: '#/components/schemas/Category' }
+
+    BundleComponent:
+      type: object
+      description: Компонент комплекта выдачи (docs/11). Параметры (гео, тип прокси, срок) — в meta.
+      required: [type]
+      properties:
+        type:
+          type: string
+          enum: [ACCOUNT, PROXY, OCTO_PROFILE, RECOVERY, SECRETS, GUIDE, WARRANTY]
+        meta:
+          type: object
+          additionalProperties: true
 
     ProductVariant:
       type: object
       properties:
         id: { type: string, format: uuid }
         sku: { type: string }
+        # Локализованное имя варианта (attributes.name_<locale> либо tier/sku как fallback).
+        name: { type: string }
         price: { $ref: '#/components/schemas/Money' }
         currency: { $ref: '#/components/schemas/Currency' }
-        deliveryType: { type: string, enum: [auto, manual] }
-        stockCount: { type: integer, description: Доступно к покупке (для auto) }
+        deliveryType: { type: string, enum: [auto, manual], description: Производное от fulfillmentType (auto ⇔ READY_STOCK) }
+        fulfillmentType: { type: string, enum: [READY_STOCK, MADE_TO_ORDER] }
+        goal: { type: [string, "null"], description: Цель прогрева (google_ads, chrome_extension_dev, …) }
+        tier: { type: [string, "null"], description: Тариф прогрева (warm_7d, …) }
+        stockCount: { type: integer, description: Доступно к покупке (для READY_STOCK) }
+        etaMinutes: { type: [integer, "null"], description: Оценка времени выдачи в минутах (для MADE_TO_ORDER) }
+        warrantyHours: { type: [integer, "null"], description: Окно гарантийной замены }
+        bundle:
+          type: array
+          description: Состав комплекта выдачи.
+          items: { $ref: '#/components/schemas/BundleComponent' }
         isActive: { type: boolean }
         attributes: { type: object, additionalProperties: true }
 
@@ -251,6 +275,7 @@ components:
       properties:
         id: { type: string, format: uuid }
         categoryId: { type: string, format: uuid }
+        categorySlug: { type: string }
         slug: { type: string }
         status: { type: string, enum: [draft, published, hidden] }
         ratingAvg: { type: [string, "null"] }
@@ -266,10 +291,19 @@ components:
       properties:
         id: { type: string, format: uuid }
         slug: { type: string }
+        categoryId: { type: string, format: uuid }
+        categorySlug: { type: string }
         name: { type: string }
         ratingAvg: { type: [string, "null"] }
         minPrice: { $ref: '#/components/schemas/Money' }
         currency: { $ref: '#/components/schemas/Currency' }
+        fulfillmentTypes:
+          type: array
+          description: Какие модели выдачи есть среди активных вариантов.
+          items: { type: string, enum: [READY_STOCK, MADE_TO_ORDER] }
+        stockCount: { type: integer, description: Суммарный сток по READY_STOCK-вариантам }
+        etaMinutes: { type: [integer, "null"], description: Мин. ETA среди MADE_TO_ORDER-вариантов }
+        attributes: { type: object, additionalProperties: true }
 
     Review:
       type: object
@@ -716,12 +750,17 @@ paths:
       security: []
       parameters:
         - $ref: '#/components/parameters/AcceptLanguage'
+        - $ref: '#/components/parameters/Locale'
         - $ref: '#/components/parameters/Page'
         - $ref: '#/components/parameters/Limit'
         - { name: categoryId, in: query, schema: { type: string, format: uuid } }
-        - { name: q, in: query, schema: { type: string } }
+        - { name: category, in: query, schema: { type: string }, description: Slug категории (включая товары дочерних категорий) }
+        - { name: q, in: query, schema: { type: string }, description: Поиск по локализованным имени/описанию }
         - { name: minPrice, in: query, schema: { type: string } }
         - { name: maxPrice, in: query, schema: { type: string } }
+        - { name: fulfillment, in: query, schema: { type: string, enum: [READY_STOCK, MADE_TO_ORDER] } }
+        - { name: goal, in: query, schema: { type: string }, description: Цель прогрева (google_ads, …) }
+        - { name: inStock, in: query, schema: { type: boolean }, description: Только доступные (сток > 0 или под заказ) }
         - { name: sort, in: query, schema: { type: string, enum: [price_asc, price_desc, rating, newest] } }
       responses:
         '200':
@@ -741,6 +780,7 @@ paths:
       parameters:
         - { name: slug, in: path, required: true, schema: { type: string } }
         - $ref: '#/components/parameters/AcceptLanguage'
+        - $ref: '#/components/parameters/Locale'
       responses:
         '200':
           content: { application/json: { schema: { $ref: '#/components/schemas/Product' } } }

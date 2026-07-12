@@ -124,6 +124,91 @@ export interface ChangePasswordRequest {
   newPassword: string;
 }
 
+// ---------- Catalog (E2) ----------
+
+/** How a variant is fulfilled: instant from stock or warmed to order. */
+export type FulfillmentType = 'READY_STOCK' | 'MADE_TO_ORDER';
+
+/** Snapshot of the fulfillment model kept on order items (auto ⇔ READY_STOCK). */
+export type DeliveryType = 'auto' | 'manual';
+
+/** Components a delivery bundle can include (docs/11). */
+export type BundleComponentType =
+  'ACCOUNT' | 'PROXY' | 'OCTO_PROFILE' | 'RECOVERY' | 'SECRETS' | 'GUIDE' | 'WARRANTY';
+
+/** One bundle component with its parameters (geo, proxy kind, term, …). */
+export interface BundleComponent {
+  type: BundleComponentType;
+  meta?: Record<string, unknown>;
+}
+
+/** GET /categories — localized category tree node. */
+export interface Category {
+  id: string;
+  parentId: string | null;
+  slug: string;
+  position: number;
+  name: string;
+  /** Published products directly in this category (children not included). */
+  productCount: number;
+  children: Category[];
+}
+
+/** Variant (SKU) inside GET /products/:slug. */
+export interface ProductVariant {
+  id: string;
+  sku: string;
+  /** Localized variant name (attributes.name_<locale>, falls back to tier/sku). */
+  name: string;
+  price: Money;
+  currency: string;
+  deliveryType: DeliveryType;
+  fulfillmentType: FulfillmentType;
+  goal: string | null;
+  tier: string | null;
+  stockCount: number;
+  etaMinutes: number | null;
+  warrantyHours: number | null;
+  bundle: BundleComponent[];
+  isActive: boolean;
+  attributes: Record<string, unknown>;
+}
+
+/** GET /products/:slug — localized product card with variants. */
+export interface Product {
+  id: string;
+  categoryId: string;
+  categorySlug: string;
+  slug: string;
+  status: 'draft' | 'published' | 'hidden';
+  ratingAvg: string | null;
+  name: string;
+  description: string | null;
+  attributes: Record<string, unknown>;
+  variants: ProductVariant[];
+}
+
+/** GET /products — list card. */
+export interface ProductListItem {
+  id: string;
+  slug: string;
+  categoryId: string;
+  categorySlug: string;
+  name: string;
+  ratingAvg: string | null;
+  minPrice: Money;
+  currency: string;
+  fulfillmentTypes: FulfillmentType[];
+  /** Total stock across READY_STOCK variants. */
+  stockCount: number;
+  /** Minimal ETA across MADE_TO_ORDER variants, if any. */
+  etaMinutes: number | null;
+  attributes: Record<string, unknown>;
+}
+
+/** Sort options for GET /products. */
+export type ProductSort = 'price_asc' | 'price_desc' | 'rating' | 'newest';
+
 /** Pagination metadata returned by list endpoints. */
 export interface PageMeta {
   total: number;

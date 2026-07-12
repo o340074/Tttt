@@ -26,9 +26,15 @@
 - ✅ **E1 — аутентификация и аккаунты готовы**: JWT access+refresh (ротация jti в
   Redis, HTTP-only cookie), argon2id, verify/reset email (mailer-заглушка),
   rate-limit, единый формат ошибок `Error`, экраны auth + guard-роуты + ЛК
-  (`/account`), `GET|PATCH /me`. Актуальная база кода — ветка
-  `claude/advault-e1-auth-88jq5l`.
-- 🔜 **Следующий шаг — эпик E2 (каталог и продуктовая модель)**. Далее строго по
+  (`/account`), `GET|PATCH /me`.
+- ✅ **E2 — каталог и продуктовая модель готовы**: Prisma-модели Category/Product/
+  ProductVariant + Translation (fulfillmentType READY_STOCK|MADE_TO_ORDER, goal,
+  tier, bundleSpec, etaMinutes, warrantyHours), публичные `GET /categories`,
+  `GET /products` (фильтры/поиск/сортировка/пагинация), `GET /products/:slug`;
+  локализация EN/RU по `?locale`/Accept-Language; витрина, каталог с фильтрами,
+  карточка товара (вариант, тип выдачи, ETA, комплект); идемпотентный сидер
+  `prisma/seed.ts`. Актуальная база кода — ветка `claude/advault-e2-catalog-m0omaf`.
+- 🔜 **Следующий шаг — эпик E3 (кошелёк и пополнение криптой)**. Далее строго по
   порядку эпиков/вех из `docs/16-development-plan.md`.
 - Живой статус и «что дальше» — всегда в `docs/SESSION-LOG.md`.
 

@@ -31,6 +31,16 @@ export function Header() {
           >
             {t('nav.home')}
           </NavLink>
+          <NavLink
+            to="/catalog"
+            className={({ isActive }) =>
+              `rounded-md px-3 py-2 text-sm font-medium transition-colors duration-[140ms] ${
+                isActive ? 'bg-surface-2 text-text-hi' : 'text-text-lo hover:text-text-hi'
+              }`
+            }
+          >
+            {t('nav.catalog')}
+          </NavLink>
         </nav>
 
         <div className="flex items-center gap-3">

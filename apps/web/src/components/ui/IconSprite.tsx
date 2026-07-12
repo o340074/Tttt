@@ -185,7 +185,56 @@ export function IconSprite() {
           <path d="M19 12H9" />
         </g>
       </symbol>
+      <symbol id="ic-search" viewBox="0 0 24 24">
+        <g
+          fill="none"
+          stroke="currentColor"
+          strokeWidth="2"
+          strokeLinecap="round"
+          strokeLinejoin="round"
+        >
+          <circle cx="11" cy="11" r="7" />
+          <path d="M16.8 16.8L21 21" />
+        </g>
+      </symbol>
       {/* Feature icons (Aurora gradient) */}
+      <symbol id="ic-ads" viewBox="0 0 24 24">
+        <g fill="url(#ig-aurora)">
+          <rect x="3" y="13" width="4.4" height="8" rx="1.4" />
+          <rect x="9.8" y="8.5" width="4.4" height="12.5" rx="1.4" />
+          <rect x="16.6" y="4" width="4.4" height="17" rx="1.4" />
+        </g>
+      </symbol>
+      <symbol id="ic-briefcase" viewBox="0 0 24 24">
+        <g fill="url(#ig-aurora)">
+          <rect x="8.5" y="4" width="7" height="4.6" rx="1.7" />
+          <path
+            fillRule="evenodd"
+            d="M5 7h14a2 2 0 0 1 2 2v9a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V9a2 2 0 0 1 2-2Zm5.6 5h2.8v3h-2.8z"
+          />
+        </g>
+      </symbol>
+      <symbol id="ic-clock" viewBox="0 0 24 24">
+        <path
+          fill="url(#ig-aurora)"
+          fillRule="evenodd"
+          d="M12 3a9 9 0 1 0 0 18 9 9 0 0 0 0-18ZM11.2 6.8h1.6v6h-1.6zM12.4 11.6h4v1.6h-4z"
+        />
+      </symbol>
+      <symbol id="ic-verify" viewBox="0 0 24 24">
+        <path
+          fill="url(#ig-aurora)"
+          fillRule="evenodd"
+          d="M12 2.5l7.5 3.2v5.1c0 4.8-3.2 8-7.5 9.6-4.3-1.6-7.5-4.8-7.5-9.6V5.7L12 2.5Zm-1.1 12.9l4.6-4.6-1.3-1.3-3.3 3.3-1.5-1.5-1.3 1.3 2.8 2.8Z"
+        />
+      </symbol>
+      <symbol id="ic-box" viewBox="0 0 24 24">
+        <path
+          fill="url(#ig-aurora)"
+          fillRule="evenodd"
+          d="M12 2l9 5v10l-9 5-9-5V7l9-5ZM11.2 12.3h1.6v8.1h-1.6z"
+        />
+      </symbol>
       <symbol id="ic-globe" viewBox="0 0 24 24">
         <path
           fill="url(#ig-aurora)"

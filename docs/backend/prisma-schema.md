@@ -50,6 +50,13 @@ enum ProductStatus {
   hidden
 }
 
+// Модель выдачи варианта (docs/11): READY_STOCK — мгновенно из стока,
+// MADE_TO_ORDER — прогрев под заказ оператором (очередь, ETA).
+enum FulfillmentType {
+  READY_STOCK
+  MADE_TO_ORDER
+}
+
 enum DeliveryType {
   auto
   manual
@@ -230,12 +237,22 @@ model ProductVariant {
   sku          String       @unique
   price        Decimal      @db.Decimal(18, 2)
   currency     String       @default("USD") // валюта учёта
-  deliveryType DeliveryType
-  stockCount   Int          @default(0) // кэш доступного стока (для auto)
+  deliveryType DeliveryType // производный снимок: auto ⇔ READY_STOCK, manual ⇔ MADE_TO_ORDER
+  stockCount   Int          @default(0) // кэш доступного стока (для READY_STOCK)
   isActive     Boolean      @default(true)
   attributes   Json         @default("{}") @db.JsonB
-  createdAt    DateTime     @default(now())
-  updatedAt    DateTime     @updatedAt
+
+  // --- Расширения docs/15 (модель выдачи и прогрев) ---
+  fulfillmentType FulfillmentType @default(READY_STOCK)
+  goal            String? // цель прогрева: google_ads, chrome_extension_dev, … (для MADE_TO_ORDER)
+  tier            String? // тариф прогрева, напр. warm_7d
+  // warmingPlanId придёт в E6 вместе с моделью WarmingPlan.
+  bundleSpec      Json    @default("[]") @db.JsonB // состав комплекта: [{ "type": "ACCOUNT" }, { "type": "PROXY", "meta": { "geo": "US", "kind": "residential" } }, …]
+  etaMinutes      Int? // кэш расчётной ETA (для MADE_TO_ORDER)
+  warrantyHours   Int? // окно гарантии/замены
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
 
   product    Product     @relation(fields: [productId], references: [id], onDelete: Cascade)
   stockItems StockItem[]
@@ -244,6 +261,8 @@ model ProductVariant {
 
   @@index([productId])
   @@index([isActive])
+  @@index([fulfillmentType])
+  @@index([goal])
   @@map("product_variants")
 }
 
@@ -562,7 +581,10 @@ model IdempotencyKey {
 
 1. Пользователи: `admin@advault.dev` (role=admin), `support@advault.dev` (role=support), `user@advault.dev` (role=user, balance=0).
 2. Категории с переводами EN/RU (напр. `google-ads`), дерево 1–2 уровня.
-3. 3–5 продуктов с переводами EN/RU, у каждого 1–2 варианта: один `auto`, один `manual`.
+3. 3–6 продуктов с переводами EN/RU, у каждого 1–2 варианта; обязательно есть
+   warm-варианты (`fulfillmentType=MADE_TO_ORDER`) с `goal=google_ads` и
+   `goal=chrome_extension_dev`, заполненными `tier`, `bundleSpec`, `etaMinutes`,
+   `warrantyHours`. `deliveryType` всегда согласован с `fulfillmentType`.
 4. Для `auto`-вариантов — 10–20 `StockItem(status=available)` с уже зашифрованным демо-`payload`; обновить `stockCount`.
 5. Демо-`PromoCode` (percent 10%, fixed 5.00).
 6. Идемпотентность сидов: `upsert` по уникальным ключам (email, slug, sku, code), чтобы повторный запуск не дублировал данные.
