@@ -2,9 +2,11 @@ import { useTranslation } from 'react-i18next';
 import { Link, NavLink } from 'react-router-dom';
 import { Icon } from '../ui/Icon';
 import { supportedLocales } from '../../i18n';
+import { useAuth } from '../../features/auth/useAuth';
 
 export function Header() {
   const { t, i18n } = useTranslation();
+  const { user, booting } = useAuth();
 
   return (
     <header className="sticky top-0 z-[100] border-b border-border bg-void/80 backdrop-blur-md">
@@ -31,26 +33,46 @@ export function Header() {
           </NavLink>
         </nav>
 
-        <div
-          className="flex items-center gap-1 rounded-pill border border-border bg-surface p-1"
-          role="group"
-          aria-label={t('nav.language')}
-        >
-          {supportedLocales.map((locale) => (
-            <button
-              key={locale}
-              type="button"
-              onClick={() => void i18n.changeLanguage(locale)}
-              aria-pressed={i18n.resolvedLanguage === locale}
-              className={`rounded-pill px-2.5 py-1 text-xs font-semibold uppercase tracking-[0.08em] transition-colors duration-[140ms] ${
-                i18n.resolvedLanguage === locale
-                  ? 'bg-volt text-white'
-                  : 'text-text-lo hover:text-text-hi'
-              }`}
-            >
-              {locale}
-            </button>
-          ))}
+        <div className="flex items-center gap-3">
+          <div
+            className="flex items-center gap-1 rounded-pill border border-border bg-surface p-1"
+            role="group"
+            aria-label={t('nav.language')}
+          >
+            {supportedLocales.map((locale) => (
+              <button
+                key={locale}
+                type="button"
+                onClick={() => void i18n.changeLanguage(locale)}
+                aria-pressed={i18n.resolvedLanguage === locale}
+                className={`rounded-pill px-2.5 py-1 text-xs font-semibold uppercase tracking-[0.08em] transition-colors duration-[140ms] ${
+                  i18n.resolvedLanguage === locale
+                    ? 'bg-volt text-white'
+                    : 'text-text-lo hover:text-text-hi'
+                }`}
+              >
+                {locale}
+              </button>
+            ))}
+          </div>
+
+          {!booting &&
+            (user ? (
+              <Link
+                to="/account"
+                className="flex items-center gap-2 rounded-pill border border-border bg-surface px-3.5 py-1.5 text-sm font-semibold text-text-hi transition-colors duration-[140ms] hover:border-volt"
+              >
+                <Icon name="user" className="text-[12px]" />
+                {t('nav.account')}
+              </Link>
+            ) : (
+              <Link
+                to="/auth/login"
+                className="bg-aurora flex items-center gap-2 rounded-pill px-3.5 py-1.5 text-sm font-semibold text-white shadow-glow-volt transition-transform duration-[140ms] hover:-translate-y-px"
+              >
+                {t('nav.signIn')}
+              </Link>
+            ))}
         </div>
       </div>
     </header>

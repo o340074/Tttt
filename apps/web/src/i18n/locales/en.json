@@ -6,7 +6,103 @@
   "nav": {
     "home": "Home",
     "catalog": "Catalog",
-    "language": "Language"
+    "language": "Language",
+    "account": "Account",
+    "signIn": "Sign in"
+  },
+  "auth": {
+    "switchLabel": "Choose form",
+    "backToLogin": "Back to log in",
+    "fine": "Protected by AdVault. By continuing you agree to our Terms and Privacy Policy.",
+    "login": {
+      "tab": "Log in",
+      "title": "Welcome back",
+      "subtitle": "Log in to your AdVault account.",
+      "submit": "Log in",
+      "forgot": "Forgot password?",
+      "noAccount": "New to AdVault?",
+      "toRegister": "Create an account"
+    },
+    "register": {
+      "tab": "Sign up",
+      "title": "Create your account",
+      "subtitle": "Start buying verified accounts in minutes.",
+      "submit": "Create account",
+      "haveAccount": "Already have an account?",
+      "toLogin": "Log in"
+    },
+    "forgot": {
+      "title": "Forgot password?",
+      "subtitle": "Enter your email and we'll send a reset link.",
+      "submit": "Send reset link",
+      "sent": "If an account exists for this email, a reset link is on its way.",
+      "remembered": "Remembered it?"
+    },
+    "reset": {
+      "title": "Set a new password",
+      "subtitle": "Choose a strong password for your account.",
+      "submit": "Reset password",
+      "success": "Password updated. You can now log in with the new password."
+    },
+    "verify": {
+      "title": "Check your email",
+      "sentTo": "We sent a verification link to",
+      "hint": "The link is valid for 24 hours. Don't forget to check spam.",
+      "checking": "Verifying your email…",
+      "successTitle": "Email verified",
+      "successText": "Your email has been confirmed. Welcome to AdVault!",
+      "resend": "Resend email",
+      "resent": "Verification email sent again.",
+      "toAccount": "Go to my account"
+    },
+    "fields": {
+      "email": "Email",
+      "password": "Password",
+      "newPassword": "New password",
+      "confirmPassword": "Confirm password",
+      "confirmNewPassword": "Confirm new password",
+      "emailInvalid": "Enter a valid email.",
+      "passwordRequired": "Enter your password.",
+      "passwordTooShort": "Password must be at least 8 characters.",
+      "passwordsMismatch": "Passwords don't match.",
+      "showPassword": "Show password",
+      "hidePassword": "Hide password"
+    },
+    "strength": {
+      "label": "Password strength",
+      "l1": "Weak",
+      "l2": "Fair",
+      "l3": "Good",
+      "l4": "Strong"
+    }
+  },
+  "account": {
+    "title": "My account",
+    "profile": "Profile",
+    "email": "Email",
+    "role": "Role",
+    "roles": {
+      "user": "Customer",
+      "support": "Support",
+      "admin": "Administrator"
+    },
+    "balance": "Balance",
+    "memberSince": "Member since",
+    "verified": "Verified",
+    "verifyBanner": "Please confirm your email — we sent you a verification link.",
+    "language": "Interface language",
+    "languageHint": "Saved to your profile and used for emails.",
+    "logout": "Log out"
+  },
+  "errors": {
+    "GENERIC": "Something went wrong. Please try again.",
+    "VALIDATION_ERROR": "Please check the entered data.",
+    "UNAUTHORIZED": "Your session has expired. Please log in again.",
+    "FORBIDDEN": "This account is blocked. Contact support.",
+    "RATE_LIMITED": "Too many attempts. Please wait a minute and try again.",
+    "INVALID_CREDENTIALS": "Invalid email or password.",
+    "EMAIL_ALREADY_USED": "This email is already registered.",
+    "INVALID_TOKEN": "This link is invalid or has expired."
   },
   "home": {
     "heroTitle": "The vault for premium ad accounts",

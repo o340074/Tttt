@@ -1,5 +1,22 @@
 export type IconName =
-  'shield' | 'check' | 'x' | 'info' | 'arrow-right' | 'theme' | 'globe' | 'spark' | 'bolt';
+  | 'shield'
+  | 'check'
+  | 'x'
+  | 'info'
+  | 'arrow-right'
+  | 'arrow-left'
+  | 'theme'
+  | 'globe'
+  | 'spark'
+  | 'bolt'
+  | 'mail'
+  | 'lock'
+  | 'user'
+  | 'eye'
+  | 'eye-off'
+  | 'alert'
+  | 'refresh'
+  | 'logout';
 
 interface IconProps {
   name: IconName;

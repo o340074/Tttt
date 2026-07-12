@@ -7,18 +7,18 @@
 
 ## 📍 Текущий статус
 
-- **Фаза:** разработка. Каркас (E0) готов и проверен end-to-end.
-- **Следующий эпик:** **E1 — Аутентификация и аккаунты** (см. `docs/16-development-plan.md` §4).
-- **Ветка:** E0 сделан на `claude/advault-e0-scaffold-0xtyx4`. Разработку следующих
-  эпиков вести на feature-ветках per эпик от актуальной базы.
+- **Фаза:** разработка. E0 (каркас) и E1 (аутентификация) готовы и проверены end-to-end.
+- **Следующий эпик:** **E2 — Каталог и продуктовая модель** (см. `docs/16-development-plan.md` §4).
+- **Ветка:** актуальная база — `claude/advault-e1-auth-88jq5l` (E0+E1; в main код ещё
+  не влит). Разработку следующих эпиков вести на feature-ветках per эпик от неё.
 - **Прогресс по эпикам (из `docs/16`):**
 
 | Эпик | Название | Статус |
 |------|----------|--------|
 | — | Планирование и документация | ✅ готово |
 | E0 | Каркас монорепо + CI | ✅ готово |
-| E1 | Аутентификация и аккаунты | ⬜ следующий |
-| E2 | Каталог и продуктовая модель | ⬜ |
+| E1 | Аутентификация и аккаунты | ✅ готово |
+| E2 | Каталог и продуктовая модель | ⬜ следующий |
 | E3 | Кошелёк и пополнение криптой | ⬜ |
 | E4 | Корзина, заказы, оплата с баланса | ⬜ |
 | E5 | Выдача из стока (READY_STOCK) | ⬜ |
@@ -34,6 +34,49 @@
 ---
 
 ## Записи
+
+### Сессия — Аутентификация и аккаунты (эпик E1)
+- **Сделано (контракты):** в `docs/backend/openapi.md` добавлен
+  `POST /auth/resend-verification` и `security: []` у logout (работает по cookie);
+  в `docs/backend/prisma-schema.md` зафиксировано хранение одноразовых auth-токенов
+  в Redis (`auth:rt:*`, `auth:verify:*`, `auth:reset:*`); auth-типы отзеркалены в
+  `@advault/types` (User, TokenResponse, Register/Login/Reset*, ApiErrorCode).
+- **API:** `schema.prisma` — модель User (Role, UserStatus) + миграция
+  `20260712000000_init_users`. Модули `auth/` и `users/`: register/login/refresh/
+  logout/verify-email/resend-verification/forgot-password/reset-password,
+  `GET|PATCH /me`, `POST /me/change-password`. Пароли — **argon2id**; JWT access
+  (15 мин) + refresh (30 дней) в HTTP-only cookie (SameSite=Strict,
+  Path=/api/v1/auth) с **ротацией jti в Redis**: повтор использованного refresh
+  отзывает всю семью сессий; смена/сброс пароля отзывает все сессии. Rate-limit
+  `@nestjs/throttler` (login/register 5/мин, forgot/resend 3/5мин + глобальный
+  потолок). Глобальные `JwtAuthGuard` (+`@Public()`) и exception-filter единого
+  формата `Error` (VALIDATION_ERROR с details.fields, RATE_LIMITED и т.д.).
+  Email — заглушка `MailerService` (логирует ссылки verify/reset). Env:
+  `JWT_*`, `WEB_URL` (+ проверка не-дефолтных секретов в production).
+- **Web:** экраны по `prototype/screens/auth.html` — login/register (segmented
+  switch, floating-поля, сила пароля, показ/скрытие), forgot/reset/verify;
+  `AuthProvider` (access-токен только в памяти, восстановление сессии по refresh
+  cookie при загрузке, single-flight refresh + повтор запроса на 401), guard-роуты
+  `RequireAuth`/`RedirectIfAuthed`; ЛК `/account`: профиль, бейдж «подтверждён»/
+  баннер с resend, выбор локали (PATCH /me), выход. i18n EN/RU полностью, все
+  состояния loading/error; иконки добавлены в SVG-спрайт (mail, lock, eye…).
+- **Тесты (37):** unit — argon2id, ротация/отзыв refresh, one-time токены, guard,
+  AuthService (дубль email, неверные креды, blocked, replay-детект); e2e-smoke по
+  HTTP (supertest + in-memory фейки Prisma/Redis): регистрация→verify→вход→/me→
+  refresh-ротация→logout→429. Для DI в vitest добавлен `unplugin-swc`.
+- **Проверено вживую:** локальные Postgres 16 + Redis, `prisma migrate deploy`,
+  полный цикл через curl (в т.ч. replay refresh → INVALID_TOKEN, 429 c
+  RATE_LIMITED) и через Chromium/Playwright: регистрация→verify-экран→ЛК→
+  переключение RU→перезагрузка (сессия живёт)→выход→guard-редирект. Скриншоты
+  сверены с прототипом. lint/format/typecheck/тесты/build зелёные.
+- **Решения:** refresh-сессии и одноразовые токены — только в Redis (в БД лишь
+  `emailVerifiedAt`/`passwordHash`); вход разрешён до подтверждения email
+  (подтверждение будет требоваться на чувствительных действиях, код
+  EMAIL_NOT_VERIFIED зарезервирован); эндпоинт профиля — `/me` (как в контракте).
+- **Проблемы/долги:** throttler in-memory (на мультиинстансе понадобится
+  Redis-storage); e2e в CI идёт на in-memory фейках (реальные сервисы — локально);
+  «Remember me» и OAuth из прототипа не в контракте — не реализованы; 2FA — v2.
+- **Дальше:** **E2 — Каталог и продуктовая модель** (промт в `docs/NEXT-SESSION-PROMPT.md`).
 
 ### Сессия — Каркас монорепо + CI (эпик E0)
 - **Сделано:** pnpm-монорепо: `apps/web` (React 19 + Vite 6 + Tailwind 4),

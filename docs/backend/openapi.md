@@ -586,7 +586,8 @@ paths:
   /auth/logout:
     post:
       tags: [Auth]
-      summary: Отзыв refresh-токена
+      summary: Отзыв refresh-токена (по cookie; работает и с истёкшим access)
+      security: []
       responses:
         '204': { description: Выполнено; cookie очищен. }
 
@@ -608,6 +609,15 @@ paths:
         '400':
           description: Токен невалиден/просрочен (INVALID_TOKEN).
           content: { application/json: { schema: { $ref: '#/components/schemas/Error' } } }
+
+  /auth/resend-verification:
+    post:
+      tags: [Auth]
+      summary: Повторная отправка письма подтверждения (текущему пользователю)
+      responses:
+        '202': { description: Письмо отправлено (или email уже подтверждён — идемпотентно). }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '429': { $ref: '#/components/responses/RateLimited' }
 
   /auth/forgot-password:
     post:

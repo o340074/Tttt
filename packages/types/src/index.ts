@@ -27,13 +27,101 @@ export interface HealthResponse {
   };
 }
 
+/** Error codes returned in the ApiError envelope (docs/backend/openapi.md). */
+export type ApiErrorCode =
+  | 'VALIDATION_ERROR'
+  | 'UNAUTHORIZED'
+  | 'FORBIDDEN'
+  | 'NOT_FOUND'
+  | 'CONFLICT'
+  | 'RATE_LIMITED'
+  | 'INSUFFICIENT_BALANCE'
+  | 'OUT_OF_STOCK'
+  | 'EMAIL_NOT_VERIFIED'
+  | 'EMAIL_ALREADY_USED'
+  | 'INVALID_CREDENTIALS'
+  | 'INVALID_TOKEN'
+  | 'IDEMPOTENCY_CONFLICT'
+  | 'INVALID_SIGNATURE'
+  | 'REVIEW_NOT_ALLOWED'
+  | 'PROMO_INVALID'
+  | 'INTERNAL_ERROR';
+
 /** Unified API error envelope. */
 export interface ApiError {
   error: {
-    code: string;
+    code: ApiErrorCode;
     message: string;
     details?: Record<string, unknown>;
   };
+}
+
+// ---------- Auth & users (E1) ----------
+
+export type Role = 'user' | 'support' | 'admin';
+export type UserStatus = 'active' | 'blocked';
+
+/** GET /me — current user profile. */
+export interface User {
+  id: string;
+  email: string;
+  role: Role;
+  status: UserStatus;
+  balance: Money;
+  currency: string;
+  locale: Locale;
+  /** ISO 8601 date-time or null until the email is verified. */
+  emailVerifiedAt: string | null;
+  /** ISO 8601 date-time. */
+  createdAt: string;
+}
+
+/** POST /auth/register */
+export interface RegisterRequest {
+  email: string;
+  password: string;
+  locale?: Locale;
+}
+
+/** POST /auth/login */
+export interface LoginRequest {
+  email: string;
+  password: string;
+}
+
+/** POST /auth/{register,login,refresh} — refresh token travels in an HTTP-only cookie. */
+export interface TokenResponse {
+  accessToken: string;
+  /** Access-token TTL in seconds. */
+  expiresIn: number;
+  tokenType?: 'Bearer';
+}
+
+/** POST /auth/verify-email */
+export interface VerifyEmailRequest {
+  token: string;
+}
+
+/** POST /auth/forgot-password */
+export interface ForgotPasswordRequest {
+  email: string;
+}
+
+/** POST /auth/reset-password */
+export interface ResetPasswordRequest {
+  token: string;
+  newPassword: string;
+}
+
+/** PATCH /me */
+export interface UpdateMeRequest {
+  locale?: Locale;
+}
+
+/** POST /me/change-password */
+export interface ChangePasswordRequest {
+  currentPassword: string;
+  newPassword: string;
 }
 
 /** Pagination metadata returned by list endpoints. */

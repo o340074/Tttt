@@ -149,4 +149,184 @@
     vertical-align: -0.25em;
     flex-shrink: 0;
   }
+
+  /* ---- Auth screens (prototype/screens/auth.html) ---- */
+
+  /* Blurred aurora blobs behind the auth card. */
+  .aurora-field {
+    position: absolute;
+    inset: -30%;
+    z-index: 0;
+    filter: blur(80px);
+    opacity: 0.5;
+    pointer-events: none;
+    background:
+      radial-gradient(closest-side, rgba(91, 91, 246, 0.9), transparent 70%) 18% 26% / 48% 48%
+        no-repeat,
+      radial-gradient(closest-side, rgba(226, 75, 240, 0.8), transparent 70%) 80% 18% / 46% 46%
+        no-repeat,
+      radial-gradient(closest-side, rgba(34, 211, 238, 0.7), transparent 70%) 60% 88% / 48% 48%
+        no-repeat;
+    animation: aurora 16s ease-in-out infinite;
+  }
+
+  /* Card with a faint aurora ring. */
+  .auth-card {
+    position: relative;
+    overflow: hidden;
+    width: 100%;
+    max-width: 428px;
+    border: 1px solid var(--color-border);
+    border-radius: var(--radius-xl);
+    background: color-mix(in srgb, var(--color-surface) 94%, transparent);
+    box-shadow: var(--shadow-3);
+    backdrop-filter: blur(12px);
+  }
+  .auth-card::before {
+    content: '';
+    position: absolute;
+    inset: 0;
+    border-radius: inherit;
+    padding: 1px;
+    background: var(--grad-aurora);
+    -webkit-mask:
+      linear-gradient(#000 0 0) content-box,
+      linear-gradient(#000 0 0);
+    -webkit-mask-composite: xor;
+    mask-composite: exclude;
+    opacity: 0.35;
+    pointer-events: none;
+  }
+
+  /* Floating-label field. Markup: .field[.err|.ok] > .fl > input + label + .lead-ic … */
+  .fl {
+    position: relative;
+  }
+  .fl > input {
+    width: 100%;
+    height: 58px;
+    border-radius: var(--radius-md);
+    border: 1px solid var(--color-border);
+    background: var(--color-surface-2);
+    color: var(--color-text-hi);
+    font-size: 15px;
+    font-family: inherit;
+    padding: 22px 46px 8px 44px;
+    transition:
+      border-color var(--dur-fast),
+      box-shadow var(--dur-fast),
+      background var(--dur-fast);
+  }
+  .fl.no-tog > input {
+    padding-right: 14px;
+  }
+  .fl > input::placeholder {
+    color: transparent;
+  }
+  .fl > input:focus {
+    outline: none;
+    border-color: var(--color-volt);
+    box-shadow: var(--shadow-glow-volt);
+    background: var(--color-surface);
+  }
+  .fl > label {
+    position: absolute;
+    left: 44px;
+    top: 18px;
+    color: var(--color-text-lo);
+    font-size: 15px;
+    pointer-events: none;
+    transform-origin: left center;
+    transition:
+      transform 160ms ease,
+      color 160ms ease;
+  }
+  .fl > input:focus + label,
+  .fl > input:not(:placeholder-shown) + label {
+    transform: translateY(-11px) scale(0.76);
+    color: var(--color-text-dim);
+  }
+  .fl > input:focus + label {
+    color: var(--color-volt-400);
+  }
+  .fl .lead-ic {
+    position: absolute;
+    left: 14px;
+    top: 0;
+    bottom: 0;
+    display: flex;
+    align-items: center;
+    color: var(--color-text-dim);
+    pointer-events: none;
+  }
+  .fl > input:focus ~ .lead-ic {
+    color: var(--color-volt-400);
+  }
+  .field.err .fl > input {
+    border-color: var(--color-danger);
+    box-shadow:
+      0 0 0 1px rgba(255, 77, 109, 0.5),
+      0 0 26px rgba(255, 77, 109, 0.4);
+    background: var(--color-surface);
+  }
+  .field.err .fl > label,
+  .field.err .fl > input:focus + label,
+  .field.err .fl > input:not(:placeholder-shown) + label {
+    color: var(--color-danger);
+  }
+  .field.err .fl .lead-ic {
+    color: var(--color-danger);
+  }
+
+  .shake {
+    animation: shake 340ms ease;
+  }
+  .fade-up {
+    animation: fade-up 340ms var(--ease-standard) both;
+  }
+}
+
+@keyframes aurora {
+  0%,
+  100% {
+    transform: translate(0, 0) rotate(0deg);
+  }
+  33% {
+    transform: translate(4%, -3%) rotate(6deg);
+  }
+  66% {
+    transform: translate(-3%, 4%) rotate(-5deg);
+  }
+}
+
+@keyframes fade-up {
+  from {
+    opacity: 0;
+    transform: translateY(14px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+@keyframes shake {
+  0%,
+  100% {
+    transform: translateX(0);
+  }
+  25% {
+    transform: translateX(-8px);
+  }
+  75% {
+    transform: translateX(8px);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .aurora-field,
+  .fade-up,
+  .shake {
+    animation: none;
+  }
 }

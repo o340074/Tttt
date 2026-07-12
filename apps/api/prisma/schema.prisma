@@ -1,6 +1,6 @@
 // AdVault — Prisma schema.
 // Contract source of truth: docs/backend/prisma-schema.md.
-// E0: connection scaffold only; domain models arrive with their epics (E1+).
+// Models arrive with their epics; E1 brings User (auth & accounts).
 
 generator client {
   provider = "prisma-client-js"
@@ -9,4 +9,33 @@ generator client {
 datasource db {
   provider = "postgresql"
   url      = env("DATABASE_URL")
+}
+
+enum Role {
+  user
+  support
+  admin
+}
+
+enum UserStatus {
+  active
+  blocked
+}
+
+model User {
+  id              String     @id @default(uuid()) @db.Uuid
+  email           String     @unique
+  passwordHash    String
+  role            Role       @default(user)
+  status          UserStatus @default(active)
+  balance         Decimal    @default(0) @db.Decimal(18, 2) // кэш; истина — LedgerEntry (E3)
+  locale          String     @default("en")
+  emailVerifiedAt DateTime?
+  twoFactorSecret String? // TOTP (v2)
+  createdAt       DateTime   @default(now())
+  updatedAt       DateTime   @updatedAt
+
+  @@index([status])
+  @@index([role])
+  @@map("users")
 }

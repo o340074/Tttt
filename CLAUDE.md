@@ -23,7 +23,12 @@
 - ✅ **E0 — каркас монорепо готов**: `apps/web` (React+Vite+Tailwind, i18n EN/RU,
   токены Aurora), `apps/api` (NestJS, /health, Prisma+Redis, Swagger),
   `packages/{types,config}`, docker-compose, CI.
-- 🔜 **Следующий шаг — эпик E1 (аутентификация и аккаунты)**. Далее строго по
+- ✅ **E1 — аутентификация и аккаунты готовы**: JWT access+refresh (ротация jti в
+  Redis, HTTP-only cookie), argon2id, verify/reset email (mailer-заглушка),
+  rate-limit, единый формат ошибок `Error`, экраны auth + guard-роуты + ЛК
+  (`/account`), `GET|PATCH /me`. Актуальная база кода — ветка
+  `claude/advault-e1-auth-88jq5l`.
+- 🔜 **Следующий шаг — эпик E2 (каталог и продуктовая модель)**. Далее строго по
   порядку эпиков/вех из `docs/16-development-plan.md`.
 - Живой статус и «что дальше» — всегда в `docs/SESSION-LOG.md`.
 
