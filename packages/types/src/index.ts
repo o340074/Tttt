@@ -356,6 +356,41 @@ export interface Order {
   createdAt: string;
 }
 
+// ---------- Stock & delivery (E5) ----------
+
+/** StockItem pool states (docs/backend/prisma-schema.md). */
+export type StockStatus = 'available' | 'reserved' | 'sold';
+
+/** How a Delivery came to be: instant from stock, by an operator, or a warranty replacement. */
+export type DeliveryKind = 'auto' | 'manual' | 'replacement';
+
+/**
+ * GET /orders/:id/items/:itemId/delivery — decrypted delivery data.
+ * Owner-only; every access is written to the audit log.
+ */
+export interface DeliveryPayload {
+  orderItemId: string;
+  type: DeliveryKind;
+  /** Decrypted secret; one sold unit per line when quantity > 1. */
+  payload: string;
+  /** ISO 8601 date-time. */
+  deliveredAt: string | null;
+}
+
+/** POST /admin/products/:id/variants/:variantId/stock/import (JSON body; text/plain is the raw-file alternative). */
+export interface StockImportRequest {
+  /** One stock unit per line; encrypted server-side before storage. */
+  items: string[];
+}
+
+/** Import outcome; skipped counts empty lines and per-variant duplicates. */
+export interface StockImportReport {
+  added: number;
+  skipped: number;
+  /** Available pool size after the import (the variant's fresh stockCount). */
+  stockCount: number;
+}
+
 /** Pagination metadata returned by list endpoints. */
 export interface PageMeta {
   total: number;

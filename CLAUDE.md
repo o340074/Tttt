@@ -49,9 +49,18 @@
   c INSUFFICIENT_BALANCE + Order(status=paid) + очистка корзины), `GET /orders`,
   `GET /orders/:id`; экран `/checkout` (степпер, промокод, оплата с баланса, CTA
   «Пополнить» при нехватке, flash), кнопка Buy now, заказы в ЛК (`/orders`).
-  Актуальная база кода — ветка `claude/advault-e4-cart-orders-q2u0j4`.
-- 🔜 **Следующий шаг — эпик E5 (выдача из стока READY_STOCK: StockItem, Delivery,
-  шифрование payload, Vault)**. Далее строго по порядку эпиков/вех из
+- ✅ **E5 — выдача из стока READY_STOCK готова**: Prisma StockItem (payloadHash-дедуп)/
+  Delivery/AuditLog; шифрование payload AES-256-GCM (версионируемый ключ env
+  `PAYLOAD_ENCRYPTION_KEY`); двухфазный резерв (available→reserved+reservedUntil+Redis
+  TTL, sweep→sold) c авто-выдачей в транзакции checkout (Delivery type=auto +
+  deliveryStatus=delivered, статус заказа — агрегат по docs/14, stockCount от пула);
+  `GET /orders/:id/items/:itemId/delivery` (расшифровка только владельцу + AuditLog);
+  импорт стока `POST /admin/products/:id/variants/:variantId/stock/import` (RBAC admin,
+  JSON/text-plain, отчёт added/skipped); Vault-блок в `/orders/:id`
+  (маска→показать/копировать/скачать .txt). MADE_TO_ORDER — pending до E6.
+  Актуальная база кода — ветка `claude/advault-e5-stock-delivery-61ndk3`.
+- 🔜 **Следующий шаг — эпик E6 (прогрев MADE_TO_ORDER: WarmingPlan/Job/Task, очередь,
+  ETA, сборка/выдача комплекта в Vault)**. Далее строго по порядку эпиков/вех из
   `docs/16-development-plan.md`.
 - Живой статус и «что дальше» — всегда в `docs/SESSION-LOG.md`.
 

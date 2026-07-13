@@ -6,6 +6,7 @@ import { AuthController } from './auth.controller';
 import { AuthService } from './auth.service';
 import { JwtAuthGuard } from './jwt-auth.guard';
 import { PasswordService } from './password.service';
+import { RolesGuard } from './roles.guard';
 import { TokenService } from './token.service';
 
 @Module({
@@ -21,6 +22,8 @@ import { TokenService } from './token.service';
     TokenService,
     { provide: APP_GUARD, useClass: ThrottlerGuard },
     { provide: APP_GUARD, useClass: JwtAuthGuard },
+    // Runs after JwtAuthGuard (registration order); enforces @Roles().
+    { provide: APP_GUARD, useClass: RolesGuard },
   ],
   exports: [TokenService, PasswordService],
 })

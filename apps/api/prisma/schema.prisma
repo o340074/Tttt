@@ -3,7 +3,8 @@
 // Models arrive with their epics; E1 brings User (auth & accounts),
 // E2 brings the catalog (Category, Product, ProductVariant + translations),
 // E3 brings the wallet (LedgerEntry, TopUp, IdempotencyKey),
-// E4 brings cart & orders (Cart, CartItem, Order, OrderItem, PromoCode).
+// E4 brings cart & orders (Cart, CartItem, Order, OrderItem, PromoCode),
+// E5 brings ready-stock delivery (StockItem, Delivery, AuditLog).
 
 generator client {
   provider = "prisma-client-js"
@@ -34,6 +35,20 @@ enum ProductStatus {
 enum DeliveryType {
   auto
   manual
+}
+
+// How a Delivery record came to be (docs/08): instant from stock, entered
+// by an operator, or a warranty replacement.
+enum DeliveryKind {
+  auto
+  manual
+  replacement
+}
+
+enum StockStatus {
+  available
+  reserved
+  sold
 }
 
 // Модель выдачи варианта (docs/11): READY_STOCK — мгновенно из стока,
@@ -151,7 +166,7 @@ model ProductVariant {
   price        Decimal      @db.Decimal(18, 2)
   currency     String       @default("USD") // валюта учёта
   deliveryType DeliveryType // производный снимок: auto ⇔ READY_STOCK, manual ⇔ MADE_TO_ORDER
-  stockCount   Int          @default(0) // кэш доступного стока (для READY_STOCK; StockItem придёт в E5)
+  stockCount   Int          @default(0) // кэш: COUNT(StockItem WHERE status=available) — пересчитывается при мутациях пула
   isActive     Boolean      @default(true)
   attributes   Json         @default("{}") @db.JsonB
 
@@ -170,12 +185,38 @@ model ProductVariant {
   product    Product     @relation(fields: [productId], references: [id], onDelete: Cascade)
   orderItems OrderItem[]
   cartItems  CartItem[]
+  stockItems StockItem[]
 
   @@index([productId])
   @@index([isActive])
   @@index([fulfillmentType])
   @@index([goal])
   @@map("product_variants")
+}
+
+// ============================================================
+// Stock (auto-delivery pool) — E5
+// ============================================================
+
+model StockItem {
+  id            String      @id @default(uuid()) @db.Uuid
+  variantId     String      @db.Uuid
+  payload       String      @db.Text // ENCRYPTED app-side (AES-256-GCM, v-prefixed ciphertext)
+  payloadHash   String // SHA-256 of the plaintext — import dedup within a variant
+  status        StockStatus @default(available)
+  reservedUntil DateTime? // reserve TTL; the sweep returns overdue reserves to available
+  orderItemId   String?     @db.Uuid // set on sale; qty > 1 → several units per order item
+  createdAt     DateTime    @default(now())
+
+  variant   ProductVariant @relation(fields: [variantId], references: [id], onDelete: Cascade)
+  orderItem OrderItem?     @relation(fields: [orderItemId], references: [id], onDelete: SetNull)
+  delivery  Delivery?
+
+  @@unique([variantId, payloadHash]) // re-importing the same line is a no-op
+  @@index([variantId, status]) // picking available units for a reserve
+  @@index([status, reservedUntil]) // overdue-reserve sweep
+  @@index([orderItemId])
+  @@map("stock_items")
 }
 
 model User {
@@ -195,6 +236,8 @@ model User {
   topUps        TopUp[]
   orders        Order[]
   cart          Cart?
+  auditLogs     AuditLog[]    @relation("AuditActor")
+  deliveries    Delivery[]    @relation("DeliveredBy")
 
   @@index([status])
   @@index([role])
@@ -268,12 +311,36 @@ model OrderItem {
   deliveryType   DeliveryType // снимок типа выдачи
   deliveryStatus OrderItemDeliveryStatus @default(pending)
 
-  order   Order          @relation(fields: [orderId], references: [id], onDelete: Cascade)
-  variant ProductVariant @relation(fields: [variantId], references: [id], onDelete: Restrict)
+  order      Order          @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  variant    ProductVariant @relation(fields: [variantId], references: [id], onDelete: Restrict)
+  deliveries Delivery[] // qty > 1 → one Delivery per sold StockItem
+  stockItems StockItem[]
 
   @@index([orderId])
   @@index([deliveryStatus])
   @@map("order_items")
+}
+
+// ============================================================
+// Delivery (handing data to the buyer) — E5
+// ============================================================
+
+model Delivery {
+  id          String       @id @default(uuid()) @db.Uuid
+  orderItemId String       @db.Uuid
+  stockItemId String?      @unique @db.Uuid // source unit for auto deliveries
+  payload     String       @db.Text // ENCRYPTED snapshot of what was handed over
+  deliveredBy String?      @db.Uuid // operator (manual/replacement)
+  deliveredAt DateTime?
+  type        DeliveryKind
+  createdAt   DateTime     @default(now())
+
+  orderItem       OrderItem  @relation(fields: [orderItemId], references: [id], onDelete: Cascade)
+  stockItem       StockItem? @relation(fields: [stockItemId], references: [id], onDelete: SetNull)
+  deliveredByUser User?      @relation("DeliveredBy", fields: [deliveredBy], references: [id], onDelete: SetNull)
+
+  @@index([orderItemId])
+  @@map("deliveries")
 }
 
 model PromoCode {
@@ -332,6 +399,26 @@ model TopUp {
   @@index([userId, createdAt])
   @@index([status, expiresAt]) // sweep закрытия просроченных pending
   @@map("topups")
+}
+
+// ============================================================
+// Audit — E5
+// ============================================================
+
+model AuditLog {
+  id        String   @id @default(uuid()) @db.Uuid
+  actorId   String?  @db.Uuid
+  action    String // e.g. delivery.payload_accessed, stock.import
+  entity    String // e.g. Delivery, StockItem
+  entityId  String?  @db.Uuid
+  diff      Json     @default("{}") @db.JsonB // context of the action (no secrets!)
+  createdAt DateTime @default(now())
+
+  actor User? @relation("AuditActor", fields: [actorId], references: [id], onDelete: SetNull)
+
+  @@index([entity, entityId])
+  @@index([actorId, createdAt])
+  @@map("audit_logs")
 }
 
 model IdempotencyKey {

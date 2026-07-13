@@ -3,6 +3,7 @@ import { Link, useParams } from 'react-router-dom';
 import { Icon } from '../components/ui/Icon';
 import { useOrder } from '../features/cart/api';
 import { formatMoney } from '../features/catalog/format';
+import { VaultCard } from '../features/orders/VaultCard';
 import { ApiRequestError } from '../lib/api';
 import { OrderStatusBadge } from './OrdersPage';
 import type { OrderItem } from '@advault/types';
@@ -46,6 +47,7 @@ export function OrderPage() {
   }
 
   const data = order.data!;
+  const deliveredItems = data.items.filter((item) => item.deliveryStatus === 'delivered');
 
   return (
     <div className="mx-auto w-full max-w-[860px] px-4 py-10 md:px-6">
@@ -98,6 +100,21 @@ export function OrderPage() {
           </div>
         ))}
       </section>
+
+      {deliveredItems.length > 0 && (
+        <section className="mb-6">
+          <div className="mb-3 flex items-center gap-2">
+            <Icon name="vault" className="!h-5 !w-5 text-volt-400" />
+            <h2 className="text-[17px] font-bold">{t('vault.heading')}</h2>
+          </div>
+          <p className="mb-4 text-[13px] text-text-lo">{t('vault.subhead')}</p>
+          <div className="flex flex-col gap-3">
+            {deliveredItems.map((item) => (
+              <VaultCard key={item.id} orderId={data.id} item={item} />
+            ))}
+          </div>
+        </section>
+      )}
 
       <section className="rounded-lg border border-border bg-surface p-6 shadow-2">
         <div className="flex items-center justify-between py-1.5 text-sm text-text-lo">

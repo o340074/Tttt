@@ -353,7 +353,7 @@
     "subtotal": "Subtotal",
     "discount": "Discount",
     "totalLabel": "Total",
-    "deliveryNote": "Purchased data will appear here as soon as delivery completes.",
+    "deliveryNote": "Data for items still being prepared will appear here as soon as delivery completes.",
     "notFound": "Order not found",
     "error": "Failed to load orders.",
     "retry": "Try again",
@@ -361,6 +361,20 @@
     "page": "Page {{page}} of {{total}}",
     "prev": "Previous",
     "next": "Next"
+  },
+  "vault": {
+    "heading": "Your data",
+    "subhead": "Delivered credentials — reveal, copy or download them. Keep them somewhere safe.",
+    "delivered": "Delivered",
+    "units_one": "{{count}} unit",
+    "units_other": "{{count}} units",
+    "show": "Show",
+    "hide": "Hide",
+    "revealing": "Revealing…",
+    "copy": "Copy",
+    "copied": "Copied",
+    "download": "Download .txt",
+    "error": "Couldn't load your data. Please try again."
   },
   "health": {
     "title": "API status",

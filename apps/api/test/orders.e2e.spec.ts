@@ -4,6 +4,7 @@ import request from 'supertest';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { AppModule } from '../src/app.module';
 import { configureApp } from '../src/app.setup';
+import { PayloadCryptoService } from '../src/crypto/payload-crypto.service';
 import { PrismaService } from '../src/prisma/prisma.service';
 import { RedisService } from '../src/redis/redis.service';
 import {
@@ -31,12 +32,17 @@ describe('Cart & checkout smoke (e2e)', () => {
   const prisma = makeFakePrismaService();
 
   let accessToken = '';
+  let adminToken = '';
   let stockVariant: DbVariant;
   let warmVariant: DbVariant;
+  let productId = '';
   let cartItemId = '';
   let orderId = '';
+  let orderItemId = '';
   let orderNumber = '';
   const checkoutKey = randomUUID();
+  /** The plaintext of the first stock line — asserted after decryption. */
+  const firstStockLine = 'ads_us_1@mailbox.io:Secret-1';
 
   beforeAll(async () => {
     const moduleRef = await Test.createTestingModule({ imports: [AppModule] })
@@ -84,17 +90,47 @@ describe('Cart & checkout smoke (e2e)', () => {
       attributes: { name_en: 'Warm-up · 7 days', name_ru: 'Прогрев · 7 дней' },
     });
     product.variants.push(stockVariant, warmVariant);
+    productId = product.id;
     prisma.product.rows.push(product);
     prisma.productVariant.rows.push(stockVariant, warmVariant);
     await prisma.promoCode.create({
       data: { code: 'AURORA10', type: 'percent', value: '10.00', maxUses: 1000 },
     });
 
+    // Seed the stock pool with real encrypted payloads (5 units).
+    const crypto = app.get(PayloadCryptoService);
+    const lines = [firstStockLine, 'l2', 'l3', 'l4', 'l5'];
+    for (const line of lines) {
+      prisma.stockItem.rows.push({
+        id: randomUUID(),
+        variantId: stockVariant.id,
+        payload: crypto.encrypt(line),
+        payloadHash: crypto.hash(line),
+        status: 'available',
+        reservedUntil: null,
+        orderItemId: null,
+        createdAt: new Date(),
+      });
+    }
+
     const res = await request(http)
       .post('/api/v1/auth/register')
       .send({ email: 'checkout-smoke@advault.dev', password: 'password-123' })
       .expect(201);
     accessToken = res.body.accessToken;
+
+    // An admin for the stock-import RBAC checks: register, promote, re-login.
+    await request(http)
+      .post('/api/v1/auth/register')
+      .send({ email: 'admin-smoke@advault.dev', password: 'password-123' })
+      .expect(201);
+    const adminRow = prisma.user.rows.find((u) => u.email === 'admin-smoke@advault.dev')!;
+    adminRow.role = 'admin';
+    const adminLogin = await request(http)
+      .post('/api/v1/auth/login')
+      .send({ email: 'admin-smoke@advault.dev', password: 'password-123' })
+      .expect(200);
+    adminToken = adminLogin.body.accessToken;
   });
 
   afterAll(async () => {
@@ -195,7 +231,7 @@ describe('Cart & checkout smoke (e2e)', () => {
       .expect(201);
 
     expect(res.body).toMatchObject({
-      status: 'paid',
+      status: 'delivered', // single ready-stock line, auto-delivered on payment
       subtotal: '42.00',
       discount: '4.20',
       total: '37.80',
@@ -207,9 +243,10 @@ describe('Cart & checkout smoke (e2e)', () => {
       quantity: 1,
       unitPrice: '42.00',
       deliveryType: 'auto',
-      deliveryStatus: 'pending',
+      deliveryStatus: 'delivered',
     });
     orderId = res.body.id;
+    orderItemId = res.body.items[0].id;
     orderNumber = res.body.number;
 
     const wallet = await authed(request(http).get('/api/v1/wallet')).expect(200);
@@ -221,10 +258,37 @@ describe('Cart & checkout smoke (e2e)', () => {
       refType: 'order',
       refId: orderId,
     });
+    // One unit sold from the pool; the cache reflects four left.
+    expect(prisma.stockItem.rows.filter((r) => r.status === 'sold')).toHaveLength(1);
     expect(stockVariant.stockCount).toBe(4);
 
     const cart = await authed(request(http).get('/api/v1/cart')).expect(200);
     expect(cart.body.items).toEqual([]);
+  });
+
+  it('reveals the decrypted delivery to the owner and audits the access', async () => {
+    const res = await authed(
+      request(http).get(`/api/v1/orders/${orderId}/items/${orderItemId}/delivery`),
+    ).expect(200);
+    expect(res.body).toMatchObject({ orderItemId, type: 'auto', payload: firstStockLine });
+    expect(res.body.deliveredAt).toBeTruthy();
+    expect(
+      prisma.auditLog.rows.filter((r) => r.action === 'delivery.payload_accessed'),
+    ).toHaveLength(1);
+  });
+
+  it('hides the delivery from a stranger (404, no audit entry)', async () => {
+    const stranger = await request(http)
+      .post('/api/v1/auth/register')
+      .send({ email: 'delivery-stranger@advault.dev', password: 'password-123' })
+      .expect(201);
+    await request(http)
+      .get(`/api/v1/orders/${orderId}/items/${orderItemId}/delivery`)
+      .set('Authorization', `Bearer ${stranger.body.accessToken}`)
+      .expect(404);
+    expect(
+      prisma.auditLog.rows.filter((r) => r.action === 'delivery.payload_accessed'),
+    ).toHaveLength(1);
   });
 
   it('replays the same checkout for a repeated Idempotency-Key (no double charge)', async () => {
@@ -240,6 +304,8 @@ describe('Cart & checkout smoke (e2e)', () => {
     const wallet = await authed(request(http).get('/api/v1/wallet')).expect(200);
     expect(wallet.body.balance).toBe('62.20');
     expect(stockVariant.stockCount).toBe(4);
+    // The replay did not sell another unit.
+    expect(prisma.stockItem.rows.filter((r) => r.status === 'sold')).toHaveLength(1);
   });
 
   it('refuses to pay beyond the balance with INSUFFICIENT_BALANCE and keeps the cart', async () => {
@@ -263,7 +329,11 @@ describe('Cart & checkout smoke (e2e)', () => {
   it('lists the order history and serves the localized detail', async () => {
     const list = await authed(request(http).get('/api/v1/orders?page=1&limit=10')).expect(200);
     expect(list.body.meta).toEqual({ total: 1, page: 1, limit: 10 });
-    expect(list.body.data[0]).toMatchObject({ id: orderId, number: orderNumber, status: 'paid' });
+    expect(list.body.data[0]).toMatchObject({
+      id: orderId,
+      number: orderNumber,
+      status: 'delivered',
+    });
 
     const detail = await authed(request(http).get(`/api/v1/orders/${orderId}?locale=ru`)).expect(
       200,
@@ -280,5 +350,59 @@ describe('Cart & checkout smoke (e2e)', () => {
       .get(`/api/v1/orders/${orderId}`)
       .set('Authorization', `Bearer ${stranger.body.accessToken}`)
       .expect(404);
+  });
+
+  it('forbids stock import for non-admins (RBAC)', async () => {
+    const res = await authed(
+      request(http).post(
+        `/api/v1/admin/products/${productId}/variants/${stockVariant.id}/stock/import`,
+      ),
+    )
+      .send({ items: ['x:1'] })
+      .expect(403);
+    expect(res.body.error.code).toBe('FORBIDDEN');
+  });
+
+  it('imports stock as admin (JSON), dedups on re-import, and grows the pool', async () => {
+    const before = prisma.stockItem.rows.filter((r) => r.variantId === stockVariant.id).length;
+
+    const first = await request(http)
+      .post(`/api/v1/admin/products/${productId}/variants/${stockVariant.id}/stock/import`)
+      .set('Authorization', `Bearer ${adminToken}`)
+      .send({ items: ['new-a:1', '', 'new-b:2'] })
+      .expect(201);
+    expect(first.body).toMatchObject({ added: 2, skipped: 1 });
+    expect(first.body.stockCount).toBe(stockVariant.stockCount);
+
+    // Re-importing the same lines is idempotent (SHA-256 dedup within the variant).
+    const again = await request(http)
+      .post(`/api/v1/admin/products/${productId}/variants/${stockVariant.id}/stock/import`)
+      .set('Authorization', `Bearer ${adminToken}`)
+      .send({ items: ['new-a:1', 'new-b:2', 'new-c:3'] })
+      .expect(201);
+    expect(again.body).toMatchObject({ added: 1, skipped: 2 });
+
+    const after = prisma.stockItem.rows.filter((r) => r.variantId === stockVariant.id).length;
+    expect(after).toBe(before + 3);
+    expect(prisma.auditLog.rows.filter((r) => r.action === 'stock.import')).toHaveLength(2);
+  });
+
+  it('imports stock as admin from a raw text/plain body', async () => {
+    const res = await request(http)
+      .post(`/api/v1/admin/products/${productId}/variants/${stockVariant.id}/stock/import`)
+      .set('Authorization', `Bearer ${adminToken}`)
+      .set('Content-Type', 'text/plain')
+      .send('txt-a:1\ntxt-b:2\n')
+      .expect(201);
+    expect(res.body).toMatchObject({ added: 2, skipped: 1 }); // trailing newline → one blank
+  });
+
+  it('rejects import for a made-to-order variant with 409', async () => {
+    const res = await request(http)
+      .post(`/api/v1/admin/products/${productId}/variants/${warmVariant.id}/stock/import`)
+      .set('Authorization', `Bearer ${adminToken}`)
+      .send({ items: ['x:1'] })
+      .expect(409);
+    expect(res.body.error.code).toBe('CONFLICT');
   });
 });

@@ -29,7 +29,9 @@ export type IconName =
   | 'tag'
   | 'trash'
   | 'plus'
-  | 'minus';
+  | 'minus'
+  | 'vault'
+  | 'download';
 
 interface IconProps {
   name: IconName;

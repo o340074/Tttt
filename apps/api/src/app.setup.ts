@@ -5,6 +5,26 @@ import cookieParser from 'cookie-parser';
 import { ApiException } from './common/api-exception';
 import { HttpExceptionFilter } from './common/http-exception.filter';
 import type { Env } from './config/env';
+import type { NextFunction, Request, Response } from 'express';
+
+/** Buffers a text/plain body into req.body (Nest's parsers only cover JSON/urlencoded). */
+function textBodyParser(req: Request, _res: Response, next: NextFunction): void {
+  const contentType = req.headers['content-type'] ?? '';
+  if (!contentType.includes('text/plain')) {
+    next();
+    return;
+  }
+  let data = '';
+  req.setEncoding('utf8');
+  req.on('data', (chunk: string) => {
+    data += chunk;
+  });
+  req.on('end', () => {
+    req.body = data;
+    next();
+  });
+  req.on('error', next);
+}
 
 function flattenValidationErrors(errors: ValidationError[], parent = ''): Record<string, string[]> {
   const out: Record<string, string[]> = {};
@@ -22,6 +42,7 @@ export function configureApp(app: INestApplication): INestApplication {
 
   app.setGlobalPrefix('api/v1');
   app.use(cookieParser());
+  app.use(textBodyParser);
   app.useGlobalPipes(
     new ValidationPipe({
       whitelist: true,

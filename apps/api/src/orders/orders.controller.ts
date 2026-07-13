@@ -16,7 +16,7 @@ import { CheckoutDto } from '../cart/dto/cart.dto';
 import { resolveLocale } from '../catalog/locale';
 import { OrdersQueryDto } from './dto/orders.dto';
 import { OrdersService } from './orders.service';
-import type { Order, Paginated } from '@advault/types';
+import type { DeliveryPayload, Order, Paginated } from '@advault/types';
 import type { AccessPayload } from '../auth/token.service';
 
 const uuidPipe = new ParseUUIDPipe({
@@ -73,5 +73,14 @@ export class OrdersController {
     @Headers('accept-language') acceptLanguage?: string,
   ): Promise<Order> {
     return this.orders.getOrder(user.sub, id, resolveLocale(query.locale, acceptLanguage));
+  }
+
+  @Get(':id/items/:itemId/delivery')
+  async getDelivery(
+    @CurrentUser() user: AccessPayload,
+    @Param('id', uuidPipe) id: string,
+    @Param('itemId', uuidPipe) itemId: string,
+  ): Promise<DeliveryPayload> {
+    return this.orders.getDelivery(user.sub, id, itemId);
   }
 }

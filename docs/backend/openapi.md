@@ -420,13 +420,15 @@ components:
 
     DeliveryPayload:
       type: object
-      description: Расшифрованные данные выдачи. Отдаются только владельцу заказа; доступ логируется.
+      description: Расшифрованные данные выдачи. Отдаются только владельцу заказа; каждый доступ пишется в AuditLog.
       properties:
         orderItemId: { type: string, format: uuid }
         type: { type: string, enum: [auto, manual, replacement] }
         payload:
           type: string
-          description: Расшифрованный секрет (логин:пароль и т.п.).
+          description: >
+            Расшифрованный секрет. При quantity > 1 — одна проданная единица на
+            строку (строки соответствуют импортированным строкам стока).
         deliveredAt: { type: string, format: date-time }
 
     ReplaceRequest:
@@ -540,8 +542,19 @@ components:
       properties:
         items:
           type: array
-          description: Строки стока (payload шифруется на сервере).
+          description: >
+            Строки стока, одна строка = одна единица (payload шифруется на
+            сервере). Альтернатива — text/plain: сырой CSV/TXT, разбивается
+            по переводам строк, пустые строки пропускаются.
           items: { type: string }
+
+    StockImportReport:
+      type: object
+      description: Итог импорта. skipped — пустые строки и дубликаты (SHA-256 в рамках варианта).
+      properties:
+        added: { type: integer }
+        skipped: { type: integer }
+        stockCount: { type: integer, description: Актуальный available-пул варианта после импорта }
 
   responses:
     BadRequest:
@@ -988,16 +1001,17 @@ paths:
     get:
       tags: [Delivery]
       summary: Полученные данные (расшифровка на сервере, только владельцу)
-      description: Каждый доступ логируется в AuditLog.
+      description: >
+        Каждый успешный доступ пишется в AuditLog (action=delivery.payload_accessed).
+        Чужой заказ отвечает 404 — существование заказа не раскрывается.
       parameters:
         - { name: id, in: path, required: true, schema: { type: string, format: uuid } }
         - { name: itemId, in: path, required: true, schema: { type: string, format: uuid } }
       responses:
         '200':
           content: { application/json: { schema: { $ref: '#/components/schemas/DeliveryPayload' } } }
-        '403': { $ref: '#/components/responses/Forbidden' }
         '404':
-          description: Ещё не выдано либо не найдено.
+          description: Ещё не выдано, не найдено либо заказ принадлежит другому пользователю.
           content: { application/json: { schema: { $ref: '#/components/schemas/Error' } } }
 
   /orders/{id}/items/{itemId}/replace:
@@ -1232,25 +1246,36 @@ paths:
       parameters: [ { name: id, in: path, required: true, schema: { type: string, format: uuid } } ]
       responses: { '204': { description: Удалено }, '403': { $ref: '#/components/responses/Forbidden' } }
 
-  /admin/variants/{id}/stock/import:
+  /admin/products/{id}/variants/{variantId}/stock/import:
     post:
       tags: [Admin]
-      summary: Импорт стоков (CSV/TXT), payload шифруется на сервере
-      parameters: [ { name: id, in: path, required: true, schema: { type: string, format: uuid } } ]
+      summary: Импорт стоков (CSV/TXT либо JSON), payload шифруется на сервере
+      description: >
+        RBAC admin. Вариант должен принадлежать товару и быть READY_STOCK.
+        Дубликаты в рамках варианта (SHA-256 исходной строки) и пустые строки
+        пропускаются — повторный импорт того же файла идемпотентен.
+        stockCount пересчитывается от пула; импорт пишется в AuditLog.
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: string, format: uuid } }
+        - { name: variantId, in: path, required: true, schema: { type: string, format: uuid } }
       requestBody:
         required: true
         content:
           application/json:
             schema: { $ref: '#/components/schemas/StockImportRequest' }
+          text/plain:
+            schema: { type: string, description: Сырой CSV/TXT — одна строка = одна единица }
       responses:
         '201':
-          description: Импортировано; возвращает количество добавленных стоков.
+          description: Импортировано; отчёт added/skipped.
           content:
             application/json:
-              schema:
-                type: object
-                properties: { imported: { type: integer } }
+              schema: { $ref: '#/components/schemas/StockImportReport' }
         '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409':
+          description: Вариант не READY_STOCK.
+          content: { application/json: { schema: { $ref: '#/components/schemas/Error' } } }
 
   /admin/stock:
     get:
@@ -1375,10 +1400,10 @@ paths:
 ## Пояснения к контракту
 
 - **Auth.** Публичные эндпоинты (`security: []`): register/login/refresh/verify/forgot/reset и вебхуки. Refresh — только через HTTP-only cookie. Rate limiting на всей группе `/auth/*`.
-- **Checkout (детально).** Требует `Idempotency-Key`. Коды: `400 VALIDATION_ERROR` (пустая корзина), `402 INSUFFICIENT_BALANCE`, `409 OUT_OF_STOCK`/`PROMO_INVALID`/`IDEMPOTENCY_CONFLICT`. Логика — валидация корзины/промокода → одна транзакция БД: атомарный декремент `stockCount` (TTL-резерв StockItem — E5) + инкремент `usedCount` промокода + ledger debit + `Order(status=paid)` + OrderItem'ы со снапшотом цены/имени/SKU + очистка корзины → запуск выдачи (E5). Поток — по [`08`](../08-payments-delivery.md).
+- **Checkout (детально).** Требует `Idempotency-Key`. Коды: `400 VALIDATION_ERROR` (пустая корзина), `402 INSUFFICIENT_BALANCE`, `409 OUT_OF_STOCK`/`PROMO_INVALID`/`IDEMPOTENCY_CONFLICT`. Логика (E5) — валидация корзины/промокода → **резерв конкретных StockItem** (`available → reserved`, TTL) → одна транзакция БД: `reserved → sold` + `Delivery(type=auto)` со снимком payload + `deliveryStatus=delivered` (READY_STOCK; MADE_TO_ORDER остаётся `pending` до E6) + инкремент `usedCount` промокода + ledger debit + Order со статусом-агрегатом по позициям (`delivered`/`partially_delivered`/`paid`, docs/14) + очистка корзины; `stockCount` пересчитывается от пула. Ошибка → резервы снимаются, транзакция откатывается целиком (нехватка стока в момент оплаты = `409 OUT_OF_STOCK`, деньги не списываются). Поток — по [`08`](../08-payments-delivery.md).
 - **Wallet/TopUps (детально).** `POST /wallet/topups` идемпотентен, отдаёт `address`/`paymentUrl`/статус. `GET /wallet/topups/:id` — поллинг статуса до `paid/expired`.
 - **Webhooks (детально).** Без JWT, проверка подписи (`X-Signature`), идемпотентность по `externalId`. `200` — только после успешной записи в БД (иначе провайдер повторяет). `401 INVALID_SIGNATURE` при неверной подписи.
-- **Delivery (детально).** `GET .../delivery` расшифровывает payload на сервере и отдаёт только владельцу, с записью в AuditLog. `403` для чужого заказа. Ручная выдача и замена — на стороне админа/воркера.
+- **Delivery (детально).** `GET .../delivery` расшифровывает payload на сервере и отдаёт только владельцу, с записью в AuditLog. `404` для чужого заказа (существование не раскрывается) и для ещё не выданных позиций. Ручная выдача и замена — на стороне админа/воркера.
 - **Money.** Всегда строка `^-?\d+\.\d{2}$`; валюта — отдельным полем `currency`.
 - **Admin.** Все `/admin/*` под RBAC (`admin`/`support`), при отсутствии прав — `403 FORBIDDEN`. Группы покрыты; детально проработаны deliver/refund/stock-import как затрагивающие деньги и секреты.
 - **Заголовки.** `Idempotency-Key` — на checkout/topups/refund; `Accept-Language`/`?locale` — на каталоге и контенте.

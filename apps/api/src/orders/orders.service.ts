@@ -2,13 +2,23 @@ import { Injectable } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
 import { randomInt } from 'node:crypto';
 import { ApiException } from '../common/api-exception';
+import { AuditService } from '../audit/audit.service';
 import { lineName } from '../cart/cart.service';
 import { normalizePromoCode, PromoService } from '../cart/promo.service';
 import { SUPPORTED_LOCALES } from '../catalog/locale';
+import { PayloadCryptoService } from '../crypto/payload-crypto.service';
 import { PrismaService } from '../prisma/prisma.service';
+import { StockService } from '../stock/stock.service';
 import { IdempotencyService } from '../wallet/idempotency.service';
 import { LedgerService } from '../wallet/ledger.service';
-import type { Locale, Order, OrderItem, Paginated } from '@advault/types';
+import type {
+  DeliveryPayload,
+  Locale,
+  Order,
+  OrderItem,
+  OrderStatus,
+  Paginated,
+} from '@advault/types';
 import type {
   Order as DbOrder,
   OrderItem as DbOrderItem,
@@ -22,6 +32,9 @@ const CHECKOUT_ENDPOINT = 'POST /orders/checkout';
 const NUMBER_ATTEMPTS = 3;
 
 type OrderWithItems = DbOrder & { items: DbOrderItem[]; promoCode: DbPromoCode | null };
+
+/** Reserved stock ids per cart line, keyed by variantId (unique within a cart). */
+type Reservations = Map<string, string[]>;
 
 /** e.g. AV-2026-482913 (docs/backend/prisma-schema.md). */
 function generateOrderNumber(): string {
@@ -38,6 +51,17 @@ function isUniqueViolation(error: unknown, field: string): boolean {
 }
 
 /**
+ * Order status as an aggregate of its lines (docs/14): everything delivered →
+ * delivered; a mix of delivered and still-pending (warm) lines →
+ * partially_delivered; nothing delivered yet (all made-to-order) → paid.
+ */
+function aggregateOrderStatus(totalLines: number, deliveredLines: number): OrderStatus {
+  if (deliveredLines === 0) return 'paid';
+  if (deliveredLines === totalLines) return 'delivered';
+  return 'partially_delivered';
+}
+
+/**
  * Checkout & order history (docs/08, docs/14). Payment is a balance debit:
  * one DB transaction covers the stock decrement, promo usage, ledger debit
  * and the paid order with price/name snapshots, so money and goods move
@@ -50,6 +74,9 @@ export class OrdersService {
     private readonly ledger: LedgerService,
     private readonly promo: PromoService,
     private readonly idempotency: IdempotencyService,
+    private readonly stock: StockService,
+    private readonly crypto: PayloadCryptoService,
+    private readonly audit: AuditService,
   ) {}
 
   async checkout(
@@ -106,6 +133,40 @@ export class OrdersService {
     return this.toOrderResponse(row as OrderWithItems, locale);
   }
 
+  /**
+   * Decrypted delivery for one order item — owner-only (docs/09). A foreign or
+   * unknown order is 404 (existence is not disclosed); an item that has no
+   * delivery yet is 404. Every successful read is written to the audit log.
+   */
+  async getDelivery(userId: string, orderId: string, itemId: string): Promise<DeliveryPayload> {
+    const item = await this.prisma.orderItem.findFirst({
+      where: { id: itemId, orderId, order: { userId } },
+      include: { deliveries: { orderBy: { createdAt: 'asc' } } },
+    });
+    if (!item || item.deliveries.length === 0) {
+      throw new ApiException('NOT_FOUND', 'Delivery not found', 404);
+    }
+
+    // One Delivery per sold unit; join their decrypted payloads, one per line.
+    const payload = item.deliveries.map((d) => this.crypto.decrypt(d.payload)).join('\n');
+    const latest = item.deliveries[item.deliveries.length - 1]!;
+
+    await this.audit.record({
+      actorId: userId,
+      action: 'delivery.payload_accessed',
+      entity: 'OrderItem',
+      entityId: itemId,
+      diff: { orderId, units: item.deliveries.length },
+    });
+
+    return {
+      orderItemId: itemId,
+      type: latest.type,
+      payload,
+      deliveredAt: (latest.deliveredAt ?? latest.createdAt).toISOString(),
+    };
+  }
+
   // ---------- Checkout internals ----------
 
   private async performCheckout(userId: string, dto: CheckoutDto): Promise<OrderWithItems> {
@@ -147,19 +208,46 @@ export class OrdersService {
     const discount = promo ? this.promo.discountFor(promo, subtotal) : new Prisma.Decimal(0);
     const total = subtotal.minus(discount);
 
-    // The order number is random; on the rare collision the whole transaction
-    // rolled back cleanly, so retrying with a fresh number is safe.
-    for (let attempt = 1; ; attempt += 1) {
-      try {
-        return await this.checkoutTransaction(userId, cart!.id, items, promo, {
-          subtotal,
-          discount,
-          total,
-        });
-      } catch (error) {
-        if (!isUniqueViolation(error, 'number') || attempt >= NUMBER_ATTEMPTS) throw error;
+    // Phase 1 (before the money transaction): reserve concrete StockItems for
+    // every READY_STOCK line. A reservation is a committed available→reserved
+    // flip with a TTL, so if the money transaction fails we must release it.
+    const reservations = await this.reserveStock(items);
+
+    try {
+      // The order number is random; on the rare collision the whole transaction
+      // rolled back cleanly, so retrying with a fresh number is safe.
+      for (let attempt = 1; ; attempt += 1) {
+        try {
+          return await this.checkoutTransaction(userId, cart!.id, items, promo, reservations, {
+            subtotal,
+            discount,
+            total,
+          });
+        } catch (error) {
+          if (!isUniqueViolation(error, 'number') || attempt >= NUMBER_ATTEMPTS) throw error;
+        }
       }
+    } catch (error) {
+      // Money transaction failed for good — hand the reserved units back.
+      await this.stock.release([...reservations.values()].flat());
+      throw error;
     }
+  }
+
+  /** Reserve stock for READY_STOCK lines; release any partial claim on failure. */
+  private async reserveStock(items: CartItemWithVariant[]): Promise<Reservations> {
+    const reservations: Reservations = new Map();
+    try {
+      for (const item of items) {
+        if (item.variant.fulfillmentType !== 'READY_STOCK') continue;
+        const ids = await this.stock.reserve(item.variantId, item.quantity, item.variant.sku);
+        reservations.set(item.variantId, ids);
+      }
+    } catch (error) {
+      await this.stock.release([...reservations.values()].flat());
+      throw error;
+    }
+    return reservations;
   }
 
   private checkoutTransaction(
@@ -167,31 +255,11 @@ export class OrdersService {
     cartId: string,
     items: CartItemWithVariant[],
     promo: DbPromoCode | null,
+    reservations: Reservations,
     money: { subtotal: Prisma.Decimal; discount: Prisma.Decimal; total: Prisma.Decimal },
   ): Promise<OrderWithItems> {
     return this.prisma.$transaction(async (tx) => {
-      // 1) Availability: atomic check-and-decrement of the stock cache.
-      //    The StockItem TTL reserve arrives in E5 (docs/backend/prisma-schema.md).
-      for (const item of items) {
-        const guarded = await tx.productVariant.updateMany({
-          where:
-            item.variant.fulfillmentType === 'READY_STOCK'
-              ? { id: item.variantId, isActive: true, stockCount: { gte: item.quantity } }
-              : { id: item.variantId, isActive: true },
-          data:
-            item.variant.fulfillmentType === 'READY_STOCK'
-              ? { stockCount: { decrement: item.quantity } }
-              : { updatedAt: new Date() },
-        });
-        if (guarded.count === 0) {
-          throw new ApiException('OUT_OF_STOCK', 'Not enough items in stock', 409, {
-            sku: item.variant.sku,
-            available: item.variant.fulfillmentType === 'READY_STOCK' ? undefined : 0,
-          });
-        }
-      }
-
-      // 2) Promo usage under the same guards it was validated with.
+      // 1) Promo usage under the same guards it was validated with.
       if (promo) {
         const claimed = await tx.promoCode.updateMany({
           where: {
@@ -208,7 +276,7 @@ export class OrdersService {
         }
       }
 
-      // 3) The paid order with purchase-time snapshots.
+      // 2) The order with purchase-time snapshots (items start pending).
       const order = await tx.order.create({
         data: {
           userId,
@@ -236,7 +304,25 @@ export class OrdersService {
         include: { items: true, promoCode: true },
       });
 
-      // 4) Balance debit (double entry; throws INSUFFICIENT_BALANCE on shortfall).
+      // 3) Auto-fulfil READY_STOCK lines: reserved → sold + Delivery, item
+      //    becomes delivered. MADE_TO_ORDER lines stay pending (E6 warms them).
+      let deliveredLines = 0;
+      for (const orderItem of order.items) {
+        const reserved = reservations.get(orderItem.variantId);
+        if (!reserved) continue;
+        await this.stock.sellReserved(tx, reserved, orderItem.id);
+        orderItem.deliveryStatus = 'delivered';
+        deliveredLines += 1;
+      }
+
+      // 4) Order status is the aggregate of its line delivery states (docs/14).
+      const status = aggregateOrderStatus(order.items.length, deliveredLines);
+      if (status !== 'paid') {
+        await tx.order.update({ where: { id: order.id }, data: { status } });
+        order.status = status;
+      }
+
+      // 5) Balance debit (double entry; throws INSUFFICIENT_BALANCE on shortfall).
       //    A fully discounted order has nothing to debit.
       if (money.total.gt(0)) {
         await this.ledger.debit(tx, {
@@ -247,7 +333,7 @@ export class OrdersService {
         });
       }
 
-      // 5) The cart is spent.
+      // 6) The cart is spent.
       await tx.cartItem.deleteMany({ where: { cartId } });
 
       return order as OrderWithItems;

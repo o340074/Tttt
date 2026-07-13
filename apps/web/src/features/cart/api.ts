@@ -6,6 +6,7 @@ import type {
   AddCartItemRequest,
   Cart,
   CheckoutRequest,
+  DeliveryPayload,
   Order,
   Paginated,
   PromoCodePublic,
@@ -100,5 +101,21 @@ export function useOrder(id: string) {
   return useQuery({
     queryKey: ['orders', 'detail', id, locale],
     queryFn: () => apiFetch<Order>(`/orders/${id}?locale=${locale}`),
+  });
+}
+
+/**
+ * Fetches the decrypted delivery for a delivered order item on demand — kept
+ * out of cache (staleTime 0, no retry) so a secret is only fetched when the
+ * buyer explicitly reveals it, and each fetch is audited server-side.
+ */
+export function useDelivery(orderId: string, itemId: string, enabled: boolean) {
+  return useQuery({
+    queryKey: ['delivery', orderId, itemId],
+    queryFn: () => apiFetch<DeliveryPayload>(`/orders/${orderId}/items/${itemId}/delivery`),
+    enabled,
+    retry: false,
+    staleTime: 0,
+    gcTime: 0,
   });
 }

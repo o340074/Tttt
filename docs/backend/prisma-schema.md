@@ -9,7 +9,7 @@
 - **Деньги** — только `Decimal @db.Decimal(18,2)`, никогда `Float`. Валюта учёта хранится отдельным полем (`currency`).
 - **Баланс через ledger (двойная запись).** `User.balance` — кэш; источник истины — сумма движений `LedgerEntry`. Каждая запись хранит `balanceAfter` (снимок), что даёт быструю сверку и аудит.
 - **Идемпотентность.** `TopUp.externalId` — `@unique`, повторный вебхук эквайринга не задваивает зачисление. Для мутаций оплаты — таблица `IdempotencyKey` (заголовок `Idempotency-Key`).
-- **Шифрование payload.** `StockItem.payload` и `Delivery.payload` шифруются **на уровне приложения** (envelope-шифрование, ключ в KMS/секрете), в БД лежит уже зашифрованный текст. Prisma об этом «не знает» — тип `String @db.Text`.
+- **Шифрование payload.** `StockItem.payload` и `Delivery.payload` шифруются **на уровне приложения** (AES-256-GCM, ключи из env `PAYLOAD_ENCRYPTION_KEY`), в БД лежит уже зашифрованный текст. Prisma об этом «не знает» — тип `String @db.Text`. Формат env: `v1:<base64 32B>[,v0:<старый>]` — первый ключ шифрует, все перечисленные расшифровывают; шифртекст самоописываем: `v1.<iv>.<tag>.<ciphertext>` (base64), так что ротация — добавить новый ключ первым, KMS подключается позже без смены формата.
 - **Резерв стока.** `StockItem.status = reserved` + `reservedUntil` (TTL); в Redis дублируется быстрый TTL-таймер. После оплаты `reserved → sold` с привязкой `orderItemId`.
 - **i18n.** Переводимый контент вынесен в `*Translation`-таблицы с уникальной парой `(<entity>Id, locale)`.
 
@@ -273,18 +273,21 @@ model ProductVariant {
 model StockItem {
   id            String      @id @default(uuid()) @db.Uuid
   variantId     String      @db.Uuid
-  payload       String      @db.Text // ЗАШИФРОВАНО на уровне приложения
+  payload       String      @db.Text // ЗАШИФРОВАНО на уровне приложения (AES-256-GCM)
+  payloadHash   String // SHA-256 исходного payload — дедуп при импорте (повторный импорт идемпотентен)
   status        StockStatus @default(available)
   reservedUntil DateTime? // TTL резерва
-  orderItemId   String?     @unique @db.Uuid // привязка после продажи (1:1 с Delivery-источником)
+  orderItemId   String?     @db.Uuid // привязка после продажи; qty > 1 → несколько единиц на одну позицию
   createdAt     DateTime    @default(now())
 
   variant   ProductVariant @relation(fields: [variantId], references: [id], onDelete: Cascade)
   orderItem OrderItem?     @relation(fields: [orderItemId], references: [id], onDelete: SetNull)
   delivery  Delivery?
 
+  @@unique([variantId, payloadHash]) // одинаковая строка не импортируется дважды в один вариант
   @@index([variantId, status]) // быстрый подбор available для резерва/выдачи
   @@index([status, reservedUntil]) // воркер снятия просроченных резервов
+  @@index([orderItemId])
   @@map("stock_items")
 }
 
@@ -359,8 +362,8 @@ model OrderItem {
 
   order      Order          @relation(fields: [orderId], references: [id], onDelete: Cascade)
   variant    ProductVariant @relation(fields: [variantId], references: [id], onDelete: Restrict)
-  deliveries Delivery[]
-  stockItem  StockItem? // обратная сторона StockItem.orderItem
+  deliveries Delivery[] // qty > 1 → одна Delivery на каждую проданную единицу StockItem
+  stockItems StockItem[] // обратная сторона StockItem.orderItem
   reviews    Review[]
 
   @@index([orderId])
@@ -556,8 +559,8 @@ model IdempotencyKey {
 - Все изменения баланса выполняются **в одной транзакции БД** вместе с изменением статуса источника (TopUp/Order) — атомарность гарантирует сходимость.
 
 ### Где шифрование payload
-- `StockItem.payload` и `Delivery.payload` — единственные секретные поля. Шифруются в сервисном слое (envelope + KMS/секрет из окружения) **до** записи в БД. В схеме это обычный `String @db.Text`.
-- Расшифровка — только на сервере, только владельцу заказа (эндпоинт `GET /orders/:id/items/:itemId/delivery`), каждый доступ пишется в `AuditLog`.
+- `StockItem.payload` и `Delivery.payload` — единственные секретные поля. Шифруются в сервисном слое **до** записи в БД (AES-256-GCM; случайный IV на запись; версия ключа зашита в шифртекст `v<N>.<iv>.<tag>.<ct>`). Ключи — env `PAYLOAD_ENCRYPTION_KEY` со списком версий (`v1:<base64>[,v0:<base64>]`): первый шифрует, все расшифровывают. В схеме это обычный `String @db.Text`.
+- Расшифровка — только на сервере, только владельцу заказа (эндпоинт `GET /orders/:id/items/:itemId/delivery`), каждый доступ пишется в `AuditLog` (`action=delivery.payload_accessed`). Чужой заказ отвечает 404 (существование не раскрывается), невыданная позиция — 404.
 
 ### Где идемпотентность
 - **Вебхуки эквайринга** — `TopUp.externalId @unique`. Повторная доставка вебхука находит уже `paid` TopUp и выходит без повторного зачисления. Переход в `paid` разрешён из `pending` **и** из `expired` (оплата, пришедшая после TTL, всё равно зачисляется — средства получены). Неизвестный `externalId` игнорируется с 200 (событие не наше).
@@ -565,13 +568,11 @@ model IdempotencyKey {
 - **Мутации оплаты клиента** (`checkout`, `topups`) — таблица `IdempotencyKey` c `@@unique([key, endpoint])`; запись создаётся до обработки (claim), ответ сохраняется после. Повтор с тем же ключом: совпал `requestHash` (хэш тела + userId) — возвращается сохранённый ответ; не совпал или первый запрос ещё в полёте — `409 IDEMPOTENCY_CONFLICT`.
 
 ### Где резерв стока
-- **До появления `StockItem` (E5)** наличие READY_STOCK-вариантов обеспечивается атомарным
-  check-and-decrement кэша `ProductVariant.stockCount` внутри транзакции checkout
-  (`updateMany where stockCount >= qty → decrement`); нулевой счётчик обновлённых строк = `OUT_OF_STOCK`.
-  TTL-резерва на время оформления в E4 нет — это осознанный MVP-компромисс.
-- `StockItem.status = reserved` + `reservedUntil` фиксируют бронь на время оформления; параллельно ставится быстрый TTL в Redis.
-- Индекс `@@index([variantId, status])` ускоряет подбор `available` под резерв; `@@index([status, reservedUntil])` — для воркера, снимающего просроченные резервы обратно в `available`.
-- После оплаты `reserved → sold`, проставляется `orderItemId` и создаётся `Delivery`. `stockCount` на варианте обновляется как кэш.
+- **С E5** источник истины наличия — пул `StockItem`; `ProductVariant.stockCount` — кэш, пересчитываемый как `COUNT(status='available')` после каждой мутации пула (импорт, резерв, продажа, снятие резерва).
+- Checkout двухфазный: **фаза 1 (до денежной транзакции)** — атомарный claim конкретных единиц `available → reserved` (`updateMany` с guard по `status`) c `reservedUntil = now + STOCK_RESERVE_TTL_SECONDS`; параллельно ставится быстрый TTL-ключ в Redis (`stock:hold:{id}`). Недобор единиц → `OUT_OF_STOCK`, свои резервы снимаются. **Фаза 2 (в денежной транзакции)** — `reserved → sold` (guard по `status=reserved` и нашим id), проставляется `orderItemId`, создаётся `Delivery(type=auto)` со снимком payload, `deliveryStatus=delivered`. Ошибка транзакции (напр. `INSUFFICIENT_BALANCE`) снимает резервы обратно в `available`.
+- Просроченные резервы снимает sweep (интервал + ленивое снятие перед подбором): `status=reserved AND reservedUntil < now → available`.
+- Индекс `@@index([variantId, status])` ускоряет подбор `available` под резерв; `@@index([status, reservedUntil])` — для sweep'а.
+- **Политика нехватки в момент оплаты (решение E5):** checkout отклоняется целиком (`409 OUT_OF_STOCK`, транзакция откатывается, деньги не списываются). Перевод недостающих позиций в ручную выдачу/warm — вместе с операторкой (E6/E8), как допускает docs/08.
 
 ---
 
@@ -591,7 +592,7 @@ model IdempotencyKey {
    warm-варианты (`fulfillmentType=MADE_TO_ORDER`) с `goal=google_ads` и
    `goal=chrome_extension_dev`, заполненными `tier`, `bundleSpec`, `etaMinutes`,
    `warrantyHours`. `deliveryType` всегда согласован с `fulfillmentType`.
-4. Для `auto`-вариантов — 10–20 `StockItem(status=available)` с уже зашифрованным демо-`payload`; обновить `stockCount`.
+4. Для `auto`-вариантов — 10–20 `StockItem(status=available)` с уже зашифрованным демо-`payload` (детерминированные строки → идемпотентность через `payloadHash`); `stockCount` пересчитывается от реального пула.
 5. Демо-`PromoCode`: `AURORA10` (percent, 10%), `SAVE5` (fixed, 5.00), `EXPIRED10`
    (percent, истёкший — для проверки валидации).
 6. Идемпотентность сидов: `upsert` по уникальным ключам (email, slug, sku, code), чтобы повторный запуск не дублировал данные.

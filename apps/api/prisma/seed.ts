@@ -8,12 +8,21 @@
  */
 import { PrismaClient } from '@prisma/client';
 import * as argon2 from 'argon2';
+import {
+  DEV_PAYLOAD_KEY,
+  encryptPayload,
+  hashPayload,
+  parseKeyRing,
+} from '../src/crypto/payload-crypto';
 import type { FulfillmentType, Prisma, PromoType, Role } from '@prisma/client';
 
 const prisma = new PrismaClient();
 
 // Dev-only demo password for all seeded users. Never seed real credentials.
 const DEMO_PASSWORD = 'advault-dev-password';
+
+// Same key ring the API uses, so seeded stock decrypts through the app.
+const keyRing = parseKeyRing(process.env.PAYLOAD_ENCRYPTION_KEY ?? DEV_PAYLOAD_KEY);
 
 interface CategorySeed {
   slug: string;
@@ -95,7 +104,7 @@ const products: ProductSeed[] = [
         sku: 'GADS-US-STD',
         price: '42.00',
         fulfillmentType: 'READY_STOCK',
-        stockCount: 37,
+        stockCount: 14,
         warrantyHours: 48,
         name: { en: 'Standard', ru: 'Стандарт' },
         bundleSpec: [
@@ -109,7 +118,7 @@ const products: ProductSeed[] = [
         sku: 'GADS-US-AGED6',
         price: '68.00',
         fulfillmentType: 'READY_STOCK',
-        stockCount: 12,
+        stockCount: 8,
         warrantyHours: 48,
         name: { en: 'Aged 6 months', ru: 'Отлёжка 6 месяцев' },
         attributes: { agedMonths: 6 },
@@ -283,7 +292,7 @@ const products: ProductSeed[] = [
         sku: 'GMAIL-AGED-1Y',
         price: '9.90',
         fulfillmentType: 'READY_STOCK',
-        stockCount: 88,
+        stockCount: 16,
         warrantyHours: 24,
         name: { en: 'Aged 12+ months', ru: 'Отлёжка 12+ месяцев' },
         bundleSpec: [
@@ -316,7 +325,7 @@ const products: ProductSeed[] = [
         sku: 'PROXY-RES-US-30D',
         price: '24.00',
         fulfillmentType: 'READY_STOCK',
-        stockCount: 40,
+        stockCount: 12,
         name: { en: 'Monthly', ru: 'На месяц' },
         bundleSpec: [
           { type: 'PROXY', meta: { geo: 'US', kind: 'residential', termDays: 30 } },
@@ -374,6 +383,7 @@ async function seedCategories(): Promise<Map<string, string>> {
 
 async function seedProducts(categoryIdBySlug: Map<string, string>): Promise<void> {
   let variantCount = 0;
+  let stockCount = 0;
   for (const product of products) {
     const categoryId = categoryIdBySlug.get(product.categorySlug);
     if (!categoryId) throw new Error(`Unknown category slug: ${product.categorySlug}`);
@@ -426,15 +436,55 @@ async function seedProducts(categoryIdBySlug: Map<string, string>): Promise<void
           ...(variant.attributes ?? {}),
         } as Prisma.InputJsonValue,
       } as const;
-      await prisma.productVariant.upsert({
+      const variantRow = await prisma.productVariant.upsert({
         where: { sku: variant.sku },
         update: data,
         create: { sku: variant.sku, ...data },
       });
       variantCount += 1;
+
+      // READY_STOCK variants get an encrypted stock pool; stockCount is derived from it.
+      if (variant.fulfillmentType === 'READY_STOCK') {
+        stockCount += await seedStock(variantRow.id, variant.sku, variant.stockCount ?? 0);
+      }
     }
   }
   console.log(`Seeded ${products.length} products with ${variantCount} variants`);
+  console.log(`Seeded ${stockCount} encrypted stock units across ready-stock variants`);
+}
+
+/** A believable demo credential line for a stock unit — fictional, never a real secret. */
+function demoStockLine(sku: string, index: number): string {
+  const tag = `${sku.toLowerCase()}_${String(index + 1).padStart(2, '0')}`;
+  if (sku.startsWith('PROXY')) {
+    return `host: 154.12.${index + 10}.7 | port: 8000 | user: proxy_${tag} | pass: Px-${tag}-9f`;
+  }
+  return [
+    `login: demo_${tag}@mailbox.io`,
+    `password: Demo!${sku.slice(-3)}-${index + 1}xZ`,
+    `recovery: recover_${tag}@proton.me`,
+  ].join('\n');
+}
+
+/**
+ * Seed (idempotently) a variant's stock pool with encrypted demo payloads and
+ * set stockCount to the live available count. Deterministic lines → stable
+ * payloadHash, so re-runs skip existing units via the (variantId, payloadHash)
+ * unique key. Encryption mirrors the app so the Vault can decrypt.
+ */
+async function seedStock(variantId: string, sku: string, count: number): Promise<number> {
+  for (let i = 0; i < count; i += 1) {
+    const line = demoStockLine(sku, i);
+    const payloadHash = hashPayload(line);
+    await prisma.stockItem.upsert({
+      where: { variantId_payloadHash: { variantId, payloadHash } },
+      update: {}, // keep an existing unit (and its sold/reserved status) as-is
+      create: { variantId, payload: encryptPayload(keyRing, line), payloadHash },
+    });
+  }
+  const available = await prisma.stockItem.count({ where: { variantId, status: 'available' } });
+  await prisma.productVariant.update({ where: { id: variantId }, data: { stockCount: available } });
+  return count;
 }
 
 interface PromoSeed {

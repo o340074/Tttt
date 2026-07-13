@@ -248,6 +248,32 @@ export function IconSprite() {
           <path d="M5 15H4a1 1 0 0 1-1-1V4a1 1 0 0 1 1-1h10a1 1 0 0 1 1 1v1" />
         </g>
       </symbol>
+      <symbol id="ic-download" viewBox="0 0 24 24">
+        <g
+          fill="none"
+          stroke="currentColor"
+          strokeWidth="2"
+          strokeLinecap="round"
+          strokeLinejoin="round"
+        >
+          <path d="M12 3v11" />
+          <path d="M7 10l5 5 5-5" />
+          <path d="M4 20h16" />
+        </g>
+      </symbol>
+      <symbol id="ic-vault" viewBox="0 0 24 24">
+        <g
+          fill="none"
+          stroke="currentColor"
+          strokeWidth="2"
+          strokeLinecap="round"
+          strokeLinejoin="round"
+        >
+          <rect x="3.5" y="4.5" width="17" height="15" rx="2.4" />
+          <circle cx="12" cy="12" r="3.4" />
+          <path d="M12 4.5v2M12 17.5v2" />
+        </g>
+      </symbol>
       <symbol id="ic-globe" viewBox="0 0 24 24">
         <path
           fill="url(#ig-aurora)"

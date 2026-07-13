@@ -7,10 +7,10 @@
 
 ## 📍 Текущий статус
 
-- **Фаза:** разработка. E0 (каркас), E1 (аутентификация), E2 (каталог), E3 (кошелёк)
-  и E4 (корзина/заказы/оплата) готовы и проверены end-to-end.
-- **Следующий эпик:** **E5 — Выдача из стока (READY_STOCK)** (см. `docs/16-development-plan.md` §4).
-- **Ветка:** актуальная база — `claude/advault-e4-cart-orders-q2u0j4` (E0+E1+E2+E3+E4; в
+- **Фаза:** разработка. E0 (каркас), E1 (аутентификация), E2 (каталог), E3 (кошелёк),
+  E4 (корзина/заказы/оплата) и E5 (выдача из стока) готовы и проверены end-to-end.
+- **Следующий эпик:** **E6 — Прогрев: модель и очередь (MADE_TO_ORDER)** (см. `docs/16-development-plan.md` §4).
+- **Ветка:** актуальная база — `claude/advault-e5-stock-delivery-61ndk3` (E0…E5; в
   main код ещё не влит). Разработку следующих эпиков вести на feature-ветках per эпик от неё.
 - **Прогресс по эпикам (из `docs/16`):**
 
@@ -22,8 +22,8 @@
 | E2 | Каталог и продуктовая модель | ✅ готово |
 | E3 | Кошелёк и пополнение криптой | ✅ готово |
 | E4 | Корзина, заказы, оплата с баланса | ✅ готово |
-| E5 | Выдача из стока (READY_STOCK) | ⬜ следующий |
-| E6 | Прогрев: модель и очередь | ⬜ |
+| E5 | Выдача из стока (READY_STOCK) | ✅ готово |
+| E6 | Прогрев: модель и очередь | ⬜ следующий |
 | E7 | Инвентарь: прокси и Octo-профили | ⬜ |
 | E8 | Полная админка / операторка | ⬜ |
 | E9 | Поддержка и уведомления | ⬜ |
@@ -35,6 +35,75 @@
 ---
 
 ## Записи
+
+### Сессия — Выдача из стока READY_STOCK (эпик E5)
+- **Сделано (контракты):** `docs/backend/prisma-schema.md` — StockItem получил
+  `payloadHash` + `@@unique([variantId, payloadHash])` (дедуп импорта), `orderItemId`
+  стал не-unique (qty>1 → несколько единиц на позицию), зафиксирован формат ключей
+  шифрования (`PAYLOAD_ENCRYPTION_KEY = v1:<base64>[,v0:…]`, шифртекст
+  `v<N>.<iv>.<tag>.<ct>`) и двухфазный резерв/выдача; OrderItem ↔ StockItem/Delivery
+  1:N. `docs/backend/openapi.md` — `GET /orders/:id/items/:itemId/delivery` (404 чужому,
+  аудит), `POST /admin/products/:id/variants/:variantId/stock/import` (JSON + text/plain,
+  RBAC, отчёт added/skipped/stockCount), уточнён поток checkout (резерв→sold→Delivery→
+  агрегат статуса). Типы отзеркалены в `@advault/types` (StockStatus, DeliveryKind,
+  DeliveryPayload, StockImportRequest/Report).
+- **API:** `schema.prisma` — StockItem/Delivery/AuditLog + enum StockStatus/DeliveryKind
+  + миграция `20260713000000_stock_delivery` (проверена deploy + diff — дрифта нет).
+  `crypto/` — AES-256-GCM с версионируемым key-ring (env `PAYLOAD_ENCRYPTION_KEY`, чистые
+  функции + DI-обёртка, случайный IV, GCM-tag). `stock/StockService` — двухфазная выдача:
+  фаза 1 (до транзакции) резерв конкретных StockItem'ов `available→reserved`
+  (+`reservedUntil` + Redis-mirror `stock:hold:*`, retry-loop под конкуренцию, exactly-once
+  через guard `status=available`), фаза 2 (в транзакции checkout) `reserved→sold` +
+  Delivery(type=auto, снимок шифртекста) + `deliveryStatus=delivered`; sweep просроченных
+  резервов (setInterval + ленивое снятие); `stockCount` пересчитывается как
+  COUNT(available); импорт (шифрование, дедуп по payloadHash, отчёт). Checkout из E4
+  переписан на резерв/выдачу с откатом резерва при ошибке; статус заказа — агрегат по
+  позициям (delivered/partially_delivered/paid, docs/14); MADE_TO_ORDER остаётся pending
+  (E6). `OrdersService.getDelivery` — расшифровка только владельцу (чужой/невыданный →
+  404) + `AuditLog(delivery.payload_accessed)`. RBAC: `@Roles` + глобальный `RolesGuard`
+  (по `User.role`), `admin/AdminController` — импорт с проверкой READY_STOCK (409 иначе),
+  парсер text/plain в `app.setup`. `audit/AuditService` (append-only, не ломает действие).
+  Env: `PAYLOAD_ENCRYPTION_KEY`, `STOCK_RESERVE_TTL_SECONDS` (prod-guard на dev-ключ).
+- **Web:** Vault-блок в `/orders/:id` (`features/orders/VaultCard`): секции выданных
+  позиций, маскирование до явного «Показать» (тогда on-demand fetch `useDelivery` +
+  аудит на сервере), копирование и скачивание `.txt` с micro-flash, статусы выдачи;
+  иконки vault/download в спрайт; i18n EN/RU (ключи `vault.*`, RU-плюралы);
+  loading/empty/error. Хук `useDelivery` — без кэша (secret фетчится только по явному
+  раскрытию).
+- **Сидер:** `seedStock` — 53 зашифрованных демо-StockItem на 5 READY_STOCK-вариантов
+  (детерминированные payload → идемпотентность через payloadHash-upsert), `stockCount`
+  пересчитывается от реального пула; dev-ключ вынесен в `DEV_PAYLOAD_KEY`.
+- **Тесты (+45, всего 136):** unit шифрования (roundtrip, свежий IV, ротация ключа,
+  чужой ключ/подмена/битый формат, дедуп-хэш); unit StockService (импорт+дедуп, резерв/
+  release, OUT_OF_STOCK с откатом частичного резерва, sweep просроченных); unit checkout
+  (авто-выдача delivered, only-owner+аудит, exactly-once под конкуренцией — разные
+  единицы, OUT_OF_STOCK пустой/недостаточный пул с откатом резерва, INSUFFICIENT_BALANCE
+  с возвратом резерва, partially_delivered/paid-агрегаты, повторный checkout — другая
+  единица, idempotency-replay не выдаёт дважды); e2e-smoke по HTTP расширен (авто-выдача,
+  delivery владельцу с расшифровкой, 404 чужому без лишнего аудита, RBAC 403/импорт
+  JSON+text/plain+дедуп+409 warm). Фейки расширены сторами stock/delivery/audit +
+  order/orderItem/variant get findFirst/update.
+- **Проверено вживую:** локальные Postgres 16 + Redis + собранный API + Vite; curl —
+  полный цикл (пополнение вебхуком → checkout → order=delivered, stockCount 14→13, ровно
+  1 sold, delivery расшифрована владельцу, аудит записан, чужому 404, повторный checkout
+  берёт другую единицу; импорт admin JSON/text-plain с дедупом, non-admin 403, warm 409);
+  Chromium/Playwright — вход → деталь заказа → Vault: маска → «Показать» (расшифровка на
+  экране) → Copied → Download. Скриншот сверен со стилем Aurora. lint/format/typecheck/
+  тесты (136)/build зелёные.
+- **Решения:** политика нехватки стока в момент оплаты — **отклонять checkout целиком**
+  (`409 OUT_OF_STOCK`, транзакция откат, деньги не списаны; перевод в manual/warm — с
+  операторкой E6/E8); резерв — отдельный committed-шаг до денежной транзакции (при сбое
+  явный release, при краше — sweep по `reservedUntil`); ключи шифрования — список версий
+  в одном env (первый шифрует, все расшифровывают; KMS позже без смены формата); дедуп
+  импорта — SHA-256 исходной строки в рамках варианта (ciphertext сравнивать нельзя из-за
+  IV); Delivery.payload — снимок шифртекста StockItem (не пере-шифровываем).
+- **Проблемы/долги:** резерв-claim через select+guarded-updateMany с retry-loop (не
+  `FOR UPDATE SKIP LOCKED`) — exactly-once держится, но под высокой конкуренцией возможен
+  редкий ложный OUT_OF_STOCK (перенести в raw SQL при нагрузке); sweep резервов —
+  in-process setInterval (при мультиинстансе → BullMQ); Redis-hold — best-effort mirror
+  (истина — `reservedUntil` в БД); ротация ключей есть по чтению, фонового перешифрования
+  старых версий нет; админ-просмотр стока (`GET /admin/stock`) и ручная выдача — в E8.
+- **Дальше:** **E6 — Прогрев: модель и очередь (MADE_TO_ORDER)** (промт в `docs/NEXT-SESSION-PROMPT.md`).
 
 ### Сессия — Корзина, заказы, оплата с баланса (эпик E4)
 - **Сделано (контракты):** `docs/backend/prisma-schema.md` — OrderItem получил снапшоты

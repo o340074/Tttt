@@ -1,4 +1,5 @@
 import { z } from 'zod';
+import { DEV_PAYLOAD_KEY } from '../crypto/payload-crypto';
 
 export const envSchema = z.object({
   NODE_ENV: z.enum(['development', 'test', 'production']).default('development'),
@@ -19,6 +20,15 @@ export const envSchema = z.object({
   PAYMENT_WEBHOOK_SECRET: z.string().min(16).default('advault-dev-webhook-secret-change-me'),
   /** Payment window for a pending top-up, minutes. */
   TOPUP_TTL_MINUTES: z.coerce.number().int().positive().default(15),
+  /**
+   * AES-256-GCM keys for StockItem/Delivery payloads (docs/09):
+   * "v1:<base64 32B>[,v0:<base64 32B>]" — the first key encrypts, every
+   * listed key decrypts, so rotation is prepending a new version.
+   */
+  // Dev default decodes to the 32 bytes of "advault-dev-payload-key-change!!".
+  PAYLOAD_ENCRYPTION_KEY: z.string().min(10).default(DEV_PAYLOAD_KEY),
+  /** How long a checkout holds reserved stock units, seconds. */
+  STOCK_RESERVE_TTL_SECONDS: z.coerce.number().int().positive().default(300),
 });
 
 export type Env = z.infer<typeof envSchema>;
@@ -35,9 +45,10 @@ export function validateEnv(config: Record<string, unknown>): Env {
     parsed.data.NODE_ENV === 'production' &&
     (parsed.data.JWT_ACCESS_SECRET.includes('change-me') ||
       parsed.data.JWT_REFRESH_SECRET.includes('change-me') ||
-      parsed.data.PAYMENT_WEBHOOK_SECRET.includes('change-me'))
+      parsed.data.PAYMENT_WEBHOOK_SECRET.includes('change-me') ||
+      parsed.data.PAYLOAD_ENCRYPTION_KEY.includes('YWR2YXVsdC1kZXY'))
   ) {
-    throw new Error('JWT/payment secrets must be overridden in production');
+    throw new Error('JWT/payment/payload secrets must be overridden in production');
   }
   return parsed.data;
 }

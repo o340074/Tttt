@@ -1,10 +1,13 @@
 import { Module } from '@nestjs/common';
 import { ConfigModule } from '@nestjs/config';
 import { validateEnv } from './config/env';
+import { AuditModule } from './audit/audit.module';
+import { CryptoModule } from './crypto/crypto.module';
 import { PrismaModule } from './prisma/prisma.module';
 import { RedisModule } from './redis/redis.module';
 import { HealthModule } from './health/health.module';
 import { MailerModule } from './mailer/mailer.module';
+import { AdminModule } from './admin/admin.module';
 import { AuthModule } from './auth/auth.module';
 import { CartModule } from './cart/cart.module';
 import { CatalogModule } from './catalog/catalog.module';
@@ -20,6 +23,8 @@ import { WalletModule } from './wallet/wallet.module';
     }),
     PrismaModule,
     RedisModule,
+    CryptoModule,
+    AuditModule,
     MailerModule,
     AuthModule,
     UsersModule,
@@ -27,6 +32,7 @@ import { WalletModule } from './wallet/wallet.module';
     WalletModule,
     CartModule,
     OrdersModule,
+    AdminModule,
     HealthModule,
   ],
 })

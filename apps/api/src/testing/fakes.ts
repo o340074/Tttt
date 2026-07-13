@@ -1,10 +1,12 @@
 import { Prisma } from '@prisma/client';
 import { randomUUID } from 'node:crypto';
 import type {
+  AuditLog as DbAuditLog,
   Cart as DbCart,
   CartItem as DbCartItem,
   Category as DbCategory,
   CategoryTranslation,
+  Delivery as DbDelivery,
   IdempotencyKey as DbIdempotencyKey,
   LedgerEntry as DbLedgerEntry,
   Order as DbOrder,
@@ -13,6 +15,7 @@ import type {
   ProductTranslation,
   ProductVariant as DbVariant,
   PromoCode as DbPromoCode,
+  StockItem as DbStockItem,
   TopUp as DbTopUp,
   User as DbUser,
 } from '@prisma/client';
@@ -534,6 +537,16 @@ export class FakeVariantStore {
     return Promise.resolve(include ? this.withProduct(row) : row);
   }
 
+  /** Admin stock import scopes the variant to its product. */
+  findFirst({ where }: { where: { id: string; productId?: string } }): Promise<DbVariant | null> {
+    return Promise.resolve(
+      this.rows.find(
+        (r) =>
+          r.id === where.id && (where.productId === undefined || r.productId === where.productId),
+      ) ?? null,
+    );
+  }
+
   /** Supports the checkout guard: id + isActive + optional stockCount >= qty. */
   updateMany({
     where,
@@ -553,6 +566,20 @@ export class FakeVariantStore {
       if (data.updatedAt) row.updatedAt = data.updatedAt;
     }
     return Promise.resolve({ count: matched.length });
+  }
+
+  /** StockService recomputes the stockCount cache from the pool via update. */
+  async update({
+    where,
+    data,
+  }: {
+    where: { id: string };
+    data: { stockCount?: number };
+  }): Promise<DbVariant> {
+    const row = this.rows.find((r) => r.id === where.id);
+    if (!row) throw new Error('Record not found');
+    Object.assign(row, data);
+    return row;
   }
 }
 
@@ -796,10 +823,225 @@ export class FakeOrderStore {
     const row = this.rows.find((r) => r.id === where.id && r.userId === where.userId) ?? null;
     return Promise.resolve(row ? this.withRels(row) : null);
   }
+
+  /** Checkout updates the status once its line delivery states are known. */
+  async update({
+    where,
+    data,
+  }: {
+    where: { id: string };
+    data: Partial<DbOrder>;
+  }): Promise<DbOrder> {
+    const row = this.rows.find((r) => r.id === where.id);
+    if (!row) throw new Error('Record not found');
+    Object.assign(row, data);
+    return row;
+  }
 }
+
+type FakeOrderItemWithDeliveries = DbOrderItem & { deliveries: DbDelivery[] };
 
 export class FakeOrderItemStore {
   readonly rows: DbOrderItem[] = [];
+
+  constructor(
+    private readonly orders: () => FakeOrderStore,
+    private readonly deliveries: () => FakeDeliveryStore,
+  ) {}
+
+  /** getDelivery: item by id scoped to its order's owner, with deliveries. */
+  findFirst({
+    where,
+    include,
+  }: {
+    where: { id: string; orderId?: string; order?: { userId: string } };
+    include?: { deliveries?: unknown };
+  }): Promise<FakeOrderItemWithDeliveries | DbOrderItem | null> {
+    const row = this.rows.find(
+      (r) => r.id === where.id && (where.orderId === undefined || r.orderId === where.orderId),
+    );
+    if (!row) return Promise.resolve(null);
+    if (where.order?.userId !== undefined) {
+      const order = this.orders().rows.find((o) => o.id === row.orderId);
+      if (!order || order.userId !== where.order.userId) return Promise.resolve(null);
+    }
+    if (!include?.deliveries) return Promise.resolve(row);
+    return Promise.resolve({ ...row, deliveries: this.deliveries().forOrderItem(row.id) });
+  }
+
+  async update({
+    where,
+    data,
+  }: {
+    where: { id: string };
+    data: Partial<DbOrderItem>;
+  }): Promise<DbOrderItem> {
+    const row = this.rows.find((r) => r.id === where.id);
+    if (!row) throw new Error('Record not found');
+    Object.assign(row, data);
+    return row;
+  }
+}
+
+// ---------- Stock, delivery & audit fakes (E5) ----------
+
+interface StockWhere {
+  id?: string | { in: string[] };
+  variantId?: string;
+  status?: DbStockItem['status'];
+  reservedUntil?: { lt: Date };
+}
+
+/** Matches the where shapes StockService issues (reserve/sell/release/sweep/count). */
+function matchesStock(row: DbStockItem, where: StockWhere): boolean {
+  if (where.id !== undefined) {
+    if (typeof where.id === 'string') {
+      if (row.id !== where.id) return false;
+    } else if (!where.id.in.includes(row.id)) {
+      return false;
+    }
+  }
+  if (where.variantId !== undefined && row.variantId !== where.variantId) return false;
+  if (where.status !== undefined && row.status !== where.status) return false;
+  if (where.reservedUntil?.lt !== undefined) {
+    if (
+      row.reservedUntil === null ||
+      row.reservedUntil.getTime() >= where.reservedUntil.lt.getTime()
+    ) {
+      return false;
+    }
+  }
+  return true;
+}
+
+export class FakeStockItemStore {
+  readonly rows: DbStockItem[] = [];
+
+  create({
+    data,
+  }: {
+    data: {
+      variantId: string;
+      payload: string;
+      payloadHash: string;
+      status?: DbStockItem['status'];
+    };
+  }): Promise<DbStockItem> {
+    if (
+      this.rows.some((r) => r.variantId === data.variantId && r.payloadHash === data.payloadHash)
+    ) {
+      return Promise.reject(uniqueViolation('stock_items_variantId_payloadHash_key'));
+    }
+    const row: DbStockItem = {
+      id: randomUUID(),
+      status: data.status ?? 'available',
+      reservedUntil: null,
+      orderItemId: null,
+      createdAt: new Date(),
+      ...data,
+    };
+    this.rows.push(row);
+    return Promise.resolve(row);
+  }
+
+  findMany(args: {
+    where?: StockWhere;
+    orderBy?: { createdAt?: 'asc' | 'desc' };
+    take?: number;
+    select?: unknown;
+  }): Promise<DbStockItem[]> {
+    let rows = this.rows.filter((r) => matchesStock(r, args.where ?? {}));
+    if (args.orderBy?.createdAt === 'asc') {
+      rows = [...rows].sort((a, b) => a.createdAt.getTime() - b.createdAt.getTime());
+    } else if (args.orderBy?.createdAt === 'desc') {
+      rows = [...rows].sort((a, b) => b.createdAt.getTime() - a.createdAt.getTime());
+    }
+    if (args.take !== undefined) rows = rows.slice(0, args.take);
+    // Return the canonical rows so callers read live variantId/id; they never mutate them.
+    return Promise.resolve(rows);
+  }
+
+  findUnique({ where }: { where: { id: string } }): Promise<DbStockItem | null> {
+    return Promise.resolve(this.rows.find((r) => r.id === where.id) ?? null);
+  }
+
+  updateMany({
+    where,
+    data,
+  }: {
+    where: StockWhere;
+    data: Partial<Pick<DbStockItem, 'status' | 'reservedUntil' | 'orderItemId'>>;
+  }): Promise<{ count: number }> {
+    const matched = this.rows.filter((r) => matchesStock(r, where));
+    for (const row of matched) Object.assign(row, data);
+    return Promise.resolve({ count: matched.length });
+  }
+
+  count({ where }: { where?: StockWhere } = {}): Promise<number> {
+    return Promise.resolve(this.rows.filter((r) => matchesStock(r, where ?? {})).length);
+  }
+}
+
+export class FakeDeliveryStore {
+  readonly rows: DbDelivery[] = [];
+
+  create({
+    data,
+  }: {
+    data: {
+      orderItemId: string;
+      payload: string;
+      type: DbDelivery['type'];
+      stockItemId?: string | null;
+      deliveredAt?: Date | null;
+    };
+  }): Promise<DbDelivery> {
+    const row: DbDelivery = {
+      id: randomUUID(),
+      stockItemId: data.stockItemId ?? null,
+      deliveredBy: null,
+      deliveredAt: data.deliveredAt ?? null,
+      createdAt: new Date(),
+      ...data,
+    };
+    this.rows.push(row);
+    return Promise.resolve(row);
+  }
+
+  /** Deliveries of one order item, oldest first (matches the getDelivery include). */
+  forOrderItem(orderItemId: string): DbDelivery[] {
+    return this.rows
+      .filter((r) => r.orderItemId === orderItemId)
+      .sort((a, b) => a.createdAt.getTime() - b.createdAt.getTime());
+  }
+}
+
+export class FakeAuditStore {
+  readonly rows: DbAuditLog[] = [];
+
+  create({
+    data,
+  }: {
+    data: {
+      action: string;
+      entity: string;
+      actorId?: string | null;
+      entityId?: string | null;
+      diff?: Prisma.InputJsonValue;
+    };
+  }): Promise<DbAuditLog> {
+    const row: DbAuditLog = {
+      id: randomUUID(),
+      action: data.action,
+      entity: data.entity,
+      actorId: data.actorId ?? null,
+      entityId: data.entityId ?? null,
+      diff: (data.diff ?? {}) as Prisma.JsonValue,
+      createdAt: new Date(),
+    };
+    this.rows.push(row);
+    return Promise.resolve(row);
+  }
 }
 
 export interface FakePrismaStores {
@@ -815,6 +1057,9 @@ export interface FakePrismaStores {
   ledgerEntry: FakeLedgerStore;
   topUp: FakeTopUpStore;
   idempotencyKey: FakeIdempotencyStore;
+  stockItem: FakeStockItemStore;
+  delivery: FakeDeliveryStore;
+  auditLog: FakeAuditStore;
 }
 
 interface StoreSnapshot {
@@ -855,8 +1100,16 @@ export function makeFakePrismaService(): PrismaService & FakePrismaStores {
   const cartItem = new FakeCartItemStore(productVariant, () => holder.cart!);
   const cartStore = new FakeCartStore(cartItem);
   holder.cart = cartStore;
-  const orderItem = new FakeOrderItemStore();
   const promoCode = new FakePromoStore();
+  const delivery = new FakeDeliveryStore();
+  // order ↔ orderItem ↔ delivery cross-reference; holders break the cycles.
+  const orderHolder: { order?: FakeOrderStore } = {};
+  const orderItem = new FakeOrderItemStore(
+    () => orderHolder.order!,
+    () => delivery,
+  );
+  const order = new FakeOrderStore(orderItem, promoCode);
+  orderHolder.order = order;
   const stores: FakePrismaStores = {
     user: new FakeUserStore(),
     category: new FakeCategoryStore(),
@@ -864,12 +1117,15 @@ export function makeFakePrismaService(): PrismaService & FakePrismaStores {
     productVariant,
     cart: cartStore,
     cartItem,
-    order: new FakeOrderStore(orderItem, promoCode),
+    order,
     orderItem,
     promoCode,
     ledgerEntry: new FakeLedgerStore(),
     topUp: new FakeTopUpStore(),
     idempotencyKey: new FakeIdempotencyStore(),
+    stockItem: new FakeStockItemStore(),
+    delivery,
+    auditLog: new FakeAuditStore(),
   };
   return {
     ...stores,
@@ -899,6 +1155,9 @@ export const TEST_ENV: Partial<Env> = {
   WEB_URL: 'http://localhost:5173',
   PAYMENT_WEBHOOK_SECRET: 'test-webhook-secret-0123456789ab',
   TOPUP_TTL_MINUTES: 15,
+  // Decodes to 32 bytes; the crypto tests use their own rings.
+  PAYLOAD_ENCRYPTION_KEY: 'v1:dGVzdC1wYXlsb2FkLWtleS0zMi1ieXRlcy1sb25nMDA=',
+  STOCK_RESERVE_TTL_SECONDS: 300,
 };
 
 export function makeFakeConfigService(overrides: Partial<Env> = {}): ConfigService<Env, true> {
