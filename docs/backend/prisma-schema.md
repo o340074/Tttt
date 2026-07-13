@@ -65,6 +65,7 @@ enum DeliveryType {
 enum DeliveryKind {
   auto
   manual
+  warm // E6: сборка комплекта прогрева (Bundle)
   replacement
 }
 
@@ -83,11 +84,60 @@ enum OrderStatus {
   refunded
 }
 
+// READY_STOCK: pending→delivered; MADE_TO_ORDER (E6): зеркалит статус
+// WarmingJob (queued…ready→delivered, on_hold/failed, refunded — терминальный
+// возврат средств). См. docs/14.
 enum OrderItemDeliveryStatus {
   pending
   awaiting_manual
+  queued
+  assigned
+  in_progress
+  qc
+  ready
+  on_hold
+  failed
   delivered
   replaced
+  refunded
+}
+
+// --- Прогрев (MADE_TO_ORDER), E6 (docs/12, docs/14, docs/15) ---
+enum WarmingJobStatus {
+  queued
+  assigned
+  in_progress
+  qc
+  ready
+  delivered
+  on_hold
+  failed // не терминальный: оператор решает — reassign (→queued) или refund
+  refunded
+}
+
+enum WarmingTaskStatus {
+  pending
+  in_progress
+  done
+  skipped
+  blocked
+}
+
+enum BundleStatus {
+  assembling
+  qc
+  ready
+  delivered
+}
+
+enum BundleComponentType {
+  ACCOUNT
+  PROXY
+  OCTO_PROFILE
+  RECOVERY
+  SECRETS
+  GUIDE
+  WARRANTY
 }
 
 enum LedgerDirection {
@@ -153,6 +203,7 @@ model User {
   auditLogs     AuditLog[]      @relation("AuditActor")
   ticketMsgs    TicketMessage[]
   deliveries    Delivery[]      @relation("DeliveredBy")
+  warmingJobs   WarmingJob[]    @relation("WarmingAssignee") // назначенные warm-задачи (E6)
 
   @@index([status])
   @@index([role])
@@ -246,7 +297,7 @@ model ProductVariant {
   fulfillmentType FulfillmentType @default(READY_STOCK)
   goal            String? // цель прогрева: google_ads, chrome_extension_dev, … (для MADE_TO_ORDER)
   tier            String? // тариф прогрева, напр. warm_7d
-  // warmingPlanId придёт в E6 вместе с моделью WarmingPlan.
+  warmingPlanId   String?         @db.Uuid // план прогрева (для MADE_TO_ORDER), E6
   bundleSpec      Json    @default("[]") @db.JsonB // состав комплекта: [{ "type": "ACCOUNT" }, { "type": "PROXY", "meta": { "geo": "US", "kind": "residential" } }, …]
   etaMinutes      Int? // кэш расчётной ETA (для MADE_TO_ORDER)
   warrantyHours   Int? // окно гарантии/замены
@@ -254,15 +305,17 @@ model ProductVariant {
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
-  product    Product     @relation(fields: [productId], references: [id], onDelete: Cascade)
-  stockItems StockItem[]
-  orderItems OrderItem[]
-  cartItems  CartItem[]
+  product     Product      @relation(fields: [productId], references: [id], onDelete: Cascade)
+  warmingPlan WarmingPlan? @relation(fields: [warmingPlanId], references: [id], onDelete: SetNull)
+  stockItems  StockItem[]
+  orderItems  OrderItem[]
+  cartItems   CartItem[]
 
   @@index([productId])
   @@index([isActive])
   @@index([fulfillmentType])
   @@index([goal])
+  @@index([warmingPlanId])
   @@map("product_variants")
 }
 
@@ -364,6 +417,7 @@ model OrderItem {
   variant    ProductVariant @relation(fields: [variantId], references: [id], onDelete: Restrict)
   deliveries Delivery[] // qty > 1 → одна Delivery на каждую проданную единицу StockItem
   stockItems StockItem[] // обратная сторона StockItem.orderItem
+  warmingJob WarmingJob? // MADE_TO_ORDER: 1:1 задача прогрева (E6)
   reviews    Review[]
 
   @@index([orderId])
@@ -379,18 +433,167 @@ model Delivery {
   id          String       @id @default(uuid()) @db.Uuid
   orderItemId String       @db.Uuid
   stockItemId String?      @unique @db.Uuid // для auto
+  bundleId    String?      @unique @db.Uuid // для warm (комплект прогрева), E6
   payload     String       @db.Text // ЗАШИФРОВАНО, снимок выданного
-  deliveredBy String?      @db.Uuid // админ (для manual/replacement)
+  deliveredBy String?      @db.Uuid // админ/оператор (manual/warm/replacement)
   deliveredAt DateTime?
   type        DeliveryKind
   createdAt   DateTime     @default(now())
 
   orderItem   OrderItem  @relation(fields: [orderItemId], references: [id], onDelete: Cascade)
   stockItem   StockItem? @relation(fields: [stockItemId], references: [id], onDelete: SetNull)
+  bundle      Bundle?    @relation(fields: [bundleId], references: [id], onDelete: SetNull)
   deliveredByUser User?  @relation("DeliveredBy", fields: [deliveredBy], references: [id], onDelete: SetNull)
 
   @@index([orderItemId])
   @@map("deliveries")
+}
+
+// ============================================================
+// Warming (MADE_TO_ORDER) — E6 (docs/12, docs/14, docs/15)
+// ============================================================
+
+// План прогрева: упорядоченный шаблон этапов под goal/tier. Версионируется —
+// Job фиксирует planVersion + снимок этапов, поэтому правки плана не ломают
+// уже идущие задачи.
+model WarmingPlan {
+  id        String   @id @default(uuid()) @db.Uuid
+  goal      String
+  tier      String?
+  name      String
+  version   Int      @default(1)
+  isActive  Boolean  @default(true)
+  qcRules   Json     @default("{}") @db.JsonB
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  stages   WarmingStageTemplate[]
+  variants ProductVariant[]
+  jobs     WarmingJob[]
+
+  @@unique([goal, tier, version]) // ключ upsert сидера; правки бампят version
+  @@index([goal, isActive])
+  @@map("warming_plans")
+}
+
+model WarmingStageTemplate {
+  id                 String @id @default(uuid()) @db.Uuid
+  planId             String @db.Uuid
+  order              Int // 0-based
+  name               String
+  expectedMinutes    Int // ожидаемая длительность — вклад в ETA/SLA
+  checklist          Json   @default("[]") @db.JsonB
+  requiredComponents Json   @default("[]") @db.JsonB // PROXY/OCTO/… готовит этап
+
+  plan WarmingPlan @relation(fields: [planId], references: [id], onDelete: Cascade)
+
+  @@unique([planId, order])
+  @@index([planId])
+  @@map("warming_stage_templates")
+}
+
+// Задача прогрева: одна на MADE_TO_ORDER-позицию. Фиксирует план (planId +
+// planVersion) и stagesSnapshot — ETA/прогресс переживают правки плана.
+model WarmingJob {
+  id             String           @id @default(uuid()) @db.Uuid
+  orderItemId    String           @unique @db.Uuid
+  planId         String?          @db.Uuid
+  planVersion    Int
+  goal           String?
+  status         WarmingJobStatus @default(queued)
+  assignedTo     String?          @db.Uuid // оператор (User support/admin; StaffUser в E8)
+  etaAt          DateTime? // ожидаемое время выдачи покупателю
+  slaDueAt       DateTime? // внутренний дедлайн
+  startedAt      DateTime?
+  readyAt        DateTime?
+  deliveredAt    DateTime?
+  currentStage   Int              @default(0) // число завершённых этапов
+  stageCount     Int              @default(0)
+  stagesSnapshot Json             @default("[]") @db.JsonB // [{order,name,expectedMinutes}]
+  notes          String?          @db.Text
+  createdAt      DateTime         @default(now())
+  updatedAt      DateTime         @updatedAt
+
+  orderItem    OrderItem     @relation(fields: [orderItemId], references: [id], onDelete: Cascade)
+  plan         WarmingPlan?  @relation(fields: [planId], references: [id], onDelete: SetNull)
+  assignedUser User?         @relation("WarmingAssignee", fields: [assignedTo], references: [id], onDelete: SetNull)
+  tasks        WarmingTask[]
+  accountAsset AccountAsset?
+  bundle       Bundle?
+
+  @@index([status])
+  @@index([goal, status])
+  @@index([assignedTo])
+  @@map("warming_jobs")
+}
+
+model WarmingTask {
+  id              String            @id @default(uuid()) @db.Uuid
+  jobId           String            @db.Uuid
+  stageTemplateId String?           @db.Uuid
+  order           Int
+  name            String // снимок названия этапа
+  expectedMinutes Int
+  status          WarmingTaskStatus @default(pending)
+  checklistState  Json              @default("{}") @db.JsonB
+  startedAt       DateTime?
+  doneAt          DateTime?
+  operatorId      String?           @db.Uuid
+  attachments     Json              @default("[]") @db.JsonB // без секретов
+
+  job WarmingJob @relation(fields: [jobId], references: [id], onDelete: Cascade)
+
+  @@unique([jobId, order])
+  @@index([jobId])
+  @@map("warming_tasks")
+}
+
+// Данные аккаунта под warm-заказ. payload/recovery — ЗАШИФРОВАНО (AES-256-GCM).
+model AccountAsset {
+  id        String   @id @default(uuid()) @db.Uuid
+  jobId     String   @unique @db.Uuid
+  payload   String   @db.Text // ЗАШИФРОВАНО
+  recovery  String?  @db.Text // ЗАШИФРОВАНО
+  meta      Json     @default("{}") @db.JsonB // без секретов
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  job WarmingJob @relation(fields: [jobId], references: [id], onDelete: Cascade)
+
+  @@map("account_assets")
+}
+
+// Собранный комплект выдачи для warm-заказа.
+model Bundle {
+  id          String       @id @default(uuid()) @db.Uuid
+  jobId       String       @unique @db.Uuid
+  status      BundleStatus @default(assembling)
+  assembledBy String?      @db.Uuid
+  qcBy        String?      @db.Uuid
+  deliveredAt DateTime?
+  createdAt   DateTime     @default(now())
+  updatedAt   DateTime     @updatedAt
+
+  job        WarmingJob        @relation(fields: [jobId], references: [id], onDelete: Cascade)
+  components BundleComponent[]
+  delivery   Delivery?
+
+  @@map("bundles")
+}
+
+model BundleComponent {
+  id        String              @id @default(uuid()) @db.Uuid
+  bundleId  String              @db.Uuid
+  type      BundleComponentType
+  refId     String?             @db.Uuid // ProxyItem/OctoProfile/AccountAsset (ресурсы — E7)
+  payload   String?             @db.Text // ЗАШИФРОВАНО, инлайновые данные/ссылка
+  meta      Json                @default("{}") @db.JsonB
+  createdAt DateTime            @default(now())
+
+  bundle Bundle @relation(fields: [bundleId], references: [id], onDelete: Cascade)
+
+  @@index([bundleId])
+  @@map("bundle_components")
 }
 
 // ============================================================
@@ -574,6 +777,15 @@ model IdempotencyKey {
 - Индекс `@@index([variantId, status])` ускоряет подбор `available` под резерв; `@@index([status, reservedUntil])` — для sweep'а.
 - **Политика нехватки в момент оплаты (решение E5):** checkout отклоняется целиком (`409 OUT_OF_STOCK`, транзакция откатывается, деньги не списываются). Перевод недостающих позиций в ручную выдачу/warm — вместе с операторкой (E6/E8), как допускает docs/08.
 
+### Прогрев (MADE_TO_ORDER), E6
+- **Создание задачи в оплате.** В той же транзакции checkout для каждой warm-позиции создаётся `WarmingJob(status=queued)` + `WarmingTask` на каждый этап; `OrderItem.deliveryStatus=queued`. План (`ProductVariant.warmingPlanId`) и его этапы **снимаются** на задачу (`planVersion` + `stagesSnapshot`), поэтому последующие правки плана не ломают идущие задачи (версионирование, docs/15).
+- **ETA.** `etaAt = createdAt + Σ expectedMinutes` активных этапов. При `on_hold` пересчитывается как `now + Σ` оставшихся этапов `+ WARMING_HOLD_BUFFER_MINUTES`; при `resume` — без буфера (ETA сжимается по мере прогресса). У warm-варианта без плана — один синтетический этап из `etaMinutes` (fallback `WARMING_DEFAULT_STAGE_MINUTES`).
+- **Статусы.** `WarmingJob.status` зеркалится на `OrderItem.deliveryStatus` (queued→…→delivered, on_hold, failed, refunded); статус заказа — агрегат позиций (docs/14). Машина переходов и маппинг проверяются на сервере (`409 CONFLICT` на нелегальный переход).
+- **failed → решает оператор** (docs/14): `reassign` (→queued, tasks сбрасываются, ETA заново) **или** `refund` (кредит в ledger `refType=refund`, `refId=orderItemId` — уникальность защищает от двойного возврата; позиция/задача становятся `refunded`). Автоматического движения денег на `failed` нет.
+- **Сборка и выдача.** На `deliver` требуется `AccountAsset` (иначе `409`): создаётся `Bundle(delivered)` + `BundleComponent` по `bundleSpec`, собирается читаемый комплект и пишется `Delivery(type=warm, bundleId)` со снимком **зашифрованного** payload — далее переиспользуется E5-путь Vault (расшифровка только владельцу + `AuditLog`).
+- **Шифрование.** `AccountAsset.payload/recovery`, `BundleComponent.payload`, `Delivery.payload` — AES-256-GCM на уровне приложения (тот же key-ring, что и E5). Секреты не логируются (аудит фиксирует только факт захвата/выдачи).
+- **RBAC.** Все операторские маршруты `/admin/warming/*` — роли `admin`/`support` (support = операторская роль до `StaffUser` в E8). Ресурсы прокси/Octo (`ProxyItem`/`OctoProfile`) — E7; в E6 их компоненты в комплекте помечены «provisioned separately».
+
 ---
 
 ## Заметки по миграциям
@@ -592,6 +804,11 @@ model IdempotencyKey {
    warm-варианты (`fulfillmentType=MADE_TO_ORDER`) с `goal=google_ads` и
    `goal=chrome_extension_dev`, заполненными `tier`, `bundleSpec`, `etaMinutes`,
    `warrantyHours`. `deliveryType` всегда согласован с `fulfillmentType`.
+3a. **Планы прогрева (E6):** `WarmingPlan` + `WarmingStageTemplate` под
+   `google_ads` (`warm_7d`/`warm_14d`/`agency`) и `chrome_extension_dev`
+   (`warm_5d`); сумма `expectedMinutes` этапов = `etaMinutes` варианта.
+   MADE_TO_ORDER-варианты линкуются на план через `warmingPlanId` (по `goal:tier`).
+   Идемпотентность — upsert по `(goal, tier, version)` и `(planId, order)`.
 4. Для `auto`-вариантов — 10–20 `StockItem(status=available)` с уже зашифрованным демо-`payload` (детерминированные строки → идемпотентность через `payloadHash`); `stockCount` пересчитывается от реального пула.
 5. Демо-`PromoCode`: `AURORA10` (percent, 10%), `SAVE5` (fixed, 5.00), `EXPIRED10`
    (percent, истёкший — для проверки валидации).

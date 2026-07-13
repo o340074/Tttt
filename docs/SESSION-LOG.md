@@ -8,9 +8,10 @@
 ## 📍 Текущий статус
 
 - **Фаза:** разработка. E0 (каркас), E1 (аутентификация), E2 (каталог), E3 (кошелёк),
-  E4 (корзина/заказы/оплата) и E5 (выдача из стока) готовы и проверены end-to-end.
-- **Следующий эпик:** **E6 — Прогрев: модель и очередь (MADE_TO_ORDER)** (см. `docs/16-development-plan.md` §4).
-- **Ветка:** актуальная база — `claude/advault-e5-stock-delivery-61ndk3` (E0…E5; в
+  E4 (корзина/заказы/оплата), E5 (выдача из стока) и E6 (прогрев: модель и очередь)
+  готовы и проверены end-to-end.
+- **Следующий эпик:** **E7 — Инвентарь: прокси и Octo-профили** (см. `docs/16-development-plan.md` §4).
+- **Ветка:** актуальная база — `claude/advault-e6-warming-queue-ktt1hm` (E0…E6; в
   main код ещё не влит). Разработку следующих эпиков вести на feature-ветках per эпик от неё.
 - **Прогресс по эпикам (из `docs/16`):**
 
@@ -23,8 +24,8 @@
 | E3 | Кошелёк и пополнение криптой | ✅ готово |
 | E4 | Корзина, заказы, оплата с баланса | ✅ готово |
 | E5 | Выдача из стока (READY_STOCK) | ✅ готово |
-| E6 | Прогрев: модель и очередь | ⬜ следующий |
-| E7 | Инвентарь: прокси и Octo-профили | ⬜ |
+| E6 | Прогрев: модель и очередь | ✅ готово |
+| E7 | Инвентарь: прокси и Octo-профили | ⬜ следующий |
 | E8 | Полная админка / операторка | ⬜ |
 | E9 | Поддержка и уведомления | ⬜ |
 | E10 | Гарантии, замены, возвраты | ⬜ |
@@ -35,6 +36,65 @@
 ---
 
 ## Записи
+
+### Сессия — Прогрев: модель и очередь (эпик E6)
+- **Сделано (контракты):** `docs/backend/prisma-schema.md` — warm-модели `WarmingPlan`,
+  `WarmingStageTemplate`, `WarmingJob`, `WarmingTask`, `AccountAsset`, `Bundle`,
+  `BundleComponent`; enum `WarmingJobStatus/WarmingTaskStatus/BundleStatus/
+  BundleComponentType`; `DeliveryKind += warm`; `OrderItemDeliveryStatus` расширен
+  (queued…ready, on_hold, failed, refunded); `ProductVariant.warmingPlanId`,
+  `Delivery.bundleId`, `OrderItem.warmingJob`, `User.warmingJobs`. Зафиксированы ETA,
+  версионирование планов (planVersion + stagesSnapshot), политика failed→reassign/refund.
+  `docs/backend/openapi.md` — схемы `WarmingProgress/WarmingJobSummary/WarmingJobDetail`,
+  `OrderItem.warming`, эндпоинты `/admin/warming/jobs` (очередь/детали/assign/transition/
+  tasks/account/resolve). Типы отзеркалены в `@advault/types`.
+- **API:** миграция `20260713100000_warming` (проверена deploy + diff — дрифта нет).
+  Модуль `warming/`: `warming.logic.ts` (чистые ETA-хелперы, таблица переходов,
+  маппинг Job→deliveryStatus, агрегат статуса заказа), `WarmingService` — создание
+  `WarmingJob(queued)` + этапы + ETA в транзакции checkout; переходы
+  queued→assigned→in_progress→qc→ready→delivered (+on_hold с пересчётом ETA и буфером,
+  resume, fail); при delivered — сборка `Bundle` + `BundleComponent` из `bundleSpec` и
+  `Delivery(type=warm)` со снимком шифртекста (переиспользован E5 PayloadCryptoService +
+  AuditLog, расшифровка только владельцу); захват `AccountAsset` (шифрование
+  payload/recovery, не логируется); `resolveFailed` — reassign (→queued, tasks/ETA
+  сброшены) или refund (ledger credit `refType=refund`, refId=orderItemId → защита от
+  двойного возврата). RBAC-маршруты `/admin/warming/*` (admin/support). Checkout из E4/E5
+  расширен: warm-позиции → `deliveryStatus=queued` + job; ответ заказа несёт warm-прогресс.
+  Env: `WARMING_HOLD_BUFFER_MINUTES`, `WARMING_DEFAULT_STAGE_MINUTES`.
+- **Web (покупатель):** `features/orders/WarmingCard` в `/orders/:id` — статус с ETA,
+  «этап k из N» с прогресс-баром и списком этапов (иконки check/spark/clock, без эмодзи);
+  `useOrder` поллит каждые 15с, пока warm-позиция не в терминале; расширены стили и i18n
+  статусов выдачи; delivered → комплект в Vault. i18n EN/RU (`warming.*`,
+  `orders.deliveryStatuses.*`), loading/empty/error.
+- **Сидер:** `WarmingPlan` под `google_ads` (warm_7d/14d/agency) и
+  `chrome_extension_dev` (warm_5d) с этапами (Σ длительностей = etaMinutes варианта);
+  MADE_TO_ORDER-варианты слинкованы через `warmingPlanId`. Идемпотентно (upsert по
+  `(goal,tier,version)` и `(planId,order)`).
+- **Тесты (+24, всего 160):** unit `warming.logic` (ETA полная/остаточная, машина
+  переходов + нелегальные, маппинг, агрегат статуса заказа); unit `WarmingService`
+  (создание job с ETA, полный цикл до Vault, пересчёт ETA на hold/resume, refund с
+  ledger, reassign, нелегальные переходы, очередь с фильтрами); e2e-smoke по HTTP
+  `warming.e2e.spec` (оплата warm → queued с ETA → RBAC 403 → очередь → операторский
+  прогон этапов → 409 без данных аккаунта → захват → delivered → Vault владельцу).
+  Фейки расширены сторами warmingPlan/warmingJob/warmingTask/accountAsset/bundle/
+  bundleComponent + вложение warmingJob в заказ; `makeWarmingPlanRow`.
+- **Проверено вживую:** локальные Postgres 16 + Redis + собранный API; curl — полный
+  цикл (топап вебхуком → warm-checkout: order=paid, item=queued, ETA=+7д, 6 этапов;
+  RBAC 403 покупателю; операторка assign→start→этапы→qc→ready; deliver без аккаунта=409;
+  захват аккаунта (ciphertext `v1.…` в БD, не plaintext) → deliver=delivered; Bundle с
+  5 компонентами; Vault владельцу расшифрован, чужому 404; refund: баланс 120→25→120,
+  order/item=refunded). lint/format/typecheck/тесты(160)/build зелёные.
+- **Решения:** политика failed — **оператор решает сам** (reassign или refund; авто-возврата
+  на failed нет); refund возвращает line subtotal (unitPrice×qty) на баланс (аллокация
+  скидки — упрощение MVP, уточнение в E10); версионирование планов — снимок
+  planVersion + stagesSnapshot на задачу; ETA = Σ длительностей этапов, на hold +буфер,
+  на resume пересчёт без буфера; ресурсы прокси/Octo (E7) в комплекте помечены
+  «provisioned separately»; support = операторская роль до StaffUser (E8).
+- **Проблемы/долги:** операторский UI (Warming Kanban / workspace) — только API, полный
+  UI в E8; реальные прокси/Octo-компоненты комплекта — E7; refund-аллокация скидки и
+  политика возвратов/гарантий — E10; SLA-эскалации/уведомления на переходах — E9;
+  фоновые таймеры (просрочка ETA) не реализованы.
+- **Дальше:** **E7 — Инвентарь: прокси и Octo-профили** (промт в `docs/NEXT-SESSION-PROMPT.md`).
 
 ### Сессия — Выдача из стока READY_STOCK (эпик E5)
 - **Сделано (контракты):** `docs/backend/prisma-schema.md` — StockItem получил

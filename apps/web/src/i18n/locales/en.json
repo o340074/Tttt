@@ -341,8 +341,16 @@
     "deliveryStatuses": {
       "pending": "Preparing",
       "awaiting_manual": "Being prepared",
+      "queued": "In queue",
+      "assigned": "Taken into work",
+      "in_progress": "In preparation",
+      "qc": "Final check",
+      "ready": "Almost ready",
+      "on_hold": "On hold",
+      "failed": "Reworking",
       "delivered": "Delivered",
-      "replaced": "Replaced"
+      "replaced": "Replaced",
+      "refunded": "Refunded"
     },
     "detailTitle": "Order {{number}}",
     "back": "Back to orders",
@@ -375,6 +383,23 @@
     "copied": "Copied",
     "download": "Download .txt",
     "error": "Couldn't load your data. Please try again."
+  },
+  "warming": {
+    "heading": "In preparation",
+    "subhead": "An operator is warming your account to order. Track the progress and estimated ready time below.",
+    "eta": "Estimated ready: {{date}}",
+    "stageOf": "Stage {{current}} of {{total}}",
+    "statuses": {
+      "queued": "In queue",
+      "assigned": "Taken into work",
+      "in_progress": "In preparation",
+      "qc": "Final check",
+      "ready": "Almost ready",
+      "delivered": "Ready — in your Vault",
+      "on_hold": "Brief delay",
+      "failed": "Reworking",
+      "refunded": "Refunded"
+    }
   },
   "health": {
     "title": "API status",

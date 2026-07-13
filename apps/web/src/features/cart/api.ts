@@ -96,11 +96,22 @@ export function useOrders(page: number, limit = 10) {
   });
 }
 
+/** Warm lines that are neither delivered nor refunded are still in flight. */
+const WARM_TERMINAL = ['delivered', 'refunded'];
+
 export function useOrder(id: string) {
   const locale = useContentLocale();
   return useQuery({
     queryKey: ['orders', 'detail', id, locale],
     queryFn: () => apiFetch<Order>(`/orders/${id}?locale=${locale}`),
+    // Poll while any warm line is still being prepared, so status/ETA stay live.
+    refetchInterval: (query) => {
+      const order = query.state.data;
+      const active = order?.items.some(
+        (item) => item.warming && !WARM_TERMINAL.includes(item.warming.status),
+      );
+      return active ? 15_000 : false;
+    },
   });
 }
 

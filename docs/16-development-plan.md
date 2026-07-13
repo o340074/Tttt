@@ -101,7 +101,7 @@
   импорт работает — ✅ проверено (curl + Chromium/Playwright).
 - **Зависимости**: E4.
 
-### E6. Прогрев: модель и очередь (MADE_TO_ORDER) (MVP-core) — ~12–16 dd
+### E6. Прогрев: модель и очередь (MADE_TO_ORDER) (MVP-core) — ~12–16 dd — ✅ готово
 - Prisma: WarmingPlan, WarmingStageTemplate, WarmingJob, WarmingTask, AccountAsset,
   Bundle, BundleComponent (см. [15](./15-data-model-extensions.md)).
 - Логика: при оплате warm-позиции — создание Job (queued), расчёт ETA из плана; смена

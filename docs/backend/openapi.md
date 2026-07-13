@@ -46,6 +46,7 @@ tags:
   - name: Wallet
   - name: Webhooks
   - name: Support
+  - name: Warming
   - name: Admin
 
 # ============================================================
@@ -398,7 +399,75 @@ components:
         deliveryType: { type: string, enum: [auto, manual] }
         deliveryStatus:
           type: string
-          enum: [pending, awaiting_manual, delivered, replaced]
+          enum: [pending, awaiting_manual, queued, assigned, in_progress, qc, ready, on_hold, failed, delivered, replaced, refunded]
+        warming:
+          description: Прогресс прогрева для MADE_TO_ORDER-позиций (E6); null для READY_STOCK.
+          oneOf:
+            - { $ref: '#/components/schemas/WarmingProgress' }
+            - { type: "null" }
+
+    WarmingProgress:
+      type: object
+      description: Прогресс прогрева, видимый покупателю (docs/14).
+      properties:
+        status:
+          type: string
+          enum: [queued, assigned, in_progress, qc, ready, delivered, on_hold, failed, refunded]
+        etaAt: { type: [string, "null"], format: date-time, description: Ожидаемое время готовности (null после выдачи/возврата) }
+        currentStage: { type: integer, description: 1-based индекс текущего этапа (0 до старта) }
+        totalStages: { type: integer }
+        stages:
+          type: array
+          items:
+            type: object
+            properties:
+              order: { type: integer }
+              name: { type: string }
+              status: { type: string, enum: [pending, in_progress, done, skipped, blocked] }
+
+    WarmingJobSummary:
+      type: object
+      description: Строка операторской очереди прогрева (E6).
+      properties:
+        id: { type: string, format: uuid }
+        orderId: { type: string, format: uuid }
+        orderNumber: { type: string }
+        orderItemId: { type: string, format: uuid }
+        sku: { type: string }
+        name: { type: string }
+        goal: { type: [string, "null"] }
+        tier: { type: [string, "null"] }
+        status: { type: string, enum: [queued, assigned, in_progress, qc, ready, delivered, on_hold, failed, refunded] }
+        assignedTo: { type: [string, "null"], format: uuid }
+        etaAt: { type: [string, "null"], format: date-time }
+        slaDueAt: { type: [string, "null"], format: date-time }
+        currentStage: { type: integer }
+        stageCount: { type: integer }
+        createdAt: { type: string, format: date-time }
+
+    WarmingJobDetail:
+      allOf:
+        - { $ref: '#/components/schemas/WarmingJobSummary' }
+        - type: object
+          properties:
+            planId: { type: [string, "null"], format: uuid }
+            planVersion: { type: integer }
+            notes: { type: [string, "null"] }
+            hasAccountAsset: { type: boolean, description: Захвачены ли данные аккаунта (сами данные не отдаются) }
+            bundleStatus: { type: [string, "null"], enum: [assembling, qc, ready, delivered, "null"] }
+            tasks:
+              type: array
+              items:
+                type: object
+                properties:
+                  id: { type: string, format: uuid }
+                  order: { type: integer }
+                  name: { type: string }
+                  expectedMinutes: { type: integer }
+                  status: { type: string, enum: [pending, in_progress, done, skipped, blocked] }
+                  checklistState: { type: object }
+                  startedAt: { type: [string, "null"], format: date-time }
+                  doneAt: { type: [string, "null"], format: date-time }
 
     Order:
       type: object
@@ -1335,6 +1404,153 @@ paths:
         '403': { $ref: '#/components/responses/Forbidden' }
         '409': { $ref: '#/components/responses/Conflict' }
 
+  /admin/warming/jobs:
+    get:
+      tags: [Warming]
+      summary: Очередь прогрева (RBAC admin/support), E6
+      description: Задачи прогрева, старейшие первыми. Фильтры по статусу/цели/оператору.
+      parameters:
+        - $ref: '#/components/parameters/Page'
+        - $ref: '#/components/parameters/Limit'
+        - { name: status, in: query, schema: { type: string, enum: [queued, assigned, in_progress, qc, ready, delivered, on_hold, failed, refunded] } }
+        - { name: goal, in: query, schema: { type: string } }
+        - { name: assignedTo, in: query, schema: { type: string, format: uuid } }
+      responses:
+        '200':
+          description: Пагинированный список WarmingJobSummary
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data: { type: array, items: { $ref: '#/components/schemas/WarmingJobSummary' } }
+                  meta:
+                    type: object
+                    properties:
+                      total: { type: integer }
+                      page: { type: integer }
+                      limit: { type: integer }
+        '403': { $ref: '#/components/responses/Forbidden' }
+
+  /admin/warming/jobs/{id}:
+    get:
+      tags: [Warming]
+      summary: Детали задачи прогрева (этапы, план, наличие данных аккаунта)
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: string, format: uuid } }
+      responses:
+        '200': { description: OK, content: { application/json: { schema: { $ref: '#/components/schemas/WarmingJobDetail' } } } }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+
+  /admin/warming/jobs/{id}/assign:
+    post:
+      tags: [Warming]
+      summary: Назначить оператора (queued|on_hold → assigned)
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: string, format: uuid } }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [operatorId]
+              properties: { operatorId: { type: string, format: uuid, description: User с ролью support/admin } }
+      responses:
+        '200': { description: OK, content: { application/json: { schema: { $ref: '#/components/schemas/WarmingJobDetail' } } } }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '409': { $ref: '#/components/responses/Conflict' }
+
+  /admin/warming/jobs/{id}/transition:
+    post:
+      tags: [Warming]
+      summary: Переход статуса (start/hold/resume/qc/ready/deliver/fail)
+      description: Машина переходов docs/14. deliver собирает Bundle и выдаёт комплект в Vault (требует захваченных данных аккаунта, иначе 409). hold/resume пересчитывают ETA.
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: string, format: uuid } }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [action]
+              properties:
+                action: { type: string, enum: [start, hold, resume, qc, ready, deliver, fail] }
+                note: { type: string, description: Заметка оператора (причина hold/fail); не секрет }
+      responses:
+        '200': { description: OK, content: { application/json: { schema: { $ref: '#/components/schemas/WarmingJobDetail' } } } }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409': { $ref: '#/components/responses/Conflict' }
+
+  /admin/warming/jobs/{id}/tasks/{taskId}:
+    post:
+      tags: [Warming]
+      summary: Обновить этап-задачу (статус/чек-лист); currentStage = число done
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: string, format: uuid } }
+        - { name: taskId, in: path, required: true, schema: { type: string, format: uuid } }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                status: { type: string, enum: [pending, in_progress, done, skipped, blocked] }
+                checklistState: { type: object }
+      responses:
+        '200': { description: OK, content: { application/json: { schema: { $ref: '#/components/schemas/WarmingJobDetail' } } } }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+
+  /admin/warming/jobs/{id}/account:
+    post:
+      tags: [Warming]
+      summary: Захватить данные аккаунта (шифруется на сервере; не логируется)
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: string, format: uuid } }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [payload]
+              properties:
+                payload: { type: string, description: Логин/пароль и связанные данные (шифруется AES-256-GCM) }
+                recovery: { type: string }
+                meta: { type: object, description: Без секретов }
+      responses:
+        '200': { description: OK, content: { application/json: { schema: { $ref: '#/components/schemas/WarmingJobDetail' } } } }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '409': { $ref: '#/components/responses/Conflict' }
+
+  /admin/warming/jobs/{id}/resolve:
+    post:
+      tags: [Warming]
+      summary: Разрешить failed-задачу — reassign (→queued) или refund (ledger credit)
+      description: docs/14. reassign сбрасывает tasks и ETA. refund проводит LedgerEntry(credit, refType=refund, refId=orderItemId) и делает позицию/задачу refunded. Пишет AuditLog.
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: string, format: uuid } }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [resolution]
+              properties:
+                resolution: { type: string, enum: [reassign, refund] }
+                reason: { type: string }
+      responses:
+        '200': { description: OK, content: { application/json: { schema: { $ref: '#/components/schemas/WarmingJobDetail' } } } }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '409': { $ref: '#/components/responses/Conflict' }
+
   /admin/users:
     get:
       tags: [Admin]
@@ -1400,7 +1616,7 @@ paths:
 ## Пояснения к контракту
 
 - **Auth.** Публичные эндпоинты (`security: []`): register/login/refresh/verify/forgot/reset и вебхуки. Refresh — только через HTTP-only cookie. Rate limiting на всей группе `/auth/*`.
-- **Checkout (детально).** Требует `Idempotency-Key`. Коды: `400 VALIDATION_ERROR` (пустая корзина), `402 INSUFFICIENT_BALANCE`, `409 OUT_OF_STOCK`/`PROMO_INVALID`/`IDEMPOTENCY_CONFLICT`. Логика (E5) — валидация корзины/промокода → **резерв конкретных StockItem** (`available → reserved`, TTL) → одна транзакция БД: `reserved → sold` + `Delivery(type=auto)` со снимком payload + `deliveryStatus=delivered` (READY_STOCK; MADE_TO_ORDER остаётся `pending` до E6) + инкремент `usedCount` промокода + ledger debit + Order со статусом-агрегатом по позициям (`delivered`/`partially_delivered`/`paid`, docs/14) + очистка корзины; `stockCount` пересчитывается от пула. Ошибка → резервы снимаются, транзакция откатывается целиком (нехватка стока в момент оплаты = `409 OUT_OF_STOCK`, деньги не списываются). Поток — по [`08`](../08-payments-delivery.md).
+- **Checkout (детально).** Требует `Idempotency-Key`. Коды: `400 VALIDATION_ERROR` (пустая корзина), `402 INSUFFICIENT_BALANCE`, `409 OUT_OF_STOCK`/`PROMO_INVALID`/`IDEMPOTENCY_CONFLICT`. Логика (E5) — валидация корзины/промокода → **резерв конкретных StockItem** (`available → reserved`, TTL) → одна транзакция БД: `reserved → sold` + `Delivery(type=auto)` со снимком payload + `deliveryStatus=delivered` (READY_STOCK; для MADE_TO_ORDER (E6) вместо этого создаётся `WarmingJob(queued)` + этапы + ETA, `deliveryStatus=queued`) + инкремент `usedCount` промокода + ledger debit + Order со статусом-агрегатом по позициям (`delivered`/`partially_delivered`/`paid`, docs/14) + очистка корзины; `stockCount` пересчитывается от пула. Ошибка → резервы снимаются, транзакция откатывается целиком (нехватка стока в момент оплаты = `409 OUT_OF_STOCK`, деньги не списываются). Поток — по [`08`](../08-payments-delivery.md).
 - **Wallet/TopUps (детально).** `POST /wallet/topups` идемпотентен, отдаёт `address`/`paymentUrl`/статус. `GET /wallet/topups/:id` — поллинг статуса до `paid/expired`.
 - **Webhooks (детально).** Без JWT, проверка подписи (`X-Signature`), идемпотентность по `externalId`. `200` — только после успешной записи в БД (иначе провайдер повторяет). `401 INVALID_SIGNATURE` при неверной подписи.
 - **Delivery (детально).** `GET .../delivery` расшифровывает payload на сервере и отдаёт только владельцу, с записью в AuditLog. `404` для чужого заказа (существование не раскрывается) и для ещё не выданных позиций. Ручная выдача и замена — на стороне админа/воркера.

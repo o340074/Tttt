@@ -14,6 +14,7 @@ import { CatalogModule } from './catalog/catalog.module';
 import { OrdersModule } from './orders/orders.module';
 import { UsersModule } from './users/users.module';
 import { WalletModule } from './wallet/wallet.module';
+import { WarmingModule } from './warming/warming.module';
 
 @Module({
   imports: [
@@ -31,6 +32,7 @@ import { WalletModule } from './wallet/wallet.module';
     CatalogModule,
     WalletModule,
     CartModule,
+    WarmingModule,
     OrdersModule,
     AdminModule,
     HealthModule,

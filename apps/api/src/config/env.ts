@@ -29,6 +29,10 @@ export const envSchema = z.object({
   PAYLOAD_ENCRYPTION_KEY: z.string().min(10).default(DEV_PAYLOAD_KEY),
   /** How long a checkout holds reserved stock units, seconds. */
   STOCK_RESERVE_TTL_SECONDS: z.coerce.number().int().positive().default(300),
+  /** Extra ETA buffer added when a warming job goes on hold, minutes (docs/14). */
+  WARMING_HOLD_BUFFER_MINUTES: z.coerce.number().int().nonnegative().default(720),
+  /** Fallback stage duration when a warm variant has no plan, minutes. */
+  WARMING_DEFAULT_STAGE_MINUTES: z.coerce.number().int().positive().default(1_440),
 });
 
 export type Env = z.infer<typeof envSchema>;

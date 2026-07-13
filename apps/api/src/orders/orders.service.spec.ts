@@ -7,6 +7,7 @@ import { PayloadCryptoService } from '../crypto/payload-crypto.service';
 import { StockService } from '../stock/stock.service';
 import { IdempotencyService } from '../wallet/idempotency.service';
 import { LedgerService } from '../wallet/ledger.service';
+import { WarmingService } from '../warming/warming.service';
 import {
   makeCategoryRow,
   makeFakeConfigService,
@@ -128,6 +129,13 @@ describe('OrdersService.checkout (E5 stock delivery)', () => {
       stock,
       crypto,
       new AuditService(prisma as unknown as PrismaService),
+      new WarmingService(
+        prisma as unknown as PrismaService,
+        crypto,
+        new AuditService(prisma as unknown as PrismaService),
+        ledger,
+        config,
+      ),
     );
     const user = await prisma.user.create({
       data: { email: 'buyer@advault.dev', passwordHash: 'x' },
@@ -282,10 +290,13 @@ describe('OrdersService.checkout (E5 stock delivery)', () => {
     const ready = order.items.find((i) => i.sku === 'GADS-US-STD')!;
     const made = order.items.find((i) => i.sku === 'WARM-7D')!;
     expect(ready.deliveryStatus).toBe('delivered');
-    expect(made.deliveryStatus).toBe('pending'); // warmed in E6
+    // E6: the warm line is queued with a warming job + ETA (not delivered yet).
+    expect(made.deliveryStatus).toBe('queued');
+    expect(made.warming?.status).toBe('queued');
+    expect(prisma.warmingJob.rows).toHaveLength(1);
   });
 
-  it('keeps an all-warm order paid with nothing delivered yet', async () => {
+  it('keeps an all-warm order paid with a queued warming job and nothing delivered', async () => {
     const warm = seedVariant({
       sku: 'WARM-ONLY',
       price: '30.00',
@@ -294,8 +305,10 @@ describe('OrdersService.checkout (E5 stock delivery)', () => {
     await addToCart(warm, 1);
     const order = await orders.checkout(userId, {}, randomUUID(), 'en');
     expect(order.status).toBe('paid');
-    expect(order.items[0]!.deliveryStatus).toBe('pending');
+    expect(order.items[0]!.deliveryStatus).toBe('queued');
+    expect(order.items[0]!.warming?.etaAt).toBeTruthy();
     expect(prisma.delivery.rows).toHaveLength(0);
+    expect(prisma.warmingJob.rows).toHaveLength(1);
   });
 
   it('does not deliver the same unit on a repeated checkout of a fresh cart', async () => {

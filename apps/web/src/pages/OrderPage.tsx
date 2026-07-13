@@ -4,6 +4,7 @@ import { Icon } from '../components/ui/Icon';
 import { useOrder } from '../features/cart/api';
 import { formatMoney } from '../features/catalog/format';
 import { VaultCard } from '../features/orders/VaultCard';
+import { WarmingCard } from '../features/orders/WarmingCard';
 import { ApiRequestError } from '../lib/api';
 import { OrderStatusBadge } from './OrdersPage';
 import type { OrderItem } from '@advault/types';
@@ -11,8 +12,16 @@ import type { OrderItem } from '@advault/types';
 const DELIVERY_STYLES: Record<OrderItem['deliveryStatus'], string> = {
   pending: 'bg-[rgba(245,183,64,0.14)] text-warning',
   awaiting_manual: 'bg-[rgba(34,211,238,0.14)] text-beam',
+  queued: 'bg-[rgba(124,125,250,0.16)] text-volt-400',
+  assigned: 'bg-[rgba(124,125,250,0.16)] text-volt-400',
+  in_progress: 'bg-[rgba(34,211,238,0.14)] text-beam',
+  qc: 'bg-[rgba(34,211,238,0.14)] text-beam',
+  ready: 'bg-[rgba(43,217,166,0.14)] text-success',
+  on_hold: 'bg-[rgba(245,183,64,0.14)] text-warning',
+  failed: 'bg-[rgba(245,183,64,0.14)] text-warning',
   delivered: 'bg-[rgba(43,217,166,0.14)] text-success',
   replaced: 'bg-[rgba(124,125,250,0.16)] text-volt-400',
+  refunded: 'bg-[rgba(255,77,109,0.14)] text-danger',
 };
 
 /** Single order: items with delivery statuses and the money breakdown. */
@@ -48,6 +57,10 @@ export function OrderPage() {
 
   const data = order.data!;
   const deliveredItems = data.items.filter((item) => item.deliveryStatus === 'delivered');
+  // Warm lines still being prepared (delivered warm items appear in the Vault below).
+  const warmingItems = data.items.filter(
+    (item) => item.warming && item.warming.status !== 'delivered',
+  );
 
   return (
     <div className="mx-auto w-full max-w-[860px] px-4 py-10 md:px-6">
@@ -100,6 +113,21 @@ export function OrderPage() {
           </div>
         ))}
       </section>
+
+      {warmingItems.length > 0 && (
+        <section className="mb-6">
+          <div className="mb-3 flex items-center gap-2">
+            <Icon name="spark" className="!h-5 !w-5 text-beam" />
+            <h2 className="text-[17px] font-bold">{t('warming.heading')}</h2>
+          </div>
+          <p className="mb-4 text-[13px] text-text-lo">{t('warming.subhead')}</p>
+          <div className="flex flex-col gap-3">
+            {warmingItems.map((item) => (
+              <WarmingCard key={item.id} item={item} />
+            ))}
+          </div>
+        </section>
+      )}
 
       {deliveredItems.length > 0 && (
         <section className="mb-6">

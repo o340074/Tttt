@@ -11,6 +11,7 @@ import { PrismaService } from '../prisma/prisma.service';
 import { StockService } from '../stock/stock.service';
 import { IdempotencyService } from '../wallet/idempotency.service';
 import { LedgerService } from '../wallet/ledger.service';
+import { WarmingService } from '../warming/warming.service';
 import type {
   DeliveryPayload,
   Locale,
@@ -23,6 +24,8 @@ import type {
   Order as DbOrder,
   OrderItem as DbOrderItem,
   PromoCode as DbPromoCode,
+  WarmingJob as DbWarmingJob,
+  WarmingTask as DbWarmingTask,
 } from '@prisma/client';
 import type { CartItemWithVariant } from '../cart/cart.service';
 import type { CheckoutDto } from '../cart/dto/cart.dto';
@@ -31,7 +34,19 @@ const CHECKOUT_ENDPOINT = 'POST /orders/checkout';
 /** Retries for the rare human-readable order number collision. */
 const NUMBER_ATTEMPTS = 3;
 
-type OrderWithItems = DbOrder & { items: DbOrderItem[]; promoCode: DbPromoCode | null };
+type DbOrderItemWithWarming = DbOrderItem & {
+  warmingJob: (DbWarmingJob & { tasks: DbWarmingTask[] }) | null;
+};
+type OrderWithItems = DbOrder & {
+  items: DbOrderItemWithWarming[];
+  promoCode: DbPromoCode | null;
+};
+
+/** Load the warming job + its tasks alongside each item, for buyer progress. */
+const ORDER_INCLUDE = {
+  items: { include: { warmingJob: { include: { tasks: { orderBy: { order: 'asc' } } } } } },
+  promoCode: true,
+} satisfies Prisma.OrderInclude;
 
 /** Reserved stock ids per cart line, keyed by variantId (unique within a cart). */
 type Reservations = Map<string, string[]>;
@@ -77,6 +92,7 @@ export class OrdersService {
     private readonly stock: StockService,
     private readonly crypto: PayloadCryptoService,
     private readonly audit: AuditService,
+    private readonly warming: WarmingService,
   ) {}
 
   async checkout(
@@ -111,7 +127,7 @@ export class OrdersService {
     const [rows, total] = await Promise.all([
       this.prisma.order.findMany({
         where: { userId },
-        include: { items: true, promoCode: true },
+        include: ORDER_INCLUDE,
         orderBy: { createdAt: 'desc' },
         skip: (page - 1) * limit,
         take: limit,
@@ -127,7 +143,7 @@ export class OrdersService {
   async getOrder(userId: string, id: string, locale: Locale): Promise<Order> {
     const row = await this.prisma.order.findFirst({
       where: { id, userId },
-      include: { items: true, promoCode: true },
+      include: ORDER_INCLUDE,
     });
     if (!row) throw new ApiException('NOT_FOUND', 'Order not found', 404);
     return this.toOrderResponse(row as OrderWithItems, locale);
@@ -304,15 +320,27 @@ export class OrdersService {
         include: { items: true, promoCode: true },
       });
 
-      // 3) Auto-fulfil READY_STOCK lines: reserved → sold + Delivery, item
-      //    becomes delivered. MADE_TO_ORDER lines stay pending (E6 warms them).
+      // 3) Fulfil each line. READY_STOCK: reserved → sold + Delivery → delivered.
+      //    MADE_TO_ORDER: create a queued WarmingJob (+stages, ETA) → queued.
+      const itemByVariant = new Map(items.map((item) => [item.variantId, item]));
       let deliveredLines = 0;
       for (const orderItem of order.items) {
         const reserved = reservations.get(orderItem.variantId);
-        if (!reserved) continue;
-        await this.stock.sellReserved(tx, reserved, orderItem.id);
-        orderItem.deliveryStatus = 'delivered';
-        deliveredLines += 1;
+        if (reserved) {
+          await this.stock.sellReserved(tx, reserved, orderItem.id);
+          orderItem.deliveryStatus = 'delivered';
+          deliveredLines += 1;
+          continue;
+        }
+        const cartItem = itemByVariant.get(orderItem.variantId);
+        if (cartItem?.variant.fulfillmentType === 'MADE_TO_ORDER') {
+          const status = await this.warming.createJobForItem(tx, orderItem.id, cartItem.variant);
+          await tx.orderItem.update({
+            where: { id: orderItem.id },
+            data: { deliveryStatus: status },
+          });
+          orderItem.deliveryStatus = status;
+        }
       }
 
       // 4) Order status is the aggregate of its line delivery states (docs/14).
@@ -336,7 +364,9 @@ export class OrdersService {
       // 6) The cart is spent.
       await tx.cartItem.deleteMany({ where: { cartId } });
 
-      return order as OrderWithItems;
+      // Re-read with warming jobs/tasks so the response carries buyer progress.
+      const full = await tx.order.findUnique({ where: { id: order.id }, include: ORDER_INCLUDE });
+      return full as OrderWithItems;
     });
   }
 
@@ -357,7 +387,7 @@ export class OrdersService {
     };
   }
 
-  private toItemResponse(item: DbOrderItem, locale: Locale): OrderItem {
+  private toItemResponse(item: DbOrderItemWithWarming, locale: Locale): OrderItem {
     // The snapshot carries every locale taken at purchase time.
     const names = (item.nameSnapshot ?? {}) as Partial<Record<Locale, string>>;
     return {
@@ -369,6 +399,7 @@ export class OrdersService {
       unitPrice: item.unitPrice.toFixed(2),
       deliveryType: item.deliveryType,
       deliveryStatus: item.deliveryStatus,
+      warming: this.warming.buildProgress(item.warmingJob),
     };
   }
 }

@@ -1,7 +1,10 @@
 import { Prisma } from '@prisma/client';
 import { randomUUID } from 'node:crypto';
 import type {
+  AccountAsset as DbAccountAsset,
   AuditLog as DbAuditLog,
+  Bundle as DbBundle,
+  BundleComponent as DbBundleComponent,
   Cart as DbCart,
   CartItem as DbCartItem,
   Category as DbCategory,
@@ -18,6 +21,10 @@ import type {
   StockItem as DbStockItem,
   TopUp as DbTopUp,
   User as DbUser,
+  WarmingJob as DbWarmingJob,
+  WarmingPlan as DbWarmingPlan,
+  WarmingStageTemplate as DbWarmingStageTemplate,
+  WarmingTask as DbWarmingTask,
 } from '@prisma/client';
 import type { PrismaService } from '../prisma/prisma.service';
 import type { RedisService } from '../redis/redis.service';
@@ -250,6 +257,7 @@ export function makeVariantRow(
     attributes: {},
     goal: null,
     tier: null,
+    warmingPlanId: null,
     bundleSpec: [],
     etaMinutes: null,
     warrantyHours: null,
@@ -737,7 +745,13 @@ export class FakePromoStore {
   }
 }
 
-type FakeOrderWithRels = DbOrder & { items: DbOrderItem[]; promoCode: DbPromoCode | null };
+type FakeOrderItemWithWarming = DbOrderItem & {
+  warmingJob: (DbWarmingJob & { tasks: DbWarmingTask[] }) | null;
+};
+type FakeOrderWithRels = DbOrder & {
+  items: FakeOrderItemWithWarming[];
+  promoCode: DbPromoCode | null;
+};
 
 export class FakeOrderStore {
   readonly rows: DbOrder[] = [];
@@ -745,14 +759,27 @@ export class FakeOrderStore {
   constructor(
     private readonly items: FakeOrderItemStore,
     private readonly promos: FakePromoStore,
+    private readonly warming: () => FakeWarmingJobStore,
   ) {}
 
   private withRels(row: DbOrder): FakeOrderWithRels {
     return {
       ...row,
-      items: this.items.rows.filter((i) => i.orderId === row.id),
+      items: this.items.rows
+        .filter((i) => i.orderId === row.id)
+        .map((i) => ({ ...i, warmingJob: this.warming().forOrderItem(i.id) })),
       promoCode: this.promos.rows.find((p) => p.id === row.promoCodeId) ?? null,
     };
+  }
+
+  findUnique({
+    where,
+  }: {
+    where: { id: string };
+    include?: unknown;
+  }): Promise<FakeOrderWithRels | null> {
+    const row = this.rows.find((r) => r.id === where.id) ?? null;
+    return Promise.resolve(row ? this.withRels(row) : null);
   }
 
   create({
@@ -869,6 +896,15 @@ export class FakeOrderItemStore {
     return Promise.resolve({ ...row, deliveries: this.deliveries().forOrderItem(row.id) });
   }
 
+  findUnique({ where }: { where: { id: string } }): Promise<DbOrderItem | null> {
+    return Promise.resolve(this.rows.find((r) => r.id === where.id) ?? null);
+  }
+
+  /** syncDeliveryStatus reads sibling line statuses to aggregate the order. */
+  findMany(args: { where: { orderId: string }; select?: unknown }): Promise<DbOrderItem[]> {
+    return Promise.resolve(this.rows.filter((r) => r.orderId === args.where.orderId));
+  }
+
   async update({
     where,
     data,
@@ -880,6 +916,345 @@ export class FakeOrderItemStore {
     if (!row) throw new Error('Record not found');
     Object.assign(row, data);
     return row;
+  }
+}
+
+// ---------- Warming fakes (E6) ----------
+
+type PlanWithStages = DbWarmingPlan & { stages: DbWarmingStageTemplate[] };
+
+export class FakeWarmingPlanStore {
+  readonly rows: PlanWithStages[] = [];
+
+  /** createJobForItem loads the plan with its stages ordered. */
+  findUnique({
+    where,
+  }: {
+    where: { id: string };
+    include?: unknown;
+  }): Promise<PlanWithStages | null> {
+    const row = this.rows.find((r) => r.id === where.id) ?? null;
+    if (!row) return Promise.resolve(null);
+    return Promise.resolve({ ...row, stages: [...row.stages].sort((a, b) => a.order - b.order) });
+  }
+}
+
+/** Build a warming plan row with ordered stages for tests. */
+export function makeWarmingPlanRow(overrides: {
+  goal: string;
+  tier?: string | null;
+  name?: string;
+  version?: number;
+  stages: { name: string; expectedMinutes: number }[];
+}): PlanWithStages {
+  const now = new Date();
+  const id = randomUUID();
+  return {
+    id,
+    goal: overrides.goal,
+    tier: overrides.tier ?? null,
+    name: overrides.name ?? 'Test plan',
+    version: overrides.version ?? 1,
+    isActive: true,
+    qcRules: {},
+    createdAt: now,
+    updatedAt: now,
+    stages: overrides.stages.map((s, order) => ({
+      id: randomUUID(),
+      planId: id,
+      order,
+      name: s.name,
+      expectedMinutes: s.expectedMinutes,
+      checklist: [],
+      requiredComponents: [],
+    })),
+  };
+}
+
+interface WarmingJobWhere {
+  status?: DbWarmingJob['status'];
+  goal?: string;
+  assignedTo?: string;
+}
+
+function matchesJob(row: DbWarmingJob, where: WarmingJobWhere): boolean {
+  if (where.status !== undefined && row.status !== where.status) return false;
+  if (where.goal !== undefined && row.goal !== where.goal) return false;
+  if (where.assignedTo !== undefined && row.assignedTo !== where.assignedTo) return false;
+  return true;
+}
+
+type JobWithRels = DbWarmingJob & {
+  orderItem: DbOrderItem & {
+    order: { id: string; number: string; userId: string };
+    variant: { tier: string | null };
+  };
+  tasks: DbWarmingTask[];
+  accountAsset: { id: string } | null;
+  bundle: { status: string } | null;
+};
+
+export class FakeWarmingJobStore {
+  readonly rows: DbWarmingJob[] = [];
+
+  constructor(
+    private readonly tasks: () => FakeWarmingTaskStore,
+    private readonly orderItems: () => FakeOrderItemStore,
+    private readonly orders: () => FakeOrderStore,
+    private readonly variants: () => FakeVariantStore,
+    private readonly accountAssets: () => FakeAccountAssetStore,
+    private readonly bundles: () => FakeBundleStore,
+  ) {}
+
+  /** Full job row + its tasks (for order buyer progress); null if none. */
+  forOrderItem(orderItemId: string): (DbWarmingJob & { tasks: DbWarmingTask[] }) | null {
+    const row = this.rows.find((r) => r.orderItemId === orderItemId);
+    if (!row) return null;
+    return { ...row, tasks: this.tasks().forJob(row.id) };
+  }
+
+  private withRels(job: DbWarmingJob): JobWithRels {
+    const item = this.orderItems().rows.find((i) => i.id === job.orderItemId)!;
+    const order = this.orders().rows.find((o) => o.id === item.orderId)!;
+    const variant = this.variants().rows.find((v) => v.id === item.variantId) ?? null;
+    const asset = this.accountAssets().rows.find((a) => a.jobId === job.id) ?? null;
+    const bundle = this.bundles().rows.find((b) => b.jobId === job.id) ?? null;
+    return {
+      ...job,
+      orderItem: {
+        ...item,
+        order: { id: order.id, number: order.number, userId: order.userId },
+        variant: { tier: variant?.tier ?? null },
+      },
+      tasks: this.tasks().forJob(job.id),
+      accountAsset: asset ? { id: asset.id } : null,
+      bundle: bundle ? { status: bundle.status } : null,
+    };
+  }
+
+  create({
+    data,
+  }: {
+    data: Partial<DbWarmingJob> & { orderItemId: string; planVersion: number };
+  }): Promise<DbWarmingJob> {
+    const now = new Date();
+    const row: DbWarmingJob = {
+      id: randomUUID(),
+      orderItemId: data.orderItemId,
+      planId: data.planId ?? null,
+      planVersion: data.planVersion,
+      goal: data.goal ?? null,
+      status: data.status ?? 'queued',
+      assignedTo: data.assignedTo ?? null,
+      etaAt: data.etaAt ?? null,
+      slaDueAt: data.slaDueAt ?? null,
+      startedAt: data.startedAt ?? null,
+      readyAt: data.readyAt ?? null,
+      deliveredAt: data.deliveredAt ?? null,
+      currentStage: data.currentStage ?? 0,
+      stageCount: data.stageCount ?? 0,
+      stagesSnapshot: (data.stagesSnapshot ?? []) as DbWarmingJob['stagesSnapshot'],
+      notes: data.notes ?? null,
+      createdAt: now,
+      updatedAt: now,
+    };
+    this.rows.push(row);
+    return Promise.resolve(row);
+  }
+
+  findUnique({
+    where,
+    include,
+  }: {
+    where: { id: string };
+    include?: unknown;
+  }): Promise<JobWithRels | DbWarmingJob | null> {
+    const row = this.rows.find((r) => r.id === where.id) ?? null;
+    if (!row) return Promise.resolve(null);
+    return Promise.resolve(include ? this.withRels(row) : row);
+  }
+
+  findMany(args: {
+    where?: WarmingJobWhere;
+    include?: unknown;
+    orderBy?: { createdAt?: 'asc' | 'desc' };
+    skip?: number;
+    take?: number;
+  }): Promise<JobWithRels[]> {
+    let rows = this.rows.filter((r) => matchesJob(r, args.where ?? {}));
+    rows = [...rows].sort((a, b) => a.createdAt.getTime() - b.createdAt.getTime());
+    if (args.orderBy?.createdAt === 'desc') rows.reverse();
+    const skip = args.skip ?? 0;
+    rows = rows.slice(skip, args.take !== undefined ? skip + args.take : undefined);
+    return Promise.resolve(rows.map((r) => this.withRels(r)));
+  }
+
+  count({ where }: { where?: WarmingJobWhere } = {}): Promise<number> {
+    return Promise.resolve(this.rows.filter((r) => matchesJob(r, where ?? {})).length);
+  }
+
+  async update({
+    where,
+    data,
+  }: {
+    where: { id: string };
+    data: Partial<DbWarmingJob>;
+  }): Promise<DbWarmingJob> {
+    const row = this.rows.find((r) => r.id === where.id);
+    if (!row) throw new Error('Record not found');
+    Object.assign(row, data, { updatedAt: new Date() });
+    return row;
+  }
+}
+
+export class FakeWarmingTaskStore {
+  readonly rows: DbWarmingTask[] = [];
+
+  forJob(jobId: string): DbWarmingTask[] {
+    return this.rows.filter((r) => r.jobId === jobId).sort((a, b) => a.order - b.order);
+  }
+
+  create({
+    data,
+  }: {
+    data: Partial<DbWarmingTask> & {
+      jobId: string;
+      order: number;
+      name: string;
+      expectedMinutes: number;
+    };
+  }): Promise<DbWarmingTask> {
+    const row: DbWarmingTask = {
+      id: randomUUID(),
+      jobId: data.jobId,
+      stageTemplateId: data.stageTemplateId ?? null,
+      order: data.order,
+      name: data.name,
+      expectedMinutes: data.expectedMinutes,
+      status: data.status ?? 'pending',
+      checklistState: (data.checklistState ?? {}) as DbWarmingTask['checklistState'],
+      startedAt: data.startedAt ?? null,
+      doneAt: data.doneAt ?? null,
+      operatorId: data.operatorId ?? null,
+      attachments: (data.attachments ?? []) as DbWarmingTask['attachments'],
+    };
+    this.rows.push(row);
+    return Promise.resolve(row);
+  }
+
+  async update({
+    where,
+    data,
+  }: {
+    where: { id: string };
+    data: Partial<DbWarmingTask>;
+  }): Promise<DbWarmingTask> {
+    const row = this.rows.find((r) => r.id === where.id);
+    if (!row) throw new Error('Record not found');
+    Object.assign(row, data);
+    return row;
+  }
+
+  updateMany({
+    where,
+    data,
+  }: {
+    where: { jobId: string };
+    data: Partial<DbWarmingTask>;
+  }): Promise<{ count: number }> {
+    const matched = this.rows.filter((r) => r.jobId === where.jobId);
+    for (const row of matched) Object.assign(row, data);
+    return Promise.resolve({ count: matched.length });
+  }
+
+  count({
+    where,
+  }: {
+    where: { jobId: string; status?: DbWarmingTask['status'] };
+  }): Promise<number> {
+    return Promise.resolve(
+      this.rows.filter(
+        (r) => r.jobId === where.jobId && (where.status === undefined || r.status === where.status),
+      ).length,
+    );
+  }
+}
+
+export class FakeAccountAssetStore {
+  readonly rows: DbAccountAsset[] = [];
+
+  findUnique({ where }: { where: { jobId: string } }): Promise<DbAccountAsset | null> {
+    return Promise.resolve(this.rows.find((r) => r.jobId === where.jobId) ?? null);
+  }
+
+  upsert({
+    where,
+    create,
+    update,
+  }: {
+    where: { jobId: string };
+    create: Partial<DbAccountAsset> & { jobId: string; payload: string };
+    update: Partial<DbAccountAsset>;
+  }): Promise<DbAccountAsset> {
+    const existing = this.rows.find((r) => r.jobId === where.jobId);
+    if (existing) {
+      Object.assign(existing, update, { updatedAt: new Date() });
+      return Promise.resolve(existing);
+    }
+    const now = new Date();
+    const row: DbAccountAsset = {
+      id: randomUUID(),
+      jobId: create.jobId,
+      payload: create.payload,
+      recovery: create.recovery ?? null,
+      meta: (create.meta ?? {}) as DbAccountAsset['meta'],
+      createdAt: now,
+      updatedAt: now,
+    };
+    this.rows.push(row);
+    return Promise.resolve(row);
+  }
+}
+
+export class FakeBundleStore {
+  readonly rows: DbBundle[] = [];
+
+  create({ data }: { data: Partial<DbBundle> & { jobId: string } }): Promise<DbBundle> {
+    const now = new Date();
+    const row: DbBundle = {
+      id: randomUUID(),
+      jobId: data.jobId,
+      status: data.status ?? 'assembling',
+      assembledBy: data.assembledBy ?? null,
+      qcBy: data.qcBy ?? null,
+      deliveredAt: data.deliveredAt ?? null,
+      createdAt: now,
+      updatedAt: now,
+    };
+    this.rows.push(row);
+    return Promise.resolve(row);
+  }
+}
+
+export class FakeBundleComponentStore {
+  readonly rows: DbBundleComponent[] = [];
+
+  create({
+    data,
+  }: {
+    data: Partial<DbBundleComponent> & { bundleId: string; type: DbBundleComponent['type'] };
+  }): Promise<DbBundleComponent> {
+    const row: DbBundleComponent = {
+      id: randomUUID(),
+      bundleId: data.bundleId,
+      type: data.type,
+      refId: data.refId ?? null,
+      payload: data.payload ?? null,
+      meta: (data.meta ?? {}) as DbBundleComponent['meta'],
+      createdAt: new Date(),
+    };
+    this.rows.push(row);
+    return Promise.resolve(row);
   }
 }
 
@@ -993,13 +1368,16 @@ export class FakeDeliveryStore {
       payload: string;
       type: DbDelivery['type'];
       stockItemId?: string | null;
+      bundleId?: string | null;
+      deliveredBy?: string | null;
       deliveredAt?: Date | null;
     };
   }): Promise<DbDelivery> {
     const row: DbDelivery = {
       id: randomUUID(),
       stockItemId: data.stockItemId ?? null,
-      deliveredBy: null,
+      bundleId: data.bundleId ?? null,
+      deliveredBy: data.deliveredBy ?? null,
       deliveredAt: data.deliveredAt ?? null,
       createdAt: new Date(),
       ...data,
@@ -1060,6 +1438,12 @@ export interface FakePrismaStores {
   stockItem: FakeStockItemStore;
   delivery: FakeDeliveryStore;
   auditLog: FakeAuditStore;
+  warmingPlan: FakeWarmingPlanStore;
+  warmingJob: FakeWarmingJobStore;
+  warmingTask: FakeWarmingTaskStore;
+  accountAsset: FakeAccountAssetStore;
+  bundle: FakeBundleStore;
+  bundleComponent: FakeBundleComponentStore;
 }
 
 interface StoreSnapshot {
@@ -1102,14 +1486,27 @@ export function makeFakePrismaService(): PrismaService & FakePrismaStores {
   holder.cart = cartStore;
   const promoCode = new FakePromoStore();
   const delivery = new FakeDeliveryStore();
-  // order ↔ orderItem ↔ delivery cross-reference; holders break the cycles.
+  // order ↔ orderItem ↔ delivery ↔ warmingJob cross-reference; holders break the cycles.
   const orderHolder: { order?: FakeOrderStore } = {};
+  const warmingHolder: { warmingJob?: FakeWarmingJobStore } = {};
   const orderItem = new FakeOrderItemStore(
     () => orderHolder.order!,
     () => delivery,
   );
-  const order = new FakeOrderStore(orderItem, promoCode);
+  const order = new FakeOrderStore(orderItem, promoCode, () => warmingHolder.warmingJob!);
   orderHolder.order = order;
+  const warmingTask = new FakeWarmingTaskStore();
+  const accountAsset = new FakeAccountAssetStore();
+  const bundle = new FakeBundleStore();
+  const warmingJob = new FakeWarmingJobStore(
+    () => warmingTask,
+    () => orderItem,
+    () => order,
+    () => productVariant,
+    () => accountAsset,
+    () => bundle,
+  );
+  warmingHolder.warmingJob = warmingJob;
   const stores: FakePrismaStores = {
     user: new FakeUserStore(),
     category: new FakeCategoryStore(),
@@ -1126,6 +1523,12 @@ export function makeFakePrismaService(): PrismaService & FakePrismaStores {
     stockItem: new FakeStockItemStore(),
     delivery,
     auditLog: new FakeAuditStore(),
+    warmingPlan: new FakeWarmingPlanStore(),
+    warmingJob,
+    warmingTask,
+    accountAsset,
+    bundle,
+    bundleComponent: new FakeBundleComponentStore(),
   };
   return {
     ...stores,
@@ -1158,6 +1561,8 @@ export const TEST_ENV: Partial<Env> = {
   // Decodes to 32 bytes; the crypto tests use their own rings.
   PAYLOAD_ENCRYPTION_KEY: 'v1:dGVzdC1wYXlsb2FkLWtleS0zMi1ieXRlcy1sb25nMDA=',
   STOCK_RESERVE_TTL_SECONDS: 300,
+  WARMING_HOLD_BUFFER_MINUTES: 720,
+  WARMING_DEFAULT_STAGE_MINUTES: 1_440,
 };
 
 export function makeFakeConfigService(overrides: Partial<Env> = {}): ConfigService<Env, true> {

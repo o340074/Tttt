@@ -45,6 +45,127 @@ interface VariantSeed {
   attributes?: Record<string, unknown>;
 }
 
+interface StageSeed {
+  name: string;
+  expectedMinutes: number;
+  checklist?: string[];
+  requiredComponents?: string[];
+}
+
+interface WarmingPlanSeed {
+  goal: string;
+  tier: string;
+  name: string;
+  stages: StageSeed[];
+}
+
+const DAY = 24 * 60;
+
+/**
+ * Warming plans (docs/12): ordered stages with expected durations that sum to
+ * the variant ETA. Stage durations drive the buyer ETA and operator SLA. These
+ * are operational checklists only — the platform tracks work, it does not
+ * automate warming (docs/09).
+ */
+const warmingPlans: WarmingPlanSeed[] = [
+  {
+    goal: 'google_ads',
+    tier: 'warm_7d',
+    name: 'Google Ads · Warm 7 days',
+    stages: [
+      {
+        name: 'Environment prep',
+        expectedMinutes: 240,
+        requiredComponents: ['PROXY', 'OCTO_PROFILE'],
+        checklist: ['Allocate proxy', 'Create Octo profile', 'Bind profile to proxy'],
+      },
+      {
+        name: 'Account setup',
+        expectedMinutes: 240,
+        requiredComponents: ['ACCOUNT'],
+        checklist: ['Prepare account', 'Record recovery data'],
+      },
+      {
+        name: 'Rest / low activity',
+        expectedMinutes: 3 * DAY,
+        checklist: ['Scheduled status checks'],
+      },
+      {
+        name: 'Goal preparation (Ads)',
+        expectedMinutes: 3 * DAY,
+        checklist: ['Per-playbook actions for the target'],
+      },
+      {
+        name: 'Final QC',
+        expectedMinutes: 480,
+        checklist: ['Verify sign-in', 'Verify bundle completeness'],
+      },
+      {
+        name: 'Bundle assembly',
+        expectedMinutes: 480,
+        requiredComponents: ['ACCOUNT', 'PROXY', 'OCTO_PROFILE', 'GUIDE'],
+        checklist: ['Assemble account + proxy + profile + guide'],
+      },
+    ],
+  },
+  {
+    goal: 'google_ads',
+    tier: 'warm_14d',
+    name: 'Google Ads · Warm 14 days',
+    stages: [
+      {
+        name: 'Environment prep',
+        expectedMinutes: 240,
+        requiredComponents: ['PROXY', 'OCTO_PROFILE'],
+      },
+      { name: 'Account setup', expectedMinutes: 240, requiredComponents: ['ACCOUNT'] },
+      { name: 'Rest / low activity', expectedMinutes: 6 * DAY },
+      { name: 'Goal preparation (Ads)', expectedMinutes: 6 * DAY + 3 * DAY },
+      { name: 'Final QC', expectedMinutes: 720 },
+      {
+        name: 'Bundle assembly',
+        expectedMinutes: 720,
+        requiredComponents: ['ACCOUNT', 'PROXY', 'OCTO_PROFILE', 'GUIDE'],
+      },
+    ],
+  },
+  {
+    goal: 'google_ads',
+    tier: 'agency',
+    name: 'Google Ads · Agency prep',
+    stages: [
+      { name: 'Environment prep', expectedMinutes: 240 },
+      { name: 'Agency account setup', expectedMinutes: 1440, requiredComponents: ['ACCOUNT'] },
+      { name: 'Raise limits', expectedMinutes: 2160 },
+      { name: 'QC + assembly', expectedMinutes: 480, requiredComponents: ['ACCOUNT', 'GUIDE'] },
+    ],
+  },
+  {
+    goal: 'chrome_extension_dev',
+    tier: 'warm_5d',
+    name: 'Chrome dev · Warm 5 days',
+    stages: [
+      {
+        name: 'Developer account setup',
+        expectedMinutes: 480,
+        requiredComponents: ['ACCOUNT'],
+        checklist: ['Register developer account', 'Record access'],
+      },
+      {
+        name: 'Extension console access',
+        expectedMinutes: 2 * DAY,
+        checklist: ['Confirm publishing readiness'],
+      },
+      { name: 'Rest / activity', expectedMinutes: 3360 },
+      {
+        name: 'QC + assembly',
+        expectedMinutes: 480,
+        requiredComponents: ['ACCOUNT', 'RECOVERY', 'GUIDE'],
+      },
+    ],
+  },
+];
+
 interface ProductSeed {
   slug: string;
   categorySlug: string;
@@ -381,7 +502,40 @@ async function seedCategories(): Promise<Map<string, string>> {
   return idBySlug;
 }
 
-async function seedProducts(categoryIdBySlug: Map<string, string>): Promise<void> {
+/** Upsert warming plans + their stages; returns planId by "goal:tier". */
+async function seedWarmingPlans(): Promise<Map<string, string>> {
+  const idByKey = new Map<string, string>();
+  let stageCount = 0;
+  for (const plan of warmingPlans) {
+    const row = await prisma.warmingPlan.upsert({
+      where: { goal_tier_version: { goal: plan.goal, tier: plan.tier, version: 1 } },
+      update: { name: plan.name, isActive: true },
+      create: { goal: plan.goal, tier: plan.tier, version: 1, name: plan.name, isActive: true },
+    });
+    idByKey.set(`${plan.goal}:${plan.tier}`, row.id);
+    for (const [order, stage] of plan.stages.entries()) {
+      const data = {
+        name: stage.name,
+        expectedMinutes: stage.expectedMinutes,
+        checklist: (stage.checklist ?? []) as Prisma.InputJsonValue,
+        requiredComponents: (stage.requiredComponents ?? []) as Prisma.InputJsonValue,
+      };
+      await prisma.warmingStageTemplate.upsert({
+        where: { planId_order: { planId: row.id, order } },
+        update: data,
+        create: { planId: row.id, order, ...data },
+      });
+      stageCount += 1;
+    }
+  }
+  console.log(`Seeded ${warmingPlans.length} warming plans with ${stageCount} stages`);
+  return idByKey;
+}
+
+async function seedProducts(
+  categoryIdBySlug: Map<string, string>,
+  planIdByKey: Map<string, string>,
+): Promise<void> {
   let variantCount = 0;
   let stockCount = 0;
   for (const product of products) {
@@ -417,6 +571,11 @@ async function seedProducts(categoryIdBySlug: Map<string, string>): Promise<void
     for (const variant of product.variants) {
       // deliveryType is a derived snapshot — always consistent with fulfillmentType.
       const deliveryType = variant.fulfillmentType === 'READY_STOCK' ? 'auto' : 'manual';
+      // Link MADE_TO_ORDER variants to their warming plan by (goal, tier).
+      const warmingPlanId =
+        variant.fulfillmentType === 'MADE_TO_ORDER' && variant.goal && variant.tier
+          ? (planIdByKey.get(`${variant.goal}:${variant.tier}`) ?? null)
+          : null;
       const data = {
         productId: row.id,
         price: variant.price,
@@ -426,6 +585,7 @@ async function seedProducts(categoryIdBySlug: Map<string, string>): Promise<void
         stockCount: variant.stockCount ?? 0,
         goal: variant.goal ?? null,
         tier: variant.tier ?? null,
+        warmingPlanId,
         etaMinutes: variant.etaMinutes ?? null,
         warrantyHours: variant.warrantyHours ?? null,
         bundleSpec: (variant.bundleSpec ?? []) as Prisma.InputJsonValue,
@@ -522,7 +682,8 @@ async function seedPromoCodes(): Promise<void> {
 async function main(): Promise<void> {
   await seedUsers();
   const categoryIdBySlug = await seedCategories();
-  await seedProducts(categoryIdBySlug);
+  const planIdByKey = await seedWarmingPlans();
+  await seedProducts(categoryIdBySlug, planIdByKey);
   await seedPromoCodes();
 }
 

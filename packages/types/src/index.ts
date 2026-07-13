@@ -269,7 +269,24 @@ export interface TopUp {
 export type OrderStatus =
   'pending' | 'paid' | 'partially_delivered' | 'delivered' | 'cancelled' | 'refunded';
 
-export type OrderItemDeliveryStatus = 'pending' | 'awaiting_manual' | 'delivered' | 'replaced';
+/**
+ * Line delivery state (docs/14). READY_STOCK jumps pending→delivered;
+ * MADE_TO_ORDER walks the warming stages and ends delivered, with
+ * on_hold/failed branches and refunded as a terminal money-returned state.
+ */
+export type OrderItemDeliveryStatus =
+  | 'pending'
+  | 'awaiting_manual'
+  | 'queued'
+  | 'assigned'
+  | 'in_progress'
+  | 'qc'
+  | 'ready'
+  | 'on_hold'
+  | 'failed'
+  | 'delivered'
+  | 'replaced'
+  | 'refunded';
 
 export type PromoType = 'percent' | 'fixed';
 
@@ -338,6 +355,8 @@ export interface OrderItem {
   unitPrice: Money;
   deliveryType: DeliveryType;
   deliveryStatus: OrderItemDeliveryStatus;
+  /** Warming progress for MADE_TO_ORDER lines; null for READY_STOCK. */
+  warming?: WarmingProgress | null;
 }
 
 /** GET /orders/:id and POST /orders/checkout response. */
@@ -361,8 +380,8 @@ export interface Order {
 /** StockItem pool states (docs/backend/prisma-schema.md). */
 export type StockStatus = 'available' | 'reserved' | 'sold';
 
-/** How a Delivery came to be: instant from stock, by an operator, or a warranty replacement. */
-export type DeliveryKind = 'auto' | 'manual' | 'replacement';
+/** How a Delivery came to be: instant from stock, by an operator, warmed to order (bundle), or a warranty replacement. */
+export type DeliveryKind = 'auto' | 'manual' | 'warm' | 'replacement';
 
 /**
  * GET /orders/:id/items/:itemId/delivery — decrypted delivery data.
@@ -389,6 +408,129 @@ export interface StockImportReport {
   skipped: number;
   /** Available pool size after the import (the variant's fresh stockCount). */
   stockCount: number;
+}
+
+// ---------- Warming / made-to-order (E6) ----------
+
+/** Warming Job lifecycle (docs/12, docs/14, docs/15). */
+export type WarmingJobStatus =
+  | 'queued'
+  | 'assigned'
+  | 'in_progress'
+  | 'qc'
+  | 'ready'
+  | 'delivered'
+  | 'on_hold'
+  | 'failed'
+  | 'refunded';
+
+/** One warming stage instance state. */
+export type WarmingTaskStatus = 'pending' | 'in_progress' | 'done' | 'skipped' | 'blocked';
+
+/** Delivery bundle assembly state. */
+export type BundleStatus = 'assembling' | 'qc' | 'ready' | 'delivered';
+
+/** One stage of a warming job as shown to the buyer. */
+export interface WarmingStageProgress {
+  /** 0-based stage order. */
+  order: number;
+  name: string;
+  status: WarmingTaskStatus;
+}
+
+/** Buyer-facing warming progress on an order item (docs/14). */
+export interface WarmingProgress {
+  status: WarmingJobStatus;
+  /** ISO 8601 estimated delivery time, or null once delivered/refunded. */
+  etaAt: string | null;
+  /** 1-based index of the stage in progress (0 before work starts). */
+  currentStage: number;
+  totalStages: number;
+  stages: WarmingStageProgress[];
+}
+
+// ---------- Warming operator surface (E6, RBAC admin/support) ----------
+
+/** GET /admin/warming/jobs — one row in the operator queue. */
+export interface WarmingJobSummary {
+  id: string;
+  orderId: string;
+  orderNumber: string;
+  orderItemId: string;
+  sku: string;
+  /** Localized item name from the order snapshot. */
+  name: string;
+  goal: string | null;
+  tier: string | null;
+  status: WarmingJobStatus;
+  assignedTo: string | null;
+  etaAt: string | null;
+  slaDueAt: string | null;
+  currentStage: number;
+  stageCount: number;
+  createdAt: string;
+}
+
+/** One task inside a warming job (operator view). */
+export interface WarmingTaskView {
+  id: string;
+  order: number;
+  name: string;
+  expectedMinutes: number;
+  status: WarmingTaskStatus;
+  checklistState: Record<string, unknown>;
+  startedAt: string | null;
+  doneAt: string | null;
+}
+
+/** GET /admin/warming/jobs/:id — full operator detail. */
+export interface WarmingJobDetail extends WarmingJobSummary {
+  planId: string | null;
+  planVersion: number;
+  notes: string | null;
+  /** Whether encrypted account data has been captured (never the data itself). */
+  hasAccountAsset: boolean;
+  bundleStatus: BundleStatus | null;
+  tasks: WarmingTaskView[];
+}
+
+/** POST /admin/warming/jobs/:id/assign */
+export interface AssignWarmingJobRequest {
+  /** Operator (User with role support/admin). */
+  operatorId: string;
+}
+
+/** Non-money status moves an operator can drive on a warming job. */
+export type WarmingJobAction = 'start' | 'hold' | 'resume' | 'qc' | 'ready' | 'deliver' | 'fail';
+
+/** POST /admin/warming/jobs/:id/transition */
+export interface WarmingTransitionRequest {
+  action: WarmingJobAction;
+  /** Optional operator note (e.g. reason for hold/fail); stored, never a secret. */
+  note?: string;
+}
+
+/** POST /admin/warming/jobs/:id/tasks/:taskId */
+export interface UpdateWarmingTaskRequest {
+  status?: WarmingTaskStatus;
+  checklistState?: Record<string, unknown>;
+}
+
+/** POST /admin/warming/jobs/:id/account — encrypted server-side, never logged. */
+export interface SetAccountAssetRequest {
+  /** Login/password and related data — one secret per line, plaintext in transit only. */
+  payload: string;
+  recovery?: string;
+  meta?: Record<string, unknown>;
+}
+
+/** How a `failed` job is resolved (operator's choice, docs/14). */
+export type WarmingFailResolution = 'reassign' | 'refund';
+
+/** POST /admin/warming/jobs/:id/resolve */
+export interface ResolveWarmingJobRequest {
+  resolution: WarmingFailResolution;
+  reason?: string;
 }
 
 /** Pagination metadata returned by list endpoints. */
