@@ -1,13 +1,18 @@
 import { Prisma } from '@prisma/client';
 import { randomUUID } from 'node:crypto';
 import type {
+  Cart as DbCart,
+  CartItem as DbCartItem,
   Category as DbCategory,
   CategoryTranslation,
   IdempotencyKey as DbIdempotencyKey,
   LedgerEntry as DbLedgerEntry,
+  Order as DbOrder,
+  OrderItem as DbOrderItem,
   Product as DbProduct,
   ProductTranslation,
   ProductVariant as DbVariant,
+  PromoCode as DbPromoCode,
   TopUp as DbTopUp,
   User as DbUser,
 } from '@prisma/client';
@@ -146,7 +151,10 @@ export class FakeUserStore {
   }: {
     where: { id: string };
     data: Partial<Omit<DbUser, 'balance'>> & {
-      balance?: Prisma.Decimal | { increment: Prisma.Decimal | string };
+      balance?:
+        | Prisma.Decimal
+        | { increment: Prisma.Decimal | string }
+        | { decrement: Prisma.Decimal | string };
     };
   }): Promise<DbUser> {
     const row = await this.findUnique({ where });
@@ -157,7 +165,9 @@ export class FakeUserStore {
       row.balance =
         balance instanceof Prisma.Decimal
           ? balance
-          : row.balance.plus(new Prisma.Decimal(balance.increment));
+          : 'increment' in balance
+            ? row.balance.plus(new Prisma.Decimal(balance.increment))
+            : row.balance.minus(new Prisma.Decimal(balance.decrement));
     }
     return row;
   }
@@ -485,29 +495,396 @@ export class FakeIdempotencyStore {
   }
 }
 
+// ---------- Cart & orders fakes (E4) ----------
+
+type VariantWithProduct = DbVariant & { product: FakeProductRow };
+
+/**
+ * Variant lookups for the cart/checkout flows. Rows are the same objects as
+ * FakeProductStore.rows[].variants, so stock decrements stay in sync.
+ */
+export class FakeVariantStore {
+  readonly rows: DbVariant[] = [];
+
+  constructor(private readonly products: FakeProductStore) {}
+
+  /** Row + its product (with translations) — the include the cart flows use. */
+  withProduct(row: DbVariant): VariantWithProduct {
+    const product = this.products.rows.find((p) => p.id === row.productId);
+    if (!product) throw new Error(`FakeVariantStore: product ${row.productId} not seeded`);
+    return { ...row, product };
+  }
+
+  /** Convenience for sibling stores resolving variantId → variant+product. */
+  resolve(variantId: string): VariantWithProduct {
+    const row = this.rows.find((v) => v.id === variantId);
+    if (!row) throw new Error(`FakeVariantStore: variant ${variantId} not seeded`);
+    return this.withProduct(row);
+  }
+
+  findUnique({
+    where,
+    include,
+  }: {
+    where: { id: string };
+    include?: unknown;
+  }): Promise<DbVariant | VariantWithProduct | null> {
+    const row = this.rows.find((r) => r.id === where.id) ?? null;
+    if (!row) return Promise.resolve(null);
+    return Promise.resolve(include ? this.withProduct(row) : row);
+  }
+
+  /** Supports the checkout guard: id + isActive + optional stockCount >= qty. */
+  updateMany({
+    where,
+    data,
+  }: {
+    where: { id: string; isActive?: boolean; stockCount?: { gte: number } };
+    data: { stockCount?: { decrement: number }; updatedAt?: Date };
+  }): Promise<{ count: number }> {
+    const matched = this.rows.filter(
+      (r) =>
+        r.id === where.id &&
+        (where.isActive === undefined || r.isActive === where.isActive) &&
+        (where.stockCount === undefined || r.stockCount >= where.stockCount.gte),
+    );
+    for (const row of matched) {
+      if (data.stockCount) row.stockCount -= data.stockCount.decrement;
+      if (data.updatedAt) row.updatedAt = data.updatedAt;
+    }
+    return Promise.resolve({ count: matched.length });
+  }
+}
+
+type FakeCartItemWithVariant = DbCartItem & { variant: VariantWithProduct };
+
+export class FakeCartStore {
+  readonly rows: DbCart[] = [];
+
+  constructor(private readonly items: FakeCartItemStore) {}
+
+  findUnique({
+    where,
+    include,
+  }: {
+    where: { userId: string };
+    include?: unknown;
+  }): Promise<(DbCart & { items?: FakeCartItemWithVariant[] }) | null> {
+    const row = this.rows.find((r) => r.userId === where.userId) ?? null;
+    if (!row) return Promise.resolve(null);
+    if (!include) return Promise.resolve(row);
+    return Promise.resolve({ ...row, items: this.items.forCart(row.id) });
+  }
+
+  create({ data }: { data: { userId: string } }): Promise<DbCart> {
+    if (this.rows.some((r) => r.userId === data.userId)) {
+      return Promise.reject(uniqueViolation('carts_userId_key'));
+    }
+    const now = new Date();
+    const row: DbCart = { id: randomUUID(), userId: data.userId, createdAt: now, updatedAt: now };
+    this.rows.push(row);
+    return Promise.resolve(row);
+  }
+}
+
+export class FakeCartItemStore {
+  readonly rows: DbCartItem[] = [];
+
+  constructor(
+    private readonly variants: FakeVariantStore,
+    private readonly carts: () => FakeCartStore,
+  ) {}
+
+  /** Items of a cart with the variant+product include, oldest first. */
+  forCart(cartId: string): FakeCartItemWithVariant[] {
+    return this.rows
+      .filter((r) => r.cartId === cartId)
+      .sort((a, b) => a.createdAt.getTime() - b.createdAt.getTime())
+      .map((r) => ({ ...r, variant: this.variants.resolve(r.variantId) }));
+  }
+
+  create({
+    data,
+  }: {
+    data: { cartId: string; variantId: string; quantity: number };
+  }): Promise<DbCartItem> {
+    if (this.rows.some((r) => r.cartId === data.cartId && r.variantId === data.variantId)) {
+      return Promise.reject(uniqueViolation('cart_items_cartId_variantId_key'));
+    }
+    const row: DbCartItem = { id: randomUUID(), createdAt: new Date(), ...data };
+    this.rows.push(row);
+    return Promise.resolve(row);
+  }
+
+  async update({
+    where,
+    data,
+  }: {
+    where: { id: string };
+    data: { quantity: number };
+  }): Promise<DbCartItem> {
+    const row = this.rows.find((r) => r.id === where.id);
+    if (!row) throw new Error('Record not found');
+    Object.assign(row, data);
+    return row;
+  }
+
+  findFirst({
+    where,
+  }: {
+    where: { id: string; cart: { userId: string } };
+    include?: unknown;
+  }): Promise<FakeCartItemWithVariant | null> {
+    const cart = this.carts().rows.find((c) => c.userId === where.cart.userId);
+    const row = this.rows.find((r) => r.id === where.id && r.cartId === cart?.id) ?? null;
+    if (!row) return Promise.resolve(null);
+    return Promise.resolve({ ...row, variant: this.variants.resolve(row.variantId) });
+  }
+
+  async delete({ where }: { where: { id: string } }): Promise<DbCartItem> {
+    const row = this.rows.find((r) => r.id === where.id);
+    if (!row) throw new Error('Record not found');
+    this.rows.splice(this.rows.indexOf(row), 1);
+    return row;
+  }
+
+  deleteMany({ where }: { where: { cartId: string } }): Promise<{ count: number }> {
+    const matched = this.rows.filter((r) => r.cartId === where.cartId);
+    for (const row of matched) this.rows.splice(this.rows.indexOf(row), 1);
+    return Promise.resolve({ count: matched.length });
+  }
+}
+
+export class FakePromoStore {
+  readonly rows: DbPromoCode[] = [];
+
+  findUnique({ where }: { where: { code?: string; id?: string } }): Promise<DbPromoCode | null> {
+    return Promise.resolve(
+      this.rows.find((r) =>
+        where.code !== undefined ? r.code === where.code : r.id === where.id,
+      ) ?? null,
+    );
+  }
+
+  create({
+    data,
+  }: {
+    data: Partial<Omit<DbPromoCode, 'value'>> & {
+      code: string;
+      type: DbPromoCode['type'];
+      value: Prisma.Decimal | string;
+    };
+  }): Promise<DbPromoCode> {
+    const row: DbPromoCode = {
+      id: randomUUID(),
+      maxUses: null,
+      usedCount: 0,
+      expiresAt: null,
+      createdAt: new Date(),
+      ...data,
+      value: new Prisma.Decimal(data.value),
+    };
+    this.rows.push(row);
+    return Promise.resolve(row);
+  }
+
+  /**
+   * Interprets only the guard shape OrdersService issues: id + still-valid
+   * (maxUses/usedCount, expiresAt) → increment usedCount.
+   */
+  updateMany({
+    where,
+    data,
+  }: {
+    where: { id: string };
+    data: { usedCount: { increment: number } };
+  }): Promise<{ count: number }> {
+    const row = this.rows.find((r) => r.id === where.id);
+    const valid =
+      row &&
+      (row.maxUses === null || row.usedCount < row.maxUses) &&
+      (row.expiresAt === null || row.expiresAt.getTime() > Date.now());
+    if (!valid) return Promise.resolve({ count: 0 });
+    row.usedCount += data.usedCount.increment;
+    return Promise.resolve({ count: 1 });
+  }
+}
+
+type FakeOrderWithRels = DbOrder & { items: DbOrderItem[]; promoCode: DbPromoCode | null };
+
+export class FakeOrderStore {
+  readonly rows: DbOrder[] = [];
+
+  constructor(
+    private readonly items: FakeOrderItemStore,
+    private readonly promos: FakePromoStore,
+  ) {}
+
+  private withRels(row: DbOrder): FakeOrderWithRels {
+    return {
+      ...row,
+      items: this.items.rows.filter((i) => i.orderId === row.id),
+      promoCode: this.promos.rows.find((p) => p.id === row.promoCodeId) ?? null,
+    };
+  }
+
+  create({
+    data,
+  }: {
+    data: Omit<DbOrder, 'id' | 'createdAt' | 'updatedAt' | 'subtotal' | 'discount' | 'total'> & {
+      subtotal: Prisma.Decimal | string;
+      discount: Prisma.Decimal | string;
+      total: Prisma.Decimal | string;
+      items?: {
+        create: (Omit<DbOrderItem, 'id' | 'orderId' | 'unitPrice'> & {
+          unitPrice: Prisma.Decimal | string;
+        })[];
+      };
+    };
+    include?: unknown;
+  }): Promise<FakeOrderWithRels> {
+    if (this.rows.some((r) => r.number === data.number)) {
+      return Promise.reject(uniqueViolation('orders_number_key'));
+    }
+    const now = new Date();
+    const { items, ...orderData } = data;
+    const row: DbOrder = {
+      id: randomUUID(),
+      createdAt: now,
+      updatedAt: now,
+      ...orderData,
+      subtotal: new Prisma.Decimal(data.subtotal),
+      discount: new Prisma.Decimal(data.discount),
+      total: new Prisma.Decimal(data.total),
+    };
+    this.rows.push(row);
+    for (const item of items?.create ?? []) {
+      this.items.rows.push({
+        id: randomUUID(),
+        orderId: row.id,
+        ...item,
+        unitPrice: new Prisma.Decimal(item.unitPrice),
+      });
+    }
+    return Promise.resolve(this.withRels(row));
+  }
+
+  findMany(args: {
+    where: { userId: string };
+    include?: unknown;
+    orderBy?: { createdAt: 'asc' | 'desc' };
+    skip?: number;
+    take?: number;
+  }): Promise<FakeOrderWithRels[]> {
+    let rows = this.rows.filter((r) => r.userId === args.where.userId);
+    if (args.orderBy?.createdAt === 'desc') rows = [...rows].reverse();
+    const skip = args.skip ?? 0;
+    rows = rows.slice(skip, args.take !== undefined ? skip + args.take : undefined);
+    return Promise.resolve(rows.map((row) => this.withRels(row)));
+  }
+
+  count({ where }: { where: { userId: string } }): Promise<number> {
+    return Promise.resolve(this.rows.filter((r) => r.userId === where.userId).length);
+  }
+
+  findFirst({
+    where,
+  }: {
+    where: { id: string; userId: string };
+    include?: unknown;
+  }): Promise<FakeOrderWithRels | null> {
+    const row = this.rows.find((r) => r.id === where.id && r.userId === where.userId) ?? null;
+    return Promise.resolve(row ? this.withRels(row) : null);
+  }
+}
+
+export class FakeOrderItemStore {
+  readonly rows: DbOrderItem[] = [];
+}
+
 export interface FakePrismaStores {
   user: FakeUserStore;
   category: FakeCategoryStore;
   product: FakeProductStore;
+  productVariant: FakeVariantStore;
+  cart: FakeCartStore;
+  cartItem: FakeCartItemStore;
+  order: FakeOrderStore;
+  orderItem: FakeOrderItemStore;
+  promoCode: FakePromoStore;
   ledgerEntry: FakeLedgerStore;
   topUp: FakeTopUpStore;
   idempotencyKey: FakeIdempotencyStore;
 }
 
+interface StoreSnapshot {
+  rows: unknown[];
+  entries: { ref: Record<string, unknown>; data: Record<string, unknown> }[];
+}
+
+/**
+ * In-place snapshot/restore keeps object identity intact — product rows share
+ * variant row objects with the variant store, so restoring must mutate the
+ * original rows rather than replace them with clones.
+ */
+function takeSnapshot(stores: FakePrismaStores): StoreSnapshot[] {
+  return Object.values(stores)
+    .map((store) => (store as { rows?: unknown[] }).rows)
+    .filter((rows): rows is unknown[] => Array.isArray(rows))
+    .map((rows) => ({
+      rows,
+      entries: rows.map((row) => ({
+        ref: row as Record<string, unknown>,
+        data: { ...(row as Record<string, unknown>) },
+      })),
+    }));
+}
+
+function restoreSnapshot(snapshots: StoreSnapshot[]): void {
+  for (const { rows, entries } of snapshots) {
+    rows.splice(0, rows.length, ...entries.map((e) => e.ref));
+    for (const { ref, data } of entries) Object.assign(ref, data);
+  }
+}
+
 export function makeFakePrismaService(): PrismaService & FakePrismaStores {
-  const stores = {
+  const product = new FakeProductStore();
+  const productVariant = new FakeVariantStore(product);
+  // cart ↔ cartItem know about each other; the holder breaks the cycle.
+  const holder: { cart?: FakeCartStore } = {};
+  const cartItem = new FakeCartItemStore(productVariant, () => holder.cart!);
+  const cartStore = new FakeCartStore(cartItem);
+  holder.cart = cartStore;
+  const orderItem = new FakeOrderItemStore();
+  const promoCode = new FakePromoStore();
+  const stores: FakePrismaStores = {
     user: new FakeUserStore(),
     category: new FakeCategoryStore(),
-    product: new FakeProductStore(),
+    product,
+    productVariant,
+    cart: cartStore,
+    cartItem,
+    order: new FakeOrderStore(orderItem, promoCode),
+    orderItem,
+    promoCode,
     ledgerEntry: new FakeLedgerStore(),
     topUp: new FakeTopUpStore(),
     idempotencyKey: new FakeIdempotencyStore(),
   };
   return {
     ...stores,
-    // Single-writer in-memory stores: an interactive transaction is just the
-    // callback over the same stores (no rollback simulation).
-    $transaction: (fn: (tx: unknown) => Promise<unknown>) => fn(stores),
+    // Single-writer in-memory stores: an interactive transaction runs the
+    // callback over the same stores; a throw restores the pre-tx snapshot,
+    // mirroring the rollback the checkout/debit logic relies on.
+    $transaction: async (fn: (tx: unknown) => Promise<unknown>) => {
+      const snapshot = takeSnapshot(stores);
+      try {
+        return await fn(stores);
+      } catch (error) {
+        restoreSnapshot(snapshot);
+        throw error;
+      }
+    },
     isHealthy: async () => true,
     onModuleDestroy: async () => undefined,
   } as unknown as PrismaService & FakePrismaStores;

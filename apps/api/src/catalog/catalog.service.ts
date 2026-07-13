@@ -67,7 +67,7 @@ export function parseBundleSpec(spec: unknown): BundleComponent[] {
 }
 
 /** Localized variant name: attributes.name_<locale> → name_en → tier → sku. */
-function variantName(variant: DbVariant, locale: Locale): string {
+export function variantName(variant: DbVariant, locale: Locale): string {
   const attrs = (variant.attributes ?? {}) as Record<string, unknown>;
   const localized = attrs[`name_${locale}`] ?? attrs.name_en;
   if (typeof localized === 'string' && localized) return localized;

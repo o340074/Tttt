@@ -4,8 +4,11 @@ import { AuthLayout } from './features/auth/AuthLayout';
 import { RedirectIfAuthed, RequireAuth } from './features/auth/guards';
 import { AccountPage } from './pages/AccountPage';
 import { CatalogPage } from './pages/CatalogPage';
+import { CheckoutPage } from './pages/CheckoutPage';
 import { HomePage } from './pages/HomePage';
 import { NotFoundPage } from './pages/NotFoundPage';
+import { OrderPage } from './pages/OrderPage';
+import { OrdersPage } from './pages/OrdersPage';
 import { ProductPage } from './pages/ProductPage';
 import { WalletPage } from './pages/WalletPage';
 import { AuthPage } from './pages/auth/AuthPage';
@@ -23,6 +26,9 @@ export function App() {
         <Route element={<RequireAuth />}>
           <Route path="account" element={<AccountPage />} />
           <Route path="wallet" element={<WalletPage />} />
+          <Route path="checkout" element={<CheckoutPage />} />
+          <Route path="orders" element={<OrdersPage />} />
+          <Route path="orders/:id" element={<OrderPage />} />
         </Route>
         <Route path="*" element={<NotFoundPage />} />
       </Route>

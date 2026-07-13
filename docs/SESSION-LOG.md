@@ -7,10 +7,10 @@
 
 ## 📍 Текущий статус
 
-- **Фаза:** разработка. E0 (каркас), E1 (аутентификация), E2 (каталог) и E3 (кошелёк)
-  готовы и проверены end-to-end.
-- **Следующий эпик:** **E4 — Корзина, заказы, оплата с баланса** (см. `docs/16-development-plan.md` §4).
-- **Ветка:** актуальная база — `claude/advault-e3-wallet-topups-nkw7y8` (E0+E1+E2+E3; в
+- **Фаза:** разработка. E0 (каркас), E1 (аутентификация), E2 (каталог), E3 (кошелёк)
+  и E4 (корзина/заказы/оплата) готовы и проверены end-to-end.
+- **Следующий эпик:** **E5 — Выдача из стока (READY_STOCK)** (см. `docs/16-development-plan.md` §4).
+- **Ветка:** актуальная база — `claude/advault-e4-cart-orders-q2u0j4` (E0+E1+E2+E3+E4; в
   main код ещё не влит). Разработку следующих эпиков вести на feature-ветках per эпик от неё.
 - **Прогресс по эпикам (из `docs/16`):**
 
@@ -21,8 +21,8 @@
 | E1 | Аутентификация и аккаунты | ✅ готово |
 | E2 | Каталог и продуктовая модель | ✅ готово |
 | E3 | Кошелёк и пополнение криптой | ✅ готово |
-| E4 | Корзина, заказы, оплата с баланса | ⬜ следующий |
-| E5 | Выдача из стока (READY_STOCK) | ⬜ |
+| E4 | Корзина, заказы, оплата с баланса | ✅ готово |
+| E5 | Выдача из стока (READY_STOCK) | ⬜ следующий |
 | E6 | Прогрев: модель и очередь | ⬜ |
 | E7 | Инвентарь: прокси и Octo-профили | ⬜ |
 | E8 | Полная админка / операторка | ⬜ |
@@ -35,6 +35,84 @@
 ---
 
 ## Записи
+
+### Сессия — Корзина, заказы, оплата с баланса (эпик E4)
+- **Сделано (контракты):** `docs/backend/prisma-schema.md` — OrderItem получил снапшоты
+  `sku` и `nameSnapshot Json` ({en,ru}); зафиксирован MVP-механизм наличия до E5:
+  атомарный check-and-decrement `ProductVariant.stockCount` в транзакции checkout
+  (TTL-резерв StockItem придёт в E5); демо-промокоды AURORA10/SAVE5/EXPIRED10.
+  `docs/backend/openapi.md` — CartItem расширен (productSlug, fulfillmentType,
+  stockCount, etaMinutes, isActive, attributes), `CheckoutRequest` без `cartId`
+  (корзина 1:1 с пользователем), новый `GET /promo-codes/{code}` (превью скидки,
+  404 PROMO_INVALID), у Order добавлен `promoCode`, уточнены коды ошибок checkout
+  (400 пустая корзина / 402 / 409 OUT_OF_STOCK|PROMO_INVALID|IDEMPOTENCY_CONFLICT).
+  Типы отзеркалены в `@advault/types` (Cart, CartItem, Order, OrderItem,
+  CheckoutRequest, PromoCodePublic, OrderStatus, OrderItemDeliveryStatus).
+- **API:** `schema.prisma` — Cart/CartItem (`@@unique([cartId, variantId])`),
+  Order (`number @unique`, subtotal/discount/total Decimal), OrderItem (снапшоты
+  sku/имени/цены/deliveryType, deliveryStatus=pending), PromoCode + миграция
+  `20260712300000_cart_orders` (проверена `migrate deploy` + `migrate diff` — дрифта
+  нет). Модуль `cart/`: серверная корзина (ленивое создание, merge повторного
+  добавления, кап количества по stockCount c OUT_OF_STOCK, неактивные позиции видны,
+  но не входят в subtotal), локализация имён «товар · вариант» EN/RU;
+  `GET /promo-codes/:code` (percent/fixed, maxUses/expiresAt). Модуль `orders/`:
+  `POST /orders/checkout` (обязательный Idempotency-Key через IdempotencyService из
+  E3: replay → сохранённый ответ, другое тело/в полёте → 409; при ошибке ключ
+  освобождается) — в ОДНОЙ транзакции: атомарный декремент stockCount (guard
+  `stockCount >= qty AND isActive`) + инкремент usedCount промокода под теми же
+  guard'ами + `Order(status=paid)` с OrderItem-снапшотами + `LedgerService.debit`
+  (двойная запись, balanceAfter, при нехватке INSUFFICIENT_BALANCE 402 с
+  details.required/available — транзакция откатывается целиком) + очистка корзины;
+  total=0 (полная скидка) не дебетуется; номер AV-YYYY-XXXXXX с ретраем коллизии.
+  `GET /orders` (пагинация) и `GET /orders/:id` (только владельцу, 404 чужим),
+  имена позиций — из nameSnapshot по локали запроса.
+- **Web:** экран `/checkout` по `prototype/screens/checkout.html`: степпер
+  Review→Payment→Done с aurora-fill, корзина (количество ±, удаление, badge
+  наличия/под-заказ/«снят с продажи», клампы по стоку), промокод (превью скидки
+  через GET /promo-codes, ошибка PROMO_INVALID, бейдж применённого кода), summary
+  (subtotal/discount/total; расчёт в центах зеркалит серверный Decimal), оплата с
+  баланса (сравнение баланс/итог; при нехватке — предупреждение и CTA «Пополнить
+  баланс» → /wallet вместо кнопки оплаты; 402 от сервера обрабатывается так же),
+  done-карточка с flash, номером заказа и ссылками «Открыть заказ»/«Продолжить
+  покупки». Idempotency-Key — один на логическую оплату (ретрай ошибки
+  переиспользует). «Buy now» на карточке товара кладёт в корзину и ведёт на
+  /checkout (гость — на логин с возвратом). В шапке — иконка корзины со счётчиком.
+  История заказов: `/orders` (список с бейджами статуса, пагинация) и `/orders/:id`
+  (позиции со статусами выдачи, промокод, суммы), ссылка «Мои заказы» в ЛК. Иконки
+  cart/tag/trash/plus/minus добавлены в спрайт; i18n EN/RU (включая RU-плюралы);
+  loading/empty/error везде.
+- **Тесты (+30, всего 116):** unit ledger.debit (списание+balanceAfter, откат при
+  INSUFFICIENT_BALANCE, запрет двойного проведения, неположительные суммы); unit
+  checkout (total, percent/fixed промокод с капом и usedCount, PROMO_INVALID,
+  INSUFFICIENT_BALANCE с полным откатом и ретраем после пополнения, идемпотентный
+  replay, конфликт другого тела, OUT_OF_STOCK/неактивный вариант, пустая корзина,
+  MADE_TO_ORDER без декремента стока, RU/EN nameSnapshot, чужой заказ 404); e2e-smoke
+  по HTTP: пополнение вебхуком E3 → корзина (merge, OUT_OF_STOCK, RU-локаль) → превью
+  промокода → checkout (баланс списан ровно раз, сток − qty, корзина пуста) → replay
+  ключа ничего не задваивает → 402 с сохранением корзины → список/деталь/404 чужому.
+  Фейки расширены: сторы variant/cart/cartItem/order/orderItem/promo + $transaction
+  с настоящим snapshot/rollback (восстановление in-place, сохраняя identity строк).
+- **Проверено вживую:** Postgres 16 + Redis + собранный API + Vite; curl: полный цикл
+  (пополнение вебхуком → корзина → превью промо → checkout с AURORA10 → replay того же
+  ключа → 409 на другом теле → 402 при нехватке; в БД: ledger сходится
+  (100−75.60=24.40), сток 37→35, usedCount=1, заказ paid со снапшотами);
+  Chromium/Playwright (15 шагов): регистрация → пополнение с вебхуком → Buy now →
+  checkout (количество, промо валид/невалид) → оплата → flash+done → деталь заказа →
+  список → RU-локаль → ветка нехватки баланса с CTA на /wallet → корзина уцелела после
+  402. Скриншоты сверены с прототипом. lint/format/typecheck/тесты/build зелёные.
+- **Решения:** корзина строго server-side и 1:1 с пользователем (cartId убран из
+  контракта); резерв стока в E4 — атомарный декремент кэша stockCount в транзакции
+  оплаты (без TTL-брони; полноценный StockItem-резерв в E5); имя позиции заказа
+  снапшотится в обеих локалях (nameSnapshot {en,ru}) и локализуется при чтении; ответ
+  идемпотентного replay возвращается как сохранён (локаль оригинала); превью скидки —
+  отдельный `GET /promo-codes/:code`, финальная валидация и usedCount — в транзакции
+  checkout; deliveryStatus всех позиций — pending до E5.
+- **Проблемы/долги:** TTL-резерва стока на время оформления нет (окно между корзиной
+  и оплатой закрыто только атомарным декрементом) — закрыть в E5 вместе со StockItem;
+  промокоды без админ-CRUD (только сидер); replay checkout отдаёт ответ в локали
+  оригинального запроса; лимит переиспользования IdempotencyKey-таблицы не чистится
+  (нужен sweep по createdAt позже).
+- **Дальше:** **E5 — Выдача из стока (READY_STOCK)** (промт в `docs/NEXT-SESSION-PROMPT.md`).
 
 ### Сессия — Кошелёк и пополнение криптой (эпик E3)
 - **Сделано (контракты):** `docs/backend/openapi.md` — уточнены `CreateTopUpRequest`

@@ -95,6 +95,24 @@ export function AccountPage() {
         </div>
       )}
 
+      <Link
+        to="/orders"
+        className="mb-5 flex items-center justify-between gap-3 rounded-xl border border-border bg-surface px-6 py-4 shadow-2 transition-all duration-[140ms] hover:-translate-y-px hover:border-volt"
+      >
+        <span className="flex items-center gap-3">
+          <span className="grid h-10 w-10 place-items-center rounded-md border border-border bg-surface-2 text-text">
+            <Icon name="box" className="text-[16px]" />
+          </span>
+          <span>
+            <span className="block text-[15px] font-semibold text-text-hi">
+              {t('account.orders')}
+            </span>
+            <span className="block text-[12.5px] text-text-lo">{t('account.ordersHint')}</span>
+          </span>
+        </span>
+        <Icon name="arrow-right" className="text-[14px] text-text-dim" />
+      </Link>
+
       <section className="rounded-xl border border-border bg-surface p-6 shadow-2">
         <h2 className="mb-5 text-lg font-semibold">{t('account.profile')}</h2>
         <dl className="grid gap-4 sm:grid-cols-2">

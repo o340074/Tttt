@@ -8,7 +8,7 @@
  */
 import { PrismaClient } from '@prisma/client';
 import * as argon2 from 'argon2';
-import type { FulfillmentType, Prisma, Role } from '@prisma/client';
+import type { FulfillmentType, Prisma, PromoType, Role } from '@prisma/client';
 
 const prisma = new PrismaClient();
 
@@ -437,10 +437,43 @@ async function seedProducts(categoryIdBySlug: Map<string, string>): Promise<void
   console.log(`Seeded ${products.length} products with ${variantCount} variants`);
 }
 
+interface PromoSeed {
+  code: string;
+  type: PromoType;
+  value: string; // percent (10.00 = 10%) or fixed amount — Money as string
+  maxUses?: number;
+  expiresAt?: Date;
+}
+
+const promoCodes: PromoSeed[] = [
+  { code: 'AURORA10', type: 'percent', value: '10.00', maxUses: 1000 },
+  { code: 'SAVE5', type: 'fixed', value: '5.00' },
+  // Expired on purpose — exercises PROMO_INVALID validation in demos.
+  { code: 'EXPIRED10', type: 'percent', value: '10.00', expiresAt: new Date('2026-01-01') },
+];
+
+async function seedPromoCodes(): Promise<void> {
+  for (const promo of promoCodes) {
+    const data = {
+      type: promo.type,
+      value: promo.value,
+      maxUses: promo.maxUses ?? null,
+      expiresAt: promo.expiresAt ?? null,
+    };
+    await prisma.promoCode.upsert({
+      where: { code: promo.code },
+      update: data,
+      create: { code: promo.code, ...data },
+    });
+  }
+  console.log(`Seeded ${promoCodes.length} promo codes`);
+}
+
 async function main(): Promise<void> {
   await seedUsers();
   const categoryIdBySlug = await seedCategories();
   await seedProducts(categoryIdBySlug);
+  await seedPromoCodes();
 }
 
 main()

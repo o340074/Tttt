@@ -24,7 +24,12 @@ export type IconName =
   | 'verify'
   | 'box'
   | 'wallet'
-  | 'copy';
+  | 'copy'
+  | 'cart'
+  | 'tag'
+  | 'trash'
+  | 'plus'
+  | 'minus';
 
 interface IconProps {
   name: IconName;

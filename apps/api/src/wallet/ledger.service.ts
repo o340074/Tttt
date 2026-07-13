@@ -56,6 +56,46 @@ export class LedgerService {
     }
   }
 
+  /**
+   * Post a debit inside the caller's transaction: decrement the cached
+   * balance and append the entry. A balance that would go negative throws
+   * INSUFFICIENT_BALANCE (402) — the transaction rolls the decrement back.
+   * Re-posting the same source throws CONFLICT via the composite unique.
+   */
+  async debit(tx: LedgerTx, input: PostEntryInput): Promise<DbLedgerEntry> {
+    const amount = new Prisma.Decimal(input.amount);
+    if (amount.lte(0)) {
+      throw new ApiException('VALIDATION_ERROR', 'Ledger amount must be positive', 400);
+    }
+    const user = await tx.user.update({
+      where: { id: input.userId },
+      data: { balance: { decrement: amount } },
+    });
+    if (user.balance.lt(0)) {
+      throw new ApiException('INSUFFICIENT_BALANCE', 'Not enough balance', 402, {
+        required: amount.toFixed(2),
+        available: user.balance.plus(amount).toFixed(2),
+      });
+    }
+    try {
+      return await tx.ledgerEntry.create({
+        data: {
+          userId: input.userId,
+          direction: 'debit',
+          amount,
+          balanceAfter: user.balance,
+          refType: input.refType,
+          refId: input.refId,
+        },
+      });
+    } catch (error) {
+      if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === 'P2002') {
+        throw new ApiException('CONFLICT', 'This source is already posted to the ledger', 409);
+      }
+      throw error;
+    }
+  }
+
   /** Ledger truth for a user's balance: SUM(credit) − SUM(debit). */
   async balanceFromLedger(tx: LedgerTx, userId: string): Promise<Prisma.Decimal> {
     const [credits, debits] = await Promise.all([

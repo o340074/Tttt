@@ -22,6 +22,6 @@ import type { PaymentProvider } from './payments/payment-provider';
       inject: [SandboxPaymentProvider],
     },
   ],
-  exports: [LedgerService],
+  exports: [LedgerService, IdempotencyService],
 })
 export class WalletModule {}

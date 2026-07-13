@@ -9,7 +9,8 @@
     "wallet": "Wallet",
     "language": "Language",
     "account": "Account",
-    "signIn": "Sign in"
+    "signIn": "Sign in",
+    "cart": "Cart"
   },
   "auth": {
     "switchLabel": "Choose form",
@@ -94,7 +95,9 @@
     "verifyBanner": "Please confirm your email — we sent you a verification link.",
     "language": "Interface language",
     "languageHint": "Saved to your profile and used for emails.",
-    "logout": "Log out"
+    "logout": "Log out",
+    "orders": "My orders",
+    "ordersHint": "Purchase history and delivery status"
   },
   "errors": {
     "GENERIC": "Something went wrong. Please try again.",
@@ -106,7 +109,10 @@
     "EMAIL_ALREADY_USED": "This email is already registered.",
     "INVALID_TOKEN": "This link is invalid or has expired.",
     "IDEMPOTENCY_CONFLICT": "This request was already submitted with different data. Please try again.",
-    "NOT_FOUND": "Not found."
+    "NOT_FOUND": "Not found.",
+    "INSUFFICIENT_BALANCE": "Not enough balance to complete the order.",
+    "OUT_OF_STOCK": "Some items are out of stock — adjust the quantities and try again.",
+    "PROMO_INVALID": "This promo code is invalid or expired."
   },
   "wallet": {
     "title": "Wallet",
@@ -228,7 +234,6 @@
     "payHint": "Pay with crypto or balance",
     "supportHint": "24/7 priority support",
     "buyNow": "Buy now",
-    "buySoon": "Checkout arrives with the wallet & cart milestone.",
     "details": "Details",
     "attrGeo": "Geo",
     "attrKind": "Type",
@@ -245,6 +250,117 @@
     "error": "Failed to load the product.",
     "notFound": "Product not found",
     "backToCatalog": "Back to catalog"
+  },
+  "cart": {
+    "title": "Checkout",
+    "subtitle": "Review your cart, apply a promo code and pay with your balance.",
+    "steps": {
+      "label": "Checkout progress",
+      "review": "Review",
+      "payment": "Payment",
+      "done": "Done"
+    },
+    "yourCart": "Your cart",
+    "items_one": "{{count}} item",
+    "items_other": "{{count}} items",
+    "each": "{{price}} each",
+    "inStock": "In stock: {{count}}",
+    "madeToOrder": "Made to order",
+    "unavailable": "No longer available — remove this item to continue",
+    "remove": "Remove {{name}}",
+    "increase": "Increase quantity",
+    "decrease": "Decrease quantity",
+    "quantity": "Quantity",
+    "empty": {
+      "title": "Your cart is empty",
+      "text": "Looks like you haven't added any accounts yet. Explore the catalog to find verified ad accounts.",
+      "browse": "Browse catalog"
+    },
+    "promo": {
+      "title": "Promo code",
+      "label": "Promo code",
+      "placeholder": "Enter code (try AURORA10)",
+      "apply": "Apply",
+      "appliedPercent": "Code applied — {{value}}% off.",
+      "appliedFixed": "Code applied — {{value}} off.",
+      "enterFirst": "Enter a code first.",
+      "remove": "Remove"
+    },
+    "summary": {
+      "title": "Order summary",
+      "subtotal": "Subtotal",
+      "discount": "Discount",
+      "delivery": "Delivery",
+      "deliveryFree": "Instant · Free",
+      "total": "Total",
+      "proceed": "Continue to payment"
+    },
+    "payment": {
+      "title": "Payment",
+      "method": "Balance",
+      "balance": "Available balance",
+      "orderTotal": "Order total",
+      "sufficient": "Sufficient balance — ready to pay.",
+      "insufficient": "Not enough balance — you need {{amount}} more.",
+      "pay": "Pay {{amount}}",
+      "topUp": "Top up balance",
+      "back": "Back to cart",
+      "hint": "The total is debited from your AdVault balance instantly."
+    },
+    "done": {
+      "title": "Payment successful",
+      "text": "Your order is paid. Item delivery starts right away — track it in your orders.",
+      "order": "Order",
+      "paid": "Paid",
+      "delivery": "Delivery",
+      "processing": "Preparing",
+      "viewOrder": "View order",
+      "continue": "Continue shopping"
+    },
+    "error": "Failed to load the cart.",
+    "retry": "Try again"
+  },
+  "orders": {
+    "title": "My orders",
+    "empty": "You have no orders yet — everything you buy will appear here.",
+    "browse": "Browse catalog",
+    "number": "Order",
+    "date": "Date",
+    "status": "Status",
+    "total": "Total",
+    "items_one": "{{count}} item",
+    "items_other": "{{count}} items",
+    "statuses": {
+      "pending": "Pending",
+      "paid": "Paid",
+      "partially_delivered": "Partially delivered",
+      "delivered": "Delivered",
+      "cancelled": "Cancelled",
+      "refunded": "Refunded"
+    },
+    "deliveryStatuses": {
+      "pending": "Preparing",
+      "awaiting_manual": "Being prepared",
+      "delivered": "Delivered",
+      "replaced": "Replaced"
+    },
+    "detailTitle": "Order {{number}}",
+    "back": "Back to orders",
+    "itemsHeading": "Items",
+    "qty": "×{{count}}",
+    "unitPrice": "{{price}} each",
+    "promo": "Promo code",
+    "subtotal": "Subtotal",
+    "discount": "Discount",
+    "totalLabel": "Total",
+    "deliveryNote": "Purchased data will appear here as soon as delivery completes.",
+    "notFound": "Order not found",
+    "error": "Failed to load orders.",
+    "retry": "Try again",
+    "pagination": "Order pages",
+    "page": "Page {{page}} of {{total}}",
+    "prev": "Previous",
+    "next": "Next"
   },
   "health": {
     "title": "API status",

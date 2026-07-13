@@ -264,6 +264,98 @@ export interface TopUp {
   paidAt: string | null;
 }
 
+// ---------- Cart & orders (E4) ----------
+
+export type OrderStatus =
+  'pending' | 'paid' | 'partially_delivered' | 'delivered' | 'cancelled' | 'refunded';
+
+export type OrderItemDeliveryStatus = 'pending' | 'awaiting_manual' | 'delivered' | 'replaced';
+
+export type PromoType = 'percent' | 'fixed';
+
+/** One cart line. Name and price are live (from the variant), not snapshots. */
+export interface CartItem {
+  id: string;
+  variantId: string;
+  sku: string;
+  /** Localized "product · variant" display name. */
+  name: string;
+  productSlug: string;
+  quantity: number;
+  unitPrice: Money;
+  lineTotal: Money;
+  fulfillmentType: FulfillmentType;
+  /** Current variant stock (READY_STOCK). */
+  stockCount: number;
+  /** ETA for MADE_TO_ORDER variants. */
+  etaMinutes: number | null;
+  /** false — the variant was deactivated; the line must be removed to checkout. */
+  isActive: boolean;
+  /** Product attributes (icon, geo, …) for rendering the row. */
+  attributes: Record<string, unknown>;
+}
+
+/** GET /cart — the user's cart (1:1 with the user). */
+export interface Cart {
+  id: string;
+  items: CartItem[];
+  subtotal: Money;
+  currency: string;
+}
+
+/** POST /cart/items */
+export interface AddCartItemRequest {
+  variantId: string;
+  quantity: number;
+}
+
+/** PATCH /cart/items/:id */
+export interface UpdateCartItemRequest {
+  quantity: number;
+}
+
+/** GET /promo-codes/:code — public part of a valid promo code (discount preview). */
+export interface PromoCodePublic {
+  code: string;
+  type: PromoType;
+  /** Percent (percent) or amount in the accounting currency (fixed). */
+  value: Money;
+}
+
+/** POST /orders/checkout (requires the Idempotency-Key header). */
+export interface CheckoutRequest {
+  promoCode?: string;
+}
+
+/** Order line as returned inside Order (price/name/sku are purchase-time snapshots). */
+export interface OrderItem {
+  id: string;
+  variantId: string;
+  sku: string;
+  /** Localized display name from the purchase-time snapshot. */
+  name: string;
+  quantity: number;
+  unitPrice: Money;
+  deliveryType: DeliveryType;
+  deliveryStatus: OrderItemDeliveryStatus;
+}
+
+/** GET /orders/:id and POST /orders/checkout response. */
+export interface Order {
+  id: string;
+  number: string;
+  status: OrderStatus;
+  subtotal: Money;
+  discount: Money;
+  total: Money;
+  currency: string;
+  /** Applied promo code, if any. */
+  promoCode: string | null;
+  items: OrderItem[];
+  /** ISO 8601 date-time. */
+  createdAt: string;
+}
+
 /** Pagination metadata returned by list endpoints. */
 export interface PageMeta {
   total: number;

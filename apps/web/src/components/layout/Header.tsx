@@ -3,6 +3,30 @@ import { Link, NavLink } from 'react-router-dom';
 import { Icon } from '../ui/Icon';
 import { supportedLocales } from '../../i18n';
 import { useAuth } from '../../features/auth/useAuth';
+import { useCartCount } from '../../features/cart/api';
+
+function CartButton() {
+  const { t } = useTranslation();
+  const count = useCartCount();
+
+  return (
+    <Link
+      to="/checkout"
+      aria-label={count > 0 ? `${t('nav.cart')} (${count})` : t('nav.cart')}
+      className="relative grid h-10 w-10 place-items-center rounded-pill border border-border bg-surface text-text transition-all duration-[140ms] hover:-translate-y-px hover:border-border-2 hover:text-text-hi"
+    >
+      <Icon name="cart" className="!h-[18px] !w-[18px]" />
+      {count > 0 && (
+        <span
+          aria-hidden
+          className="bg-aurora absolute -right-1 -top-1 grid h-[18px] min-w-[18px] place-items-center rounded-pill px-1 text-[10.5px] font-bold tabular-nums text-white shadow-glow-volt"
+        >
+          {count > 99 ? '99+' : count}
+        </span>
+      )}
+    </Link>
+  );
+}
 
 export function Header() {
   const { t, i18n } = useTranslation();
@@ -77,6 +101,8 @@ export function Header() {
               </button>
             ))}
           </div>
+
+          {!booting && user && <CartButton />}
 
           {!booting &&
             (user ? (

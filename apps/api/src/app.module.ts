@@ -6,7 +6,9 @@ import { RedisModule } from './redis/redis.module';
 import { HealthModule } from './health/health.module';
 import { MailerModule } from './mailer/mailer.module';
 import { AuthModule } from './auth/auth.module';
+import { CartModule } from './cart/cart.module';
 import { CatalogModule } from './catalog/catalog.module';
+import { OrdersModule } from './orders/orders.module';
 import { UsersModule } from './users/users.module';
 import { WalletModule } from './wallet/wallet.module';
 
@@ -23,6 +25,8 @@ import { WalletModule } from './wallet/wallet.module';
     UsersModule,
     CatalogModule,
     WalletModule,
+    CartModule,
+    OrdersModule,
     HealthModule,
   ],
 })

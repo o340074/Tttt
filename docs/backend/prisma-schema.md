@@ -350,6 +350,8 @@ model OrderItem {
   id             String                  @id @default(uuid()) @db.Uuid
   orderId        String                  @db.Uuid
   variantId      String                  @db.Uuid
+  sku            String // снимок SKU на момент покупки
+  nameSnapshot   Json                    @default("{}") @db.JsonB // снимок отображаемого имени { "en": "...", "ru": "..." }
   quantity       Int
   unitPrice      Decimal                 @db.Decimal(18, 2) // снимок цены на момент покупки
   deliveryType   DeliveryType // снимок типа выдачи
@@ -563,6 +565,10 @@ model IdempotencyKey {
 - **Мутации оплаты клиента** (`checkout`, `topups`) — таблица `IdempotencyKey` c `@@unique([key, endpoint])`; запись создаётся до обработки (claim), ответ сохраняется после. Повтор с тем же ключом: совпал `requestHash` (хэш тела + userId) — возвращается сохранённый ответ; не совпал или первый запрос ещё в полёте — `409 IDEMPOTENCY_CONFLICT`.
 
 ### Где резерв стока
+- **До появления `StockItem` (E5)** наличие READY_STOCK-вариантов обеспечивается атомарным
+  check-and-decrement кэша `ProductVariant.stockCount` внутри транзакции checkout
+  (`updateMany where stockCount >= qty → decrement`); нулевой счётчик обновлённых строк = `OUT_OF_STOCK`.
+  TTL-резерва на время оформления в E4 нет — это осознанный MVP-компромисс.
 - `StockItem.status = reserved` + `reservedUntil` фиксируют бронь на время оформления; параллельно ставится быстрый TTL в Redis.
 - Индекс `@@index([variantId, status])` ускоряет подбор `available` под резерв; `@@index([status, reservedUntil])` — для воркера, снимающего просроченные резервы обратно в `available`.
 - После оплаты `reserved → sold`, проставляется `orderItemId` и создаётся `Delivery`. `stockCount` на варианте обновляется как кэш.
@@ -586,7 +592,8 @@ model IdempotencyKey {
    `goal=chrome_extension_dev`, заполненными `tier`, `bundleSpec`, `etaMinutes`,
    `warrantyHours`. `deliveryType` всегда согласован с `fulfillmentType`.
 4. Для `auto`-вариантов — 10–20 `StockItem(status=available)` с уже зашифрованным демо-`payload`; обновить `stockCount`.
-5. Демо-`PromoCode` (percent 10%, fixed 5.00).
+5. Демо-`PromoCode`: `AURORA10` (percent, 10%), `SAVE5` (fixed, 5.00), `EXPIRED10`
+   (percent, истёкший — для проверки валидации).
 6. Идемпотентность сидов: `upsert` по уникальным ключам (email, slug, sku, code), чтобы повторный запуск не дублировал данные.
 7. Никаких реальных секретов в сидах — payload только фиктивный.
 </content>

@@ -40,10 +40,19 @@
   `GET /wallet/topups/:id`, вебхук `POST /webhooks/payments/:provider` (HMAC по raw
   body, идемпотентный по externalId, зачисление в одной транзакции), эквайринг за
   интерфейсом `PaymentProvider` (sandbox-реализация), expiry просроченных pending;
-  экран `/wallet` (QR/адрес/таймер, поллинг, flash, история). Актуальная база кода —
-  ветка `claude/advault-e3-wallet-topups-nkw7y8`.
-- 🔜 **Следующий шаг — эпик E4 (корзина, заказы, оплата с баланса)**. Далее строго по
-  порядку эпиков/вех из `docs/16-development-plan.md`.
+  экран `/wallet` (QR/адрес/таймер, поллинг, flash, история).
+- ✅ **E4 — корзина, заказы, оплата с баланса готовы**: Prisma Cart/CartItem/Order/
+  OrderItem (снапшоты sku/имени/цены)/PromoCode; серверная корзина (`GET /cart`,
+  `POST /cart/items`, `PATCH|DELETE /cart/items/:id`), `GET /promo-codes/:code`
+  (превью скидки); `POST /orders/checkout` (Idempotency-Key; одна транзакция БД:
+  атомарный декремент stockCount + usedCount промокода + `LedgerService.debit`
+  c INSUFFICIENT_BALANCE + Order(status=paid) + очистка корзины), `GET /orders`,
+  `GET /orders/:id`; экран `/checkout` (степпер, промокод, оплата с баланса, CTA
+  «Пополнить» при нехватке, flash), кнопка Buy now, заказы в ЛК (`/orders`).
+  Актуальная база кода — ветка `claude/advault-e4-cart-orders-q2u0j4`.
+- 🔜 **Следующий шаг — эпик E5 (выдача из стока READY_STOCK: StockItem, Delivery,
+  шифрование payload, Vault)**. Далее строго по порядку эпиков/вех из
+  `docs/16-development-plan.md`.
 - Живой статус и «что дальше» — всегда в `docs/SESSION-LOG.md`.
 
 ## Где что лежит

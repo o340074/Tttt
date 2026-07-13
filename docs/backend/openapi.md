@@ -325,14 +325,24 @@ components:
     # ---------- Cart ----------
     CartItem:
       type: object
+      description: Позиция корзины. Имя и цена — живые (из варианта), не снимок.
       properties:
         id: { type: string, format: uuid }
         variantId: { type: string, format: uuid }
         sku: { type: string }
-        name: { type: string }
+        name: { type: string, description: Локализованное «товар · вариант» }
+        productSlug: { type: string }
         quantity: { type: integer, minimum: 1 }
         unitPrice: { $ref: '#/components/schemas/Money' }
         lineTotal: { $ref: '#/components/schemas/Money' }
+        fulfillmentType: { type: string, enum: [READY_STOCK, MADE_TO_ORDER] }
+        stockCount: { type: integer, description: Текущий сток варианта (для READY_STOCK) }
+        etaMinutes: { type: [integer, "null"], description: ETA (для MADE_TO_ORDER) }
+        isActive: { type: boolean, description: false — вариант снят с продажи, позицию нужно убрать }
+        attributes:
+          type: object
+          additionalProperties: true
+          description: Атрибуты товара (иконка, гео и т.п.) для отрисовки строки.
 
     Cart:
       type: object
@@ -343,6 +353,16 @@ components:
           items: { $ref: '#/components/schemas/CartItem' }
         subtotal: { $ref: '#/components/schemas/Money' }
         currency: { $ref: '#/components/schemas/Currency' }
+
+    PromoCodePublic:
+      type: object
+      description: Публичная часть промокода — для превью скидки в корзине.
+      properties:
+        code: { type: string }
+        type: { type: string, enum: [percent, fixed] }
+        value:
+          allOf: [{ $ref: '#/components/schemas/Money' }]
+          description: Процент (percent) либо сумма в валюте учёта (fixed).
 
     AddCartItemRequest:
       type: object
@@ -360,10 +380,11 @@ components:
     # ---------- Orders / Delivery ----------
     CheckoutRequest:
       type: object
-      description: Оформление заказа из корзины. Оплата списанием с баланса.
+      description: >
+        Оформление заказа из корзины пользователя (корзина 1:1 с пользователем,
+        отдельный cartId не нужен). Оплата списанием с баланса.
       properties:
-        promoCode: { type: string, description: Опциональный промокод (v2) }
-        cartId: { type: string, format: uuid, description: Явная корзина; по умолчанию — корзина пользователя }
+        promoCode: { type: string, description: Опциональный промокод }
 
     OrderItem:
       type: object
@@ -391,6 +412,7 @@ components:
         discount: { $ref: '#/components/schemas/Money' }
         total: { $ref: '#/components/schemas/Money' }
         currency: { $ref: '#/components/schemas/Currency' }
+        promoCode: { type: [string, "null"], description: Применённый промокод }
         items:
           type: array
           items: { $ref: '#/components/schemas/OrderItem' }
@@ -850,6 +872,24 @@ paths:
         '400': { $ref: '#/components/responses/BadRequest' }
         '404': { $ref: '#/components/responses/NotFound' }
 
+  /promo-codes/{code}:
+    get:
+      tags: [Cart]
+      summary: Проверить промокод (превью скидки в корзине)
+      description: >
+        Возвращает публичную часть валидного промокода. Невалидный/истёкший/
+        исчерпанный код — 404 с code=PROMO_INVALID. Финальная валидация и
+        инкремент usedCount происходят в checkout.
+      parameters:
+        - { name: code, in: path, required: true, schema: { type: string } }
+      responses:
+        '200':
+          content: { application/json: { schema: { $ref: '#/components/schemas/PromoCodePublic' } } }
+        '404':
+          description: Код не найден, истёк или исчерпан (PROMO_INVALID).
+          content: { application/json: { schema: { $ref: '#/components/schemas/Error' } } }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+
   /cart/items/{id}:
     patch:
       tags: [Cart]
@@ -879,11 +919,15 @@ paths:
   /orders/checkout:
     post:
       tags: [Orders]
-      summary: Оформить заказ (резерв стока + оплата с баланса)
+      summary: Оформить заказ (проверка наличия + оплата с баланса)
       description: >
-        Проверка наличия и резерв стока (auto-позиции), проверка баланса >= total.
-        В одной транзакции: LedgerEntry(debit) + User.balance -= total + Order=paid,
-        затем запуск выдачи. При недостатке баланса — INSUFFICIENT_BALANCE, резерв снимается.
+        Требует Idempotency-Key. Проверка активности вариантов и наличия
+        (атомарный декремент stockCount для READY_STOCK; TTL-резерв StockItem — E5),
+        валидация промокода. В одной транзакции: LedgerEntry(debit) +
+        User.balance -= total + Order(status=paid) + OrderItem'ы со снапшотом
+        цены/имени/SKU + очистка корзины. deliveryStatus позиций — pending
+        (выдача — E5). Пустая корзина — 400 VALIDATION_ERROR. При недостатке
+        баланса — 402 INSUFFICIENT_BALANCE (транзакция откатывается целиком).
       parameters:
         - $ref: '#/components/parameters/IdempotencyKey'
       requestBody:
@@ -906,7 +950,9 @@ paths:
                   message: "Not enough balance to complete the order"
                   details: { required: "20.00", available: "12.50" }
         '409':
-          description: Нет стока (OUT_OF_STOCK) либо конфликт идемпотентности (IDEMPOTENCY_CONFLICT).
+          description: >
+            Нет стока / вариант неактивен (OUT_OF_STOCK), промокод невалиден
+            (PROMO_INVALID) либо конфликт идемпотентности (IDEMPOTENCY_CONFLICT).
           content: { application/json: { schema: { $ref: '#/components/schemas/Error' } } }
         '401': { $ref: '#/components/responses/Unauthorized' }
 
@@ -1329,7 +1375,7 @@ paths:
 ## Пояснения к контракту
 
 - **Auth.** Публичные эндпоинты (`security: []`): register/login/refresh/verify/forgot/reset и вебхуки. Refresh — только через HTTP-only cookie. Rate limiting на всей группе `/auth/*`.
-- **Checkout (детально).** Требует `Idempotency-Key`. Коды: `402 INSUFFICIENT_BALANCE`, `409 OUT_OF_STOCK`/`IDEMPOTENCY_CONFLICT`. Логика — резерв стока → проверка баланса → транзакция (ledger debit + Order=paid) → запуск выдачи, полностью по [`08`](../08-payments-delivery.md).
+- **Checkout (детально).** Требует `Idempotency-Key`. Коды: `400 VALIDATION_ERROR` (пустая корзина), `402 INSUFFICIENT_BALANCE`, `409 OUT_OF_STOCK`/`PROMO_INVALID`/`IDEMPOTENCY_CONFLICT`. Логика — валидация корзины/промокода → одна транзакция БД: атомарный декремент `stockCount` (TTL-резерв StockItem — E5) + инкремент `usedCount` промокода + ledger debit + `Order(status=paid)` + OrderItem'ы со снапшотом цены/имени/SKU + очистка корзины → запуск выдачи (E5). Поток — по [`08`](../08-payments-delivery.md).
 - **Wallet/TopUps (детально).** `POST /wallet/topups` идемпотентен, отдаёт `address`/`paymentUrl`/статус. `GET /wallet/topups/:id` — поллинг статуса до `paid/expired`.
 - **Webhooks (детально).** Без JWT, проверка подписи (`X-Signature`), идемпотентность по `externalId`. `200` — только после успешной записи в БД (иначе провайдер повторяет). `401 INVALID_SIGNATURE` при неверной подписи.
 - **Delivery (детально).** `GET .../delivery` расшифровывает payload на сервере и отдаёт только владельцу, с записью в AuditLog. `403` для чужого заказа. Ручная выдача и замена — на стороне админа/воркера.

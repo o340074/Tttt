@@ -79,4 +79,72 @@ describe('LedgerService', () => {
       }),
     ).rejects.toMatchObject({ code: 'VALIDATION_ERROR' });
   });
+
+  describe('debit (E4)', () => {
+    beforeEach(async () => {
+      await ledger.credit(tx(), {
+        userId,
+        amount: '100.00',
+        refType: 'topup',
+        refId: randomUUID(),
+      });
+    });
+
+    it('debits the cached balance and snapshots balanceAfter', async () => {
+      const entry = await ledger.debit(tx(), {
+        userId,
+        amount: '42.00',
+        refType: 'order',
+        refId: randomUUID(),
+      });
+      expect(entry.direction).toBe('debit');
+      expect(entry.amount.toFixed(2)).toBe('42.00');
+      expect(entry.balanceAfter.toFixed(2)).toBe('58.00');
+
+      const user = await prisma.user.findUnique({ where: { id: userId } });
+      expect(user!.balance.toFixed(2)).toBe('58.00');
+      const fromLedger = await ledger.balanceFromLedger(tx(), userId);
+      expect(fromLedger.equals(user!.balance)).toBe(true);
+    });
+
+    it('throws INSUFFICIENT_BALANCE and the transaction rolls the decrement back', async () => {
+      const error = await prisma
+        .$transaction((transaction) =>
+          ledger.debit(transaction as LedgerTx, {
+            userId,
+            amount: '100.01',
+            refType: 'order',
+            refId: randomUUID(),
+          }),
+        )
+        .then(
+          () => null,
+          (e: unknown) => e,
+        );
+      expect(error).toBeInstanceOf(ApiException);
+      expect((error as ApiException).code).toBe('INSUFFICIENT_BALANCE');
+      expect((error as ApiException).details).toEqual({
+        required: '100.01',
+        available: '100.00',
+      });
+
+      const user = await prisma.user.findUnique({ where: { id: userId } });
+      expect(user!.balance.toFixed(2)).toBe('100.00');
+      expect(prisma.ledgerEntry.rows.filter((r) => r.direction === 'debit')).toHaveLength(0);
+    });
+
+    it('refuses to debit the same order twice (unique refType+refId+direction)', async () => {
+      const refId = randomUUID();
+      await ledger.debit(tx(), { userId, amount: '10.00', refType: 'order', refId });
+      await expect(
+        ledger.debit(tx(), { userId, amount: '10.00', refType: 'order', refId }),
+      ).rejects.toMatchObject({ code: 'CONFLICT' });
+    });
+
+    it('rejects non-positive debit amounts', async () => {
+      await expect(
+        ledger.debit(tx(), { userId, amount: '0', refType: 'order', refId: randomUUID() }),
+      ).rejects.toMatchObject({ code: 'VALIDATION_ERROR' });
+    });
+  });
 });

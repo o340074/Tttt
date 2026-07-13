@@ -1,8 +1,12 @@
 import { useEffect, useState } from 'react';
 import { useTranslation } from 'react-i18next';
-import { Link, useParams } from 'react-router-dom';
+import { Link, useLocation, useNavigate, useParams } from 'react-router-dom';
+import { Banner } from '../components/ui/Banner';
 import { Button } from '../components/ui/Button';
 import { Icon } from '../components/ui/Icon';
+import { errorKey } from '../features/auth/errors';
+import { useAuth } from '../features/auth/useAuth';
+import { useAddCartItem } from '../features/cart/api';
 import { StockBadge } from '../features/catalog/StockBadge';
 import { useProduct } from '../features/catalog/api';
 import { catalogIcon, formatEta, formatMoney } from '../features/catalog/format';
@@ -19,6 +23,38 @@ const BUNDLE_ICONS: Record<BundleComponentType, IconName> = {
   GUIDE: 'info',
   WARRANTY: 'verify',
 };
+
+/** "Buy now": puts the variant into the cart and goes to checkout (guests log in first). */
+function BuyNowButton({ variant }: { variant: ProductVariant }) {
+  const { t } = useTranslation();
+  const { user, booting } = useAuth();
+  const navigate = useNavigate();
+  const location = useLocation();
+  const addItem = useAddCartItem();
+
+  const outOfStock = variant.fulfillmentType === 'READY_STOCK' && variant.stockCount === 0;
+
+  const buy = (): void => {
+    if (!user) {
+      navigate('/auth/login', { state: { from: location.pathname } });
+      return;
+    }
+    addItem.mutate(
+      { variantId: variant.id, quantity: 1 },
+      { onSuccess: () => navigate('/checkout') },
+    );
+  };
+
+  return (
+    <>
+      {addItem.isError && <Banner tone="error">{t(errorKey(addItem.error))}</Banner>}
+      <Button block loading={addItem.isPending} disabled={booting || outOfStock} onClick={buy}>
+        <Icon name="cart" className="!h-4 !w-4" />{' '}
+        {outOfStock ? t('product.outOfStock') : t('product.buyNow')}
+      </Button>
+    </>
+  );
+}
 
 function VariantAvailability({ variant }: { variant: ProductVariant }) {
   const { t } = useTranslation();
@@ -177,12 +213,7 @@ export function ProductPage() {
               <VariantAvailability variant={variant} />
             </div>
 
-            <Button block disabled title={t('product.buySoon')} aria-describedby="buy-soon-note">
-              {t('product.buyNow')}
-            </Button>
-            <p id="buy-soon-note" className="mt-2 text-center text-xs text-text-dim">
-              {t('product.buySoon')}
-            </p>
+            <BuyNowButton variant={variant} />
 
             {variant.bundle.length > 0 && (
               <div className="mt-5 border-t border-border pt-4">

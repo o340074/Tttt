@@ -264,6 +264,56 @@ export function IconSprite() {
       <symbol id="ic-bolt" viewBox="0 0 24 24">
         <path fill="currentColor" d="M13 2L4 14h6l-1 8 9-12h-6l1-8Z" />
       </symbol>
+      <symbol id="ic-cart" viewBox="0 0 24 24">
+        <g
+          fill="none"
+          stroke="currentColor"
+          strokeWidth="2"
+          strokeLinecap="round"
+          strokeLinejoin="round"
+        >
+          <path d="M3 4h2l2.2 11.2a1.5 1.5 0 0 0 1.5 1.2h8.1a1.5 1.5 0 0 0 1.5-1.2L21 7H6" />
+        </g>
+        <circle cx="9.5" cy="20" r="1.5" fill="currentColor" />
+        <circle cx="18" cy="20" r="1.5" fill="currentColor" />
+      </symbol>
+      <symbol id="ic-tag" viewBox="0 0 24 24">
+        <g fill="none" stroke="currentColor" strokeWidth="2" strokeLinejoin="round">
+          <path d="M3 12.5V5a2 2 0 0 1 2-2h7.5L21 11.5a2 2 0 0 1 0 2.8l-6.7 6.7a2 2 0 0 1-2.8 0L3 12.5Z" />
+        </g>
+        <circle cx="8" cy="8" r="1.6" fill="currentColor" />
+      </symbol>
+      <symbol id="ic-trash" viewBox="0 0 24 24">
+        <g
+          fill="none"
+          stroke="currentColor"
+          strokeWidth="2"
+          strokeLinecap="round"
+          strokeLinejoin="round"
+        >
+          <path d="M4 7h16" />
+          <path d="M9 7V5a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v2" />
+          <path d="M6 7l1 12a1 1 0 0 0 1 1h8a1 1 0 0 0 1-1l1-12" />
+        </g>
+      </symbol>
+      <symbol id="ic-plus" viewBox="0 0 24 24">
+        <path
+          d="M12 5v14M5 12h14"
+          fill="none"
+          stroke="currentColor"
+          strokeWidth="2.2"
+          strokeLinecap="round"
+        />
+      </symbol>
+      <symbol id="ic-minus" viewBox="0 0 24 24">
+        <path
+          d="M5 12h14"
+          fill="none"
+          stroke="currentColor"
+          strokeWidth="2.2"
+          strokeLinecap="round"
+        />
+      </symbol>
     </svg>
   );
 }
