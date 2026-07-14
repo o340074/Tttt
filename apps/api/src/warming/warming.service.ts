@@ -25,8 +25,11 @@ import type {
   WarmingTaskView,
 } from '@advault/types';
 import type {
+  AccountAsset as DbAccountAsset,
+  OctoProfile as DbOctoProfile,
   OrderItem as DbOrderItem,
   ProductVariant as DbVariant,
+  ProxyItem as DbProxyItem,
   WarmingJob as DbWarmingJob,
   WarmingTask as DbWarmingTask,
 } from '@prisma/client';
@@ -474,8 +477,10 @@ export class WarmingService {
   /**
    * Assemble the delivery bundle and hand it to the buyer's Vault. Reuses the
    * E5 crypto path: components are gathered from the variant's bundleSpec plus
-   * the captured account data, a single readable payload is encrypted, and a
-   * warm Delivery is written (decryptable only by the owner, with audit).
+   * the captured account data and the resources an operator bound to the job
+   * (proxy + Octo profile, E7). Each component carries a refId to its resource;
+   * a single readable payload is encrypted and a warm Delivery is written
+   * (decryptable only by the owner, with audit).
    */
   private async assembleAndDeliver(
     tx: Prisma.TransactionClient,
@@ -493,6 +498,12 @@ export class WarmingService {
     });
     const spec = (variant?.bundleSpec ?? []) as { type: string; meta?: Record<string, unknown> }[];
 
+    // Resources an operator bound to this job (E7). They are dedicated to this
+    // order — the proxy stays assigned to its owner, the Octo profile becomes
+    // delivered. Provisioning stays manual; the platform only records them.
+    const proxy = await tx.proxyItem.findUnique({ where: { assignedJobId: job.id } });
+    const octo = await tx.octoProfile.findUnique({ where: { jobId: job.id } });
+
     const bundle = await tx.bundle.create({
       data: { jobId: job.id, status: 'delivered', assembledBy: actorId, deliveredAt: now },
     });
@@ -501,32 +512,29 @@ export class WarmingService {
     const recovery = asset.recovery ? this.crypto.decrypt(asset.recovery) : null;
     const lines: string[] = [];
     for (const component of spec) {
+      const data = this.componentData(component, {
+        asset,
+        proxy,
+        octo,
+        variant,
+        account,
+        recovery,
+      });
       await tx.bundleComponent.create({
         data: {
           bundleId: bundle.id,
           type: component.type as never,
-          refId: component.type === 'ACCOUNT' || component.type === 'RECOVERY' ? asset.id : null,
-          payload:
-            component.type === 'ACCOUNT'
-              ? asset.payload
-              : component.type === 'RECOVERY' && asset.recovery
-                ? asset.recovery
-                : null,
-          meta: (component.meta ?? {}) as Prisma.InputJsonValue,
+          refId: data.refId,
+          payload: data.payload,
+          meta: data.meta as Prisma.InputJsonValue,
         },
       });
-      // Human-readable bundle contents for the Vault (secrets included only for
-      // account/recovery; resources like PROXY/OCTO are provisioned in E7).
-      if (component.type === 'ACCOUNT') lines.push(`ACCOUNT:\n${account}`);
-      else if (component.type === 'RECOVERY' && recovery) lines.push(`RECOVERY:\n${recovery}`);
-      else if (component.type === 'PROXY')
-        lines.push('PROXY: provisioned separately (see order notes)');
-      else if (component.type === 'OCTO_PROFILE')
-        lines.push('OCTO_PROFILE: provisioned separately (see order notes)');
-      else if (component.type === 'GUIDE')
-        lines.push('GUIDE: setup guide included with your order');
-      else if (component.type === 'WARRANTY')
-        lines.push(`WARRANTY: ${variant?.warrantyHours ?? 0}h from delivery`);
+      if (data.line) lines.push(data.line);
+    }
+
+    // Mark the bound Octo profile delivered (the proxy remains assigned to its owner).
+    if (octo && octo.status !== 'delivered') {
+      await tx.octoProfile.update({ where: { id: octo.id }, data: { status: 'delivered' } });
     }
 
     await tx.delivery.create({
@@ -539,6 +547,99 @@ export class WarmingService {
         deliveredAt: now,
       },
     });
+  }
+
+  /**
+   * Build one bundle component: its refId (to the resource), the encrypted
+   * payload snapshot to persist, non-secret meta, and the human-readable line
+   * for the Vault. Secrets (account/recovery/proxy credentials/Octo export)
+   * are decrypted only into the owner's single encrypted delivery blob.
+   */
+  private componentData(
+    component: { type: string; meta?: Record<string, unknown> },
+    ctx: {
+      asset: DbAccountAsset;
+      proxy: DbProxyItem | null;
+      octo: DbOctoProfile | null;
+      variant: { warrantyHours: number | null } | null;
+      account: string;
+      recovery: string | null;
+    },
+  ): {
+    refId: string | null;
+    payload: string | null;
+    meta: Record<string, unknown>;
+    line: string | null;
+  } {
+    const baseMeta = component.meta ?? {};
+    switch (component.type) {
+      case 'ACCOUNT':
+        return {
+          refId: ctx.asset.id,
+          payload: ctx.asset.payload,
+          meta: baseMeta,
+          line: `ACCOUNT:\n${ctx.account}`,
+        };
+      case 'RECOVERY':
+        return {
+          refId: ctx.asset.id,
+          payload: ctx.asset.recovery,
+          meta: baseMeta,
+          line: ctx.recovery ? `RECOVERY:\n${ctx.recovery}` : null,
+        };
+      case 'PROXY':
+        if (!ctx.proxy) {
+          return { refId: null, payload: null, meta: baseMeta, line: 'PROXY: pending assignment' };
+        }
+        return {
+          refId: ctx.proxy.id,
+          payload: ctx.proxy.credentials, // encrypted snapshot
+          meta: {
+            ...baseMeta,
+            type: ctx.proxy.type,
+            geo: ctx.proxy.geo,
+            provider: ctx.proxy.provider,
+          },
+          line: `PROXY (${ctx.proxy.type}, ${ctx.proxy.geo}):\n${this.crypto.decrypt(ctx.proxy.credentials)}`,
+        };
+      case 'OCTO_PROFILE':
+        if (!ctx.octo) {
+          return {
+            refId: null,
+            payload: null,
+            meta: baseMeta,
+            line: 'OCTO_PROFILE: pending assignment',
+          };
+        }
+        return {
+          refId: ctx.octo.id,
+          payload: ctx.octo.exportRef, // encrypted snapshot (may be null)
+          meta: { ...baseMeta, name: ctx.octo.name, externalId: ctx.octo.externalId },
+          line: this.octoLine(ctx.octo),
+        };
+      case 'GUIDE':
+        return {
+          refId: null,
+          payload: null,
+          meta: baseMeta,
+          line: 'GUIDE: setup guide included with your order',
+        };
+      case 'WARRANTY':
+        return {
+          refId: null,
+          payload: null,
+          meta: baseMeta,
+          line: `WARRANTY: ${ctx.variant?.warrantyHours ?? 0}h from delivery`,
+        };
+      default:
+        return { refId: null, payload: null, meta: baseMeta, line: null };
+    }
+  }
+
+  private octoLine(octo: DbOctoProfile): string {
+    const header = `OCTO_PROFILE (${octo.name}${octo.externalId ? `, id ${octo.externalId}` : ''}):`;
+    const body = octo.exportRef ? this.crypto.decrypt(octo.exportRef) : 'export shared separately';
+    return `${header}\n${body}`;
   }
 
   // ---------- Mapping ----------

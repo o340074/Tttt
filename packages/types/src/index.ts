@@ -544,3 +544,116 @@ export interface Paginated<T> {
   data: T[];
   meta: PageMeta;
 }
+
+// ---------- Inventory: proxies & Octo profiles (E7, RBAC admin/support) ----------
+//
+// The platform only records resources and their bindings to warming jobs;
+// provisioning (buying proxies, creating Octo profiles) is manual operator
+// work outside the code (platform boundary, docs/09). Credentials/exportRef
+// are encrypted server-side and never returned by the inventory endpoints —
+// they surface only in the owner's Vault when a bundle is delivered.
+
+/** Proxy kinds in the inventory pool (docs/12). */
+export type ProxyType = 'residential' | 'mobile' | 'isp' | 'datacenter';
+
+/** Proxy lifecycle in the pool. */
+export type ProxyStatus = 'available' | 'assigned' | 'expired' | 'disabled';
+
+/** Octo antidetect-profile registry state. */
+export type OctoProfileStatus = 'draft' | 'ready' | 'delivered';
+
+/** A proxy row as shown to operators — never carries the decrypted credentials. */
+export interface ProxyItemView {
+  id: string;
+  type: ProxyType;
+  geo: string;
+  provider: string;
+  status: ProxyStatus;
+  /** ISO 8601 date-time, or null. */
+  expiresAt: string | null;
+  /** The warming job this proxy is bound to, or null when free. */
+  assignedJobId: string | null;
+  meta: Record<string, unknown>;
+  createdAt: string;
+}
+
+/** An Octo profile row as shown to operators — never carries the decrypted exportRef. */
+export interface OctoProfileView {
+  id: string;
+  externalId: string | null;
+  name: string;
+  status: OctoProfileStatus;
+  /** Linked proxy (usually the job's proxy), or null. */
+  proxyItemId: string | null;
+  /** The warming job this profile is bound to, or null when free. */
+  jobId: string | null;
+  fingerprintRef: Record<string, unknown> | null;
+  meta: Record<string, unknown>;
+  createdAt: string;
+}
+
+/** POST /admin/inventory/proxies — register a single proxy. */
+export interface CreateProxyRequest {
+  type: ProxyType;
+  geo: string;
+  provider: string;
+  /** host:port:user:pass — encrypted server-side, never stored/returned in clear. */
+  credentials: string;
+  /** ISO 8601 date-time. */
+  expiresAt?: string | null;
+  meta?: Record<string, unknown>;
+}
+
+/**
+ * POST /admin/inventory/proxies/import — JSON body; text/plain is the raw-file
+ * alternative (one proxy per line: `type,geo,provider,host:port:user:pass[,expiresAt]`).
+ */
+export interface ProxyImportRequest {
+  items: CreateProxyRequest[];
+}
+
+/** Import outcome; skipped counts blanks, malformed lines and duplicates. */
+export interface ProxyImportReport {
+  added: number;
+  skipped: number;
+}
+
+/** POST /admin/inventory/octo — register a single Octo profile. */
+export interface CreateOctoProfileRequest {
+  name: string;
+  externalId?: string | null;
+  proxyItemId?: string | null;
+  /** Export/share reference — encrypted server-side, never stored/returned in clear. */
+  exportRef?: string | null;
+  fingerprintRef?: Record<string, unknown> | null;
+  meta?: Record<string, unknown>;
+}
+
+/** PATCH /admin/inventory/octo/:id — edit registry fields (e.g. attach an export once ready). */
+export interface UpdateOctoProfileRequest {
+  name?: string;
+  externalId?: string | null;
+  proxyItemId?: string | null;
+  status?: OctoProfileStatus;
+  exportRef?: string | null;
+  fingerprintRef?: Record<string, unknown> | null;
+  meta?: Record<string, unknown>;
+}
+
+/** POST /admin/inventory/proxies/:id/bind — bind a free proxy to a warming job. */
+export interface BindProxyRequest {
+  jobId: string;
+}
+
+/** POST /admin/inventory/octo/:id/bind — bind a free profile to a warming job (optionally linking a proxy). */
+export interface BindOctoProfileRequest {
+  jobId: string;
+  /** Proxy to link on the profile; defaults to the job's bound proxy. */
+  proxyItemId?: string | null;
+}
+
+/** GET /admin/warming/jobs/:id/inventory — resources bound to a job (operator view). */
+export interface JobInventory {
+  proxy: ProxyItemView | null;
+  octo: OctoProfileView | null;
+}

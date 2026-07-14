@@ -52,6 +52,29 @@ enum StockStatus {
   sold
 }
 
+// Proxy inventory kinds (docs/12, docs/15).
+enum ProxyType {
+  residential
+  mobile
+  isp
+  datacenter
+}
+
+// Proxy lifecycle: available in the pool → assigned to a warm job → expired/disabled.
+enum ProxyStatus {
+  available
+  assigned
+  expired
+  disabled
+}
+
+// Octo antidetect-profile registry state (docs/15).
+enum OctoProfileStatus {
+  draft
+  ready
+  delivered
+}
+
 // Модель выдачи варианта (docs/11): READY_STOCK — мгновенно из стока,
 // MADE_TO_ORDER — прогрев под заказ оператором (очередь, ETA).
 enum FulfillmentType {
@@ -554,6 +577,8 @@ model WarmingJob {
   tasks        WarmingTask[]
   accountAsset AccountAsset?
   bundle       Bundle?
+  proxyItem    ProxyItem?    @relation("JobProxy") // at most one proxy bound per job (E7)
+  octoProfile  OctoProfile?  @relation("JobOcto") // at most one Octo profile bound per job (E7)
 
   @@index([status])
   @@index([goal, status])
@@ -596,6 +621,62 @@ model AccountAsset {
   job WarmingJob @relation(fields: [jobId], references: [id], onDelete: Cascade)
 
   @@map("account_assets")
+}
+
+// ============================================================
+// Inventory: proxies & Octo profiles — E7 (docs/12, docs/15)
+// The platform only records resources and their bindings; provisioning
+// (buying proxies, creating Octo profiles) is manual operator work outside
+// the code (platform boundary, docs/09). Secrets are encrypted app-side.
+// ============================================================
+
+// A proxy in the inventory pool. `credentials` (host:port:user:pass) is
+// AES-256-GCM encrypted app-side and only decrypted when assembling a bundle
+// for its owner. At most one active binding to a warming job (assignedJobId).
+model ProxyItem {
+  id              String      @id @default(uuid()) @db.Uuid
+  type            ProxyType
+  geo             String // страна/город
+  provider        String // источник
+  credentials     String      @db.Text // ENCRYPTED — host:port:user:pass
+  credentialsHash String      @unique // SHA-256 of plaintext — import dedup / global uniqueness
+  status          ProxyStatus @default(available)
+  expiresAt       DateTime?
+  assignedJobId   String?     @unique @db.Uuid // active binding (one job at a time)
+  meta            Json        @default("{}") @db.JsonB // непарольные параметры (label, term, …)
+  createdBy       String?     @db.Uuid
+  createdAt       DateTime    @default(now())
+  updatedAt       DateTime    @updatedAt
+
+  assignedJob  WarmingJob?   @relation("JobProxy", fields: [assignedJobId], references: [id], onDelete: SetNull)
+  octoProfiles OctoProfile[]
+
+  @@index([status])
+  @@index([type, geo])
+  @@map("proxy_items")
+}
+
+// An antidetect (Octo) profile in the registry. `exportRef` (export/share
+// reference) is ENCRYPTED app-side. At most one binding to a warming job.
+model OctoProfile {
+  id             String            @id @default(uuid()) @db.Uuid
+  externalId     String? // идентификатор профиля в Octo
+  name           String
+  proxyItemId    String?           @db.Uuid // linked proxy (usually the job's proxy)
+  jobId          String?           @unique @db.Uuid // binding to a warming job (one profile per job)
+  status         OctoProfileStatus @default(draft)
+  exportRef      String?           @db.Text // ENCRYPTED — export/share reference
+  fingerprintRef Json? // референс конфигурации отпечатка (без секретов)
+  meta           Json              @default("{}") @db.JsonB
+  createdBy      String?           @db.Uuid
+  createdAt      DateTime          @default(now())
+  updatedAt      DateTime          @updatedAt
+
+  proxyItem ProxyItem?  @relation(fields: [proxyItemId], references: [id], onDelete: SetNull)
+  job       WarmingJob? @relation("JobOcto", fields: [jobId], references: [id], onDelete: SetNull)
+
+  @@index([status])
+  @@map("octo_profiles")
 }
 
 // The assembled delivery bundle for a warm job (docs/15).

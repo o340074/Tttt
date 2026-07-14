@@ -12,9 +12,11 @@ import type {
   Delivery as DbDelivery,
   IdempotencyKey as DbIdempotencyKey,
   LedgerEntry as DbLedgerEntry,
+  OctoProfile as DbOctoProfile,
   Order as DbOrder,
   OrderItem as DbOrderItem,
   Product as DbProduct,
+  ProxyItem as DbProxyItem,
   ProductTranslation,
   ProductVariant as DbVariant,
   PromoCode as DbPromoCode,
@@ -1258,6 +1260,215 @@ export class FakeBundleComponentStore {
   }
 }
 
+// ---------- Inventory: proxy & Octo fakes (E7) ----------
+
+interface ProxyWhere {
+  id?: string;
+  credentialsHash?: string;
+  assignedJobId?: string | null;
+  status?: DbProxyItem['status'];
+  type?: DbProxyItem['type'];
+}
+
+function matchesProxy(row: DbProxyItem, where: ProxyWhere): boolean {
+  if (where.id !== undefined && row.id !== where.id) return false;
+  if (where.credentialsHash !== undefined && row.credentialsHash !== where.credentialsHash) {
+    return false;
+  }
+  if (where.assignedJobId !== undefined && row.assignedJobId !== where.assignedJobId) return false;
+  if (where.status !== undefined && row.status !== where.status) return false;
+  if (where.type !== undefined && row.type !== where.type) return false;
+  return true;
+}
+
+export class FakeProxyItemStore {
+  readonly rows: DbProxyItem[] = [];
+
+  create({
+    data,
+  }: {
+    data: Partial<DbProxyItem> & {
+      type: DbProxyItem['type'];
+      geo: string;
+      provider: string;
+      credentials: string;
+      credentialsHash: string;
+    };
+  }): Promise<DbProxyItem> {
+    if (this.rows.some((r) => r.credentialsHash === data.credentialsHash)) {
+      return Promise.reject(uniqueViolation('proxy_items_credentialsHash_key'));
+    }
+    const now = new Date();
+    const row: DbProxyItem = {
+      id: randomUUID(),
+      type: data.type,
+      geo: data.geo,
+      provider: data.provider,
+      credentials: data.credentials,
+      credentialsHash: data.credentialsHash,
+      status: data.status ?? 'available',
+      expiresAt: data.expiresAt ?? null,
+      assignedJobId: data.assignedJobId ?? null,
+      meta: (data.meta ?? {}) as DbProxyItem['meta'],
+      createdBy: data.createdBy ?? null,
+      createdAt: now,
+      updatedAt: now,
+    };
+    this.rows.push(row);
+    return Promise.resolve(row);
+  }
+
+  findUnique({
+    where,
+  }: {
+    where: { id?: string; credentialsHash?: string; assignedJobId?: string };
+  }): Promise<DbProxyItem | null> {
+    return Promise.resolve(this.rows.find((r) => matchesProxy(r, where)) ?? null);
+  }
+
+  findMany(args: {
+    where?: ProxyWhere;
+    orderBy?: { createdAt?: 'asc' | 'desc' };
+    skip?: number;
+    take?: number;
+  }): Promise<DbProxyItem[]> {
+    let rows = this.rows.filter((r) => matchesProxy(r, args.where ?? {}));
+    rows = [...rows].sort((a, b) => a.createdAt.getTime() - b.createdAt.getTime());
+    if (args.orderBy?.createdAt !== 'asc') rows.reverse();
+    const skip = args.skip ?? 0;
+    rows = rows.slice(skip, args.take !== undefined ? skip + args.take : undefined);
+    return Promise.resolve(rows);
+  }
+
+  count({ where }: { where?: ProxyWhere } = {}): Promise<number> {
+    return Promise.resolve(this.rows.filter((r) => matchesProxy(r, where ?? {})).length);
+  }
+
+  async update({
+    where,
+    data,
+  }: {
+    where: { id: string };
+    data: Partial<DbProxyItem>;
+  }): Promise<DbProxyItem> {
+    const row = this.rows.find((r) => r.id === where.id);
+    if (!row) throw new Error('Record not found');
+    Object.assign(row, data, { updatedAt: new Date() });
+    return row;
+  }
+
+  updateMany({
+    where,
+    data,
+  }: {
+    where: ProxyWhere;
+    data: Partial<DbProxyItem>;
+  }): Promise<{ count: number }> {
+    const matched = this.rows.filter((r) => matchesProxy(r, where));
+    for (const row of matched) Object.assign(row, data, { updatedAt: new Date() });
+    return Promise.resolve({ count: matched.length });
+  }
+}
+
+interface OctoWhere {
+  id?: string;
+  jobId?: string | { in?: never } | null;
+  status?: DbOctoProfile['status'] | { in: DbOctoProfile['status'][] };
+}
+
+function matchesOcto(row: DbOctoProfile, where: OctoWhere): boolean {
+  if (where.id !== undefined && row.id !== where.id) return false;
+  if (where.jobId !== undefined && row.jobId !== where.jobId) return false;
+  if (where.status !== undefined) {
+    if (typeof where.status === 'object') {
+      if (!where.status.in.includes(row.status)) return false;
+    } else if (row.status !== where.status) {
+      return false;
+    }
+  }
+  return true;
+}
+
+export class FakeOctoProfileStore {
+  readonly rows: DbOctoProfile[] = [];
+
+  create({ data }: { data: Partial<DbOctoProfile> & { name: string } }): Promise<DbOctoProfile> {
+    const now = new Date();
+    const row: DbOctoProfile = {
+      id: randomUUID(),
+      externalId: data.externalId ?? null,
+      name: data.name,
+      proxyItemId: data.proxyItemId ?? null,
+      jobId: data.jobId ?? null,
+      status: data.status ?? 'draft',
+      exportRef: data.exportRef ?? null,
+      fingerprintRef: (data.fingerprintRef ?? null) as DbOctoProfile['fingerprintRef'],
+      meta: (data.meta ?? {}) as DbOctoProfile['meta'],
+      createdBy: data.createdBy ?? null,
+      createdAt: now,
+      updatedAt: now,
+    };
+    this.rows.push(row);
+    return Promise.resolve(row);
+  }
+
+  findUnique({ where }: { where: { id?: string; jobId?: string } }): Promise<DbOctoProfile | null> {
+    return Promise.resolve(this.rows.find((r) => matchesOcto(r, where)) ?? null);
+  }
+
+  findMany(args: {
+    where?: OctoWhere;
+    orderBy?: { createdAt?: 'asc' | 'desc' };
+    skip?: number;
+    take?: number;
+  }): Promise<DbOctoProfile[]> {
+    let rows = this.rows.filter((r) => matchesOcto(r, args.where ?? {}));
+    rows = [...rows].sort((a, b) => a.createdAt.getTime() - b.createdAt.getTime());
+    if (args.orderBy?.createdAt !== 'asc') rows.reverse();
+    const skip = args.skip ?? 0;
+    rows = rows.slice(skip, args.take !== undefined ? skip + args.take : undefined);
+    return Promise.resolve(rows);
+  }
+
+  count({ where }: { where?: OctoWhere } = {}): Promise<number> {
+    return Promise.resolve(this.rows.filter((r) => matchesOcto(r, where ?? {})).length);
+  }
+
+  async update({
+    where,
+    data,
+  }: {
+    where: { id: string };
+    data: Partial<DbOctoProfile> & {
+      proxyItem?: { connect?: { id: string }; disconnect?: boolean };
+    };
+  }): Promise<DbOctoProfile> {
+    const row = this.rows.find((r) => r.id === where.id);
+    if (!row) throw new Error('Record not found');
+    const { proxyItem, ...rest } = data;
+    Object.assign(row, rest, { updatedAt: new Date() });
+    if (proxyItem?.connect) row.proxyItemId = proxyItem.connect.id;
+    if (proxyItem?.disconnect) row.proxyItemId = null;
+    // Prisma.DbNull sentinel on fingerprintRef → JSON null in our fake.
+    if ((rest as { fingerprintRef?: unknown }).fingerprintRef === Prisma.DbNull) {
+      row.fingerprintRef = null as DbOctoProfile['fingerprintRef'];
+    }
+    return row;
+  }
+
+  updateMany({
+    where,
+    data,
+  }: {
+    where: OctoWhere;
+    data: Partial<DbOctoProfile>;
+  }): Promise<{ count: number }> {
+    const matched = this.rows.filter((r) => matchesOcto(r, where));
+    for (const row of matched) Object.assign(row, data, { updatedAt: new Date() });
+    return Promise.resolve({ count: matched.length });
+  }
+}
+
 // ---------- Stock, delivery & audit fakes (E5) ----------
 
 interface StockWhere {
@@ -1444,6 +1655,8 @@ export interface FakePrismaStores {
   accountAsset: FakeAccountAssetStore;
   bundle: FakeBundleStore;
   bundleComponent: FakeBundleComponentStore;
+  proxyItem: FakeProxyItemStore;
+  octoProfile: FakeOctoProfileStore;
 }
 
 interface StoreSnapshot {
@@ -1529,6 +1742,8 @@ export function makeFakePrismaService(): PrismaService & FakePrismaStores {
     accountAsset,
     bundle,
     bundleComponent: new FakeBundleComponentStore(),
+    proxyItem: new FakeProxyItemStore(),
+    octoProfile: new FakeOctoProfileStore(),
   };
   return {
     ...stores,

@@ -57,10 +57,22 @@
   `GET /orders/:id/items/:itemId/delivery` (расшифровка только владельцу + AuditLog);
   импорт стока `POST /admin/products/:id/variants/:variantId/stock/import` (RBAC admin,
   JSON/text-plain, отчёт added/skipped); Vault-блок в `/orders/:id`
-  (маска→показать/копировать/скачать .txt). MADE_TO_ORDER — pending до E6.
-  Актуальная база кода — ветка `claude/advault-e5-stock-delivery-61ndk3`.
-- 🔜 **Следующий шаг — эпик E6 (прогрев MADE_TO_ORDER: WarmingPlan/Job/Task, очередь,
-  ETA, сборка/выдача комплекта в Vault)**. Далее строго по порядку эпиков/вех из
+  (маска→показать/копировать/скачать .txt).
+- ✅ **E6 — прогрев MADE_TO_ORDER готов**: WarmingPlan/StageTemplate/Job/Task/
+  AccountAsset/Bundle/BundleComponent; при checkout warm-позиции — `WarmingJob(queued)`
+  + этапы + ETA в транзакции оплаты (`ProductVariant.warmingPlanId`); переходы
+  queued→assigned→in_progress→qc→ready→delivered (+on_hold с пересчётом ETA,
+  fail→reassign/refund); при delivered — сборка Bundle + `Delivery(type=warm)` в Vault;
+  RBAC-маршруты `/admin/warming/*`; экран `/orders/:id` со статусом warm и «этап k из N».
+- ✅ **E7 — инвентарь прокси/Octo готов**: Prisma `ProxyItem`/`OctoProfile` (шифрование
+  `credentials`/`exportRef` тем же AES-256-GCM key-ring); `/admin/inventory/*` — CRUD,
+  импорт прокси (JSON/text-plain, дедуп по хэшу), bind/unbind к WarmingJob **exactly-once**
+  (available→assigned); реальные `BundleComponent` PROXY/OCTO_PROFILE с `refId` в комплекте
+  Vault (вместо заглушек E6); `GET /admin/warming/jobs/:id/inventory`; RBAC admin/support;
+  сидер прокси/Octo. Ресурс выделенный (после выдачи — покупателя). Актуальная база кода —
+  ветка `claude/advault-e7-proxy-octo-inventory-vsnw75`.
+- 🔜 **Следующий шаг — эпик E8 (полная админка / операторка: Orders, Warming-workspace,
+  инвентарь-UI, Stock/Catalog/Promo/Users)**. Далее строго по порядку эпиков/вех из
   `docs/16-development-plan.md`.
 - Живой статус и «что дальше» — всегда в `docs/SESSION-LOG.md`.
 

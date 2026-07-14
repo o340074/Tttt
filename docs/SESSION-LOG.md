@@ -8,10 +8,10 @@
 ## 📍 Текущий статус
 
 - **Фаза:** разработка. E0 (каркас), E1 (аутентификация), E2 (каталог), E3 (кошелёк),
-  E4 (корзина/заказы/оплата), E5 (выдача из стока) и E6 (прогрев: модель и очередь)
-  готовы и проверены end-to-end.
-- **Следующий эпик:** **E7 — Инвентарь: прокси и Octo-профили** (см. `docs/16-development-plan.md` §4).
-- **Ветка:** актуальная база — `claude/advault-e6-warming-queue-ktt1hm` (E0…E6; в
+  E4 (корзина/заказы/оплата), E5 (выдача из стока), E6 (прогрев: модель и очередь) и
+  E7 (инвентарь: прокси и Octo-профили) готовы и проверены end-to-end.
+- **Следующий эпик:** **E8 — Полная админка / операторка** (см. `docs/16-development-plan.md` §4).
+- **Ветка:** актуальная база — `claude/advault-e7-proxy-octo-inventory-vsnw75` (E0…E7; в
   main код ещё не влит). Разработку следующих эпиков вести на feature-ветках per эпик от неё.
 - **Прогресс по эпикам (из `docs/16`):**
 
@@ -25,8 +25,8 @@
 | E4 | Корзина, заказы, оплата с баланса | ✅ готово |
 | E5 | Выдача из стока (READY_STOCK) | ✅ готово |
 | E6 | Прогрев: модель и очередь | ✅ готово |
-| E7 | Инвентарь: прокси и Octo-профили | ⬜ следующий |
-| E8 | Полная админка / операторка | ⬜ |
+| E7 | Инвентарь: прокси и Octo-профили | ✅ готово |
+| E8 | Полная админка / операторка | ⬜ следующий |
 | E9 | Поддержка и уведомления | ⬜ |
 | E10 | Гарантии, замены, возвраты | ⬜ |
 | E11 | Полировка, безопасность, запуск | ⬜ |
@@ -36,6 +36,71 @@
 ---
 
 ## Записи
+
+### Сессия — Инвентарь: прокси и Octo-профили (эпик E7)
+- **Сделано (контракты):** `docs/backend/prisma-schema.md` — модели `ProxyItem`
+  (type/geo/provider/`credentials` зашифр./`credentialsHash @unique`/status/`expiresAt`/
+  `assignedJobId @unique`) и `OctoProfile` (externalId/name/`proxyItemId`/`jobId @unique`/
+  status/`exportRef` зашифр./`fingerprintRef`); enum `ProxyType/ProxyStatus/
+  OctoProfileStatus`; связи `WarmingJob.proxyItem?/octoProfile?`; блок «Инвентарь E7»
+  (гранулярность ≤1+≤1 на задачу, exactly-once bind, выделенный ресурс, формат импорта,
+  сборка комплекта из реальных ресурсов, шифрование/аудит/RBAC). `docs/backend/openapi.md`
+  — тег `Inventory`, схемы `ProxyItem/OctoProfile/CreateProxyRequest/ProxyImportRequest/
+  ProxyImportReport/CreateOctoProfileRequest/UpdateOctoProfileRequest/JobInventory`,
+  эндпоинты `/admin/inventory/proxies*` (list/create/import/bind/unbind),
+  `/admin/inventory/octo*` (list/create/patch/bind/unbind), `GET /admin/warming/jobs/:id/
+  inventory`. Типы отзеркалены в `@advault/types`.
+- **API:** миграция `20260713193741_inventory_proxy_octo` (проверена deploy + diff —
+  дрифта нет). Модуль `inventory/`: `InventoryService` — CRUD прокси/Octo с шифрованием
+  `credentials`/`exportRef` (переиспользован E5 `PayloadCryptoService`, не логируются),
+  импорт прокси (JSON + text/plain, дедуп по `credentialsHash`), резерв/привязка из
+  задачи **exactly-once** (guarded `updateMany`: прокси `available→assigned`, Octo
+  `draft|ready→ready`, `count===0 → 409`), Octo линкует прокси задачи по умолчанию,
+  unbind (возврат в пул), `getJobInventory`; `AuditLog` на всех мутациях (без секретов).
+  `WarmingService.assembleAndDeliver` расширен: компоненты `PROXY`/`OCTO_PROFILE`
+  подставляют реальный привязанный ресурс (`BundleComponent.refId` + снимок шифртекста +
+  непарольная meta), расшифрованные значения — только в едином `Delivery.payload`
+  владельца; на `deliver` Octo→`delivered`, прокси остаётся `assigned`. RBAC admin/support
+  на `/admin/inventory/*` и job-inventory. Сидер: 4 демо-прокси + 2 Octo-профиля
+  (идемпотентно по `credentialsHash`/`externalId`).
+- **Web:** отдельного UI инвентаря не добавляли (полный — в E8, как в плане); Vault
+  покупателя уже рендерит расшифрованный blob доставки — реальные прокси/Octo-данные
+  появляются в комплекте автоматически (проверено).
+- **Тесты (+15, всего 175):** unit `InventoryService` (шифрование credentials/exportRef,
+  дедуп create/import JSON+text/plain, bind прокси exactly-once + конфликты «занят»/
+  «у задачи уже есть»/«delivered-задача», unbind→rebind, bind Octo с автолинком прокси,
+  «delivered профиль не перепривязать», getJobInventory без секретов, 404/400 на
+  несуществующие); +тест в `warming.service.spec` (сборка комплекта с реальными PROXY/
+  OCTO компонентами → refId + Vault с расшифрованными данными); e2e-smoke
+  `inventory.e2e.spec` (оплата warm → операторка до ready → RBAC 403 → импорт прокси
+  text/plain с дедупом → bind прокси+Octo → job-inventory → deliver → Vault содержит
+  прокси/Octo/аккаунт, статусы ресурсов корректны). Фейки расширены сторами
+  `proxyItem`/`octoProfile`.
+- **Проверено вживую:** локальные Postgres 16 + Redis + собранный API; полный цикл через
+  curl (топап вебхуком → warm-checkout=paid/queued; RBAC 403 покупателю; операторка
+  assign→start→этапы→qc→ready→захват аккаунта; выбор seeded-прокси/Octo → bind (прокси
+  `assigned`, Octo `ready`+автолинк прокси, ciphertext `v1.…` в БД); job-inventory;
+  deliver=delivered → прокси `assigned`, Octo `delivered`, BundleComponent ACCOUNT/PROXY/
+  OCTO_PROFILE с refId; Vault владельца содержит расшифрованные креды прокси + Octo-экспорт
+  + аккаунт; edge: 2-й прокси на delivered-задачу=409, дубль-создание=409, аудит без
+  секретов, чужому Vault=404). lint/format/typecheck/тесты(175)/build зелёные.
+- **Решения:** **гранулярность** — ≤1 прокси и ≤1 Octo на задачу (БД-уникальность
+  `assignedJobId`/`jobId`), под `bundleSpec`; **повторное использование** — ресурс
+  выделенный (после выдачи это ресурс покупателя: прокси остаётся `assigned`, Octo→
+  `delivered`; автоворота в пул нет; оператор может `unbind` до выдачи); **формат импорта
+  прокси** — JSON `{items}` или text/plain `type,geo,provider,host:port:user:pass[,expiresAt]`,
+  дедуп по SHA-256 credentials (`@unique`); Octo импорта нет (создаётся поштучно);
+  привязка — из ресурса (`/proxies/:id/bind {jobId}`), exactly-once через guarded
+  updateMany (как резерв стока E5); мягкий фолбэк «pending assignment», если ресурс не
+  привязан на момент выдачи. Развилки не эскалировались — дефолты однозначно следуют из
+  docs/15 (одиночные PROXY/OCTO в комплекте, выделенный проданный ресурс).
+- **Проблемы/долги:** операторский UI инвентаря (список/bind из Warming-workspace) — E8;
+  фонового перешифрования старых версий ключа нет (как в E5); `expiresAt` прокси —
+  хранится, но фонового перевода в `expired` по TTL нет (ленивая проверка/операторка — E8);
+  reassign warm-задачи не отвязывает уже привязанные ресурсы автоматически (оператор
+  делает `unbind` вручную) — уточнить политику в E8/E10; SECRETS-компонент в комплекте
+  пока не используется (нет источника) — при необходимости в E8+.
+- **Дальше:** **E8 — Полная админка / операторка** (промт в `docs/NEXT-SESSION-PROMPT.md`).
 
 ### Сессия — Прогрев: модель и очередь (эпик E6)
 - **Сделано (контракты):** `docs/backend/prisma-schema.md` — warm-модели `WarmingPlan`,

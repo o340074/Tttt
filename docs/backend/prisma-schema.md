@@ -140,6 +140,27 @@ enum BundleComponentType {
   WARRANTY
 }
 
+// --- Инвентарь: прокси и Octo-профили, E7 (docs/12, docs/15) ---
+enum ProxyType {
+  residential
+  mobile
+  isp
+  datacenter
+}
+
+enum ProxyStatus {
+  available
+  assigned // привязан к warm-задаче (assignedJobId)
+  expired
+  disabled
+}
+
+enum OctoProfileStatus {
+  draft
+  ready // готов/привязан к задаче
+  delivered // выдан в комплекте покупателю
+}
+
 enum LedgerDirection {
   credit
   debit
@@ -520,6 +541,8 @@ model WarmingJob {
   tasks        WarmingTask[]
   accountAsset AccountAsset?
   bundle       Bundle?
+  proxyItem    ProxyItem?    @relation("JobProxy") // ≤1 прокси на задачу (E7)
+  octoProfile  OctoProfile?  @relation("JobOcto") // ≤1 Octo-профиль на задачу (E7)
 
   @@index([status])
   @@index([goal, status])
@@ -561,6 +584,57 @@ model AccountAsset {
   job WarmingJob @relation(fields: [jobId], references: [id], onDelete: Cascade)
 
   @@map("account_assets")
+}
+
+// --- Инвентарь: прокси и Octo-профили, E7 (docs/12, docs/15) ---
+// Платформа только УЧИТЫВАЕТ ресурсы и их связки с задачами; провижининг
+// (покупка прокси, создание Octo-профилей) — ручная работа оператора вне кода
+// (граница платформы, docs/09). Секреты (credentials/exportRef) — AES-256-GCM
+// на уровне приложения, не логируются, не возвращаются операторскими эндпоинтами;
+// покупатель видит их только в комплекте Vault после выдачи.
+
+model ProxyItem {
+  id              String      @id @default(uuid()) @db.Uuid
+  type            ProxyType
+  geo             String
+  provider        String
+  credentials     String      @db.Text // ЗАШИФРОВАНО — host:port:user:pass
+  credentialsHash String      @unique // SHA-256 от plaintext — дедуп импорта / глобальная уникальность
+  status          ProxyStatus @default(available)
+  expiresAt       DateTime?
+  assignedJobId   String?     @unique @db.Uuid // активная привязка (одна задача за раз)
+  meta            Json        @default("{}") @db.JsonB
+  createdBy       String?     @db.Uuid
+  createdAt       DateTime    @default(now())
+  updatedAt       DateTime    @updatedAt
+
+  assignedJob  WarmingJob?   @relation("JobProxy", fields: [assignedJobId], references: [id], onDelete: SetNull)
+  octoProfiles OctoProfile[]
+
+  @@index([status])
+  @@index([type, geo])
+  @@map("proxy_items")
+}
+
+model OctoProfile {
+  id             String            @id @default(uuid()) @db.Uuid
+  externalId     String? // идентификатор профиля в Octo
+  name           String
+  proxyItemId    String?           @db.Uuid // связанный прокси (обычно прокси задачи)
+  jobId          String?           @unique @db.Uuid // привязка к задаче (один профиль на задачу)
+  status         OctoProfileStatus @default(draft)
+  exportRef      String?           @db.Text // ЗАШИФРОВАНО — ссылка на экспорт/шеринг
+  fingerprintRef Json? // референс конфигурации отпечатка (без секретов)
+  meta           Json              @default("{}") @db.JsonB
+  createdBy      String?           @db.Uuid
+  createdAt      DateTime          @default(now())
+  updatedAt      DateTime          @updatedAt
+
+  proxyItem ProxyItem?  @relation(fields: [proxyItemId], references: [id], onDelete: SetNull)
+  job       WarmingJob? @relation("JobOcto", fields: [jobId], references: [id], onDelete: SetNull)
+
+  @@index([status])
+  @@map("octo_profiles")
 }
 
 // Собранный комплект выдачи для warm-заказа.
@@ -784,7 +858,17 @@ model IdempotencyKey {
 - **failed → решает оператор** (docs/14): `reassign` (→queued, tasks сбрасываются, ETA заново) **или** `refund` (кредит в ledger `refType=refund`, `refId=orderItemId` — уникальность защищает от двойного возврата; позиция/задача становятся `refunded`). Автоматического движения денег на `failed` нет.
 - **Сборка и выдача.** На `deliver` требуется `AccountAsset` (иначе `409`): создаётся `Bundle(delivered)` + `BundleComponent` по `bundleSpec`, собирается читаемый комплект и пишется `Delivery(type=warm, bundleId)` со снимком **зашифрованного** payload — далее переиспользуется E5-путь Vault (расшифровка только владельцу + `AuditLog`).
 - **Шифрование.** `AccountAsset.payload/recovery`, `BundleComponent.payload`, `Delivery.payload` — AES-256-GCM на уровне приложения (тот же key-ring, что и E5). Секреты не логируются (аудит фиксирует только факт захвата/выдачи).
-- **RBAC.** Все операторские маршруты `/admin/warming/*` — роли `admin`/`support` (support = операторская роль до `StaffUser` в E8). Ресурсы прокси/Octo (`ProxyItem`/`OctoProfile`) — E7; в E6 их компоненты в комплекте помечены «provisioned separately».
+- **RBAC.** Все операторские маршруты `/admin/warming/*` — роли `admin`/`support` (support = операторская роль до `StaffUser` в E8).
+
+### Инвентарь: прокси и Octo-профили, E7
+- **Модели.** `ProxyItem` (тип/гео/провайдер/`credentials` зашифр./статус/`expiresAt`/`assignedJobId`) и `OctoProfile` (`externalId`/`name`/`proxyItemId`/`jobId`/статус/`exportRef` зашифр./`fingerprintRef`). Провижининг — вручную оператором; платформа только фиксирует ресурсы и связки (граница, docs/09).
+- **Гранулярность (решение E7):** ≤1 прокси и ≤1 Octo-профиль на задачу — на уровне БД `ProxyItem.assignedJobId @unique` и `OctoProfile.jobId @unique`. Соответствует `bundleSpec` (одиночные PROXY/OCTO_PROFILE).
+- **Резерв/привязка (exactly-once).** `bind` — guarded `updateMany` по свободному ресурсу: прокси `available → assigned` (`where: {id, status:'available', assignedJobId:null}`), Octo `draft|ready → ready` c проставлением `jobId` (`where: {id, jobId:null}`); `count===0 → 409` (ресурс занят). Octo по умолчанию линкует прокси задачи. Привязка к `delivered`/`refunded` задаче запрещена (409).
+- **Повторное использование (решение E7):** ресурс **выделенный** — после выдачи это ресурс покупателя. На `deliver` Octo-профиль → `delivered`, прокси остаётся `assigned` (нет автоворота в пул). Оператор может `unbind` до выдачи (прокси → `available`, Octo → `draft`).
+- **Формат импорта прокси (решение E7):** `POST /admin/inventory/proxies/import` — JSON `{items:[…]}` **или** `text/plain` (строка `type,geo,provider,host:port:user:pass[,expiresAt]`, `#` — комментарий). Дедуп по `credentialsHash` (SHA-256 plaintext, `@unique`): дубли в батче и уже существующие пропускаются. Octo импорта нет — создаётся поштучно.
+- **Сборка комплекта (E7 ⟶ E6).** `assembleAndDeliver` для компонентов `PROXY`/`OCTO_PROFILE` из `bundleSpec` подставляет **реальный** привязанный ресурс: `BundleComponent.refId` → ресурс, `payload` — снимок шифртекста (`credentials`/`exportRef`), `meta` — непарольные данные (гео/провайдер/имя/externalId); расшифрованные значения попадают только в единый зашифрованный `Delivery.payload` владельца. Если ресурс не привязан — строка «pending assignment» (мягкий фолбэк).
+- **Шифрование/аудит.** `ProxyItem.credentials`, `OctoProfile.exportRef`, `BundleComponent.payload` — AES-256-GCM (тот же key-ring E5). Секреты не логируются и не возвращаются операторскими эндпоинтами (`ProxyItemView`/`OctoProfileView` без секретов); аудит фиксирует только факт (`inventory.proxy_created|proxy_import|proxy_bound|octo_created|octo_bound|…`).
+- **RBAC.** Все маршруты `/admin/inventory/*` и `GET /admin/warming/jobs/:id/inventory` — роли `admin`/`support`.
 
 ---
 

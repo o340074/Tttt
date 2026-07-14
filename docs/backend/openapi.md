@@ -47,6 +47,7 @@ tags:
   - name: Webhooks
   - name: Support
   - name: Warming
+  - name: Inventory
   - name: Admin
 
 # ============================================================
@@ -624,6 +625,82 @@ components:
         added: { type: integer }
         skipped: { type: integer }
         stockCount: { type: integer, description: Актуальный available-пул варианта после импорта }
+
+    # ---------- Инвентарь: прокси и Octo-профили (E7) ----------
+    ProxyItem:
+      type: object
+      description: Прокси в инвентаре. Операторский вид — БЕЗ расшифрованных credentials.
+      properties:
+        id: { type: string, format: uuid }
+        type: { type: string, enum: [residential, mobile, isp, datacenter] }
+        geo: { type: string }
+        provider: { type: string }
+        status: { type: string, enum: [available, assigned, expired, disabled] }
+        expiresAt: { type: string, format: date-time, nullable: true }
+        assignedJobId: { type: string, format: uuid, nullable: true, description: warm-задача, к которой привязан }
+        meta: { type: object, additionalProperties: true }
+        createdAt: { type: string, format: date-time }
+    OctoProfile:
+      type: object
+      description: Octo-профиль в реестре. Операторский вид — БЕЗ расшифрованного exportRef.
+      properties:
+        id: { type: string, format: uuid }
+        externalId: { type: string, nullable: true }
+        name: { type: string }
+        status: { type: string, enum: [draft, ready, delivered] }
+        proxyItemId: { type: string, format: uuid, nullable: true }
+        jobId: { type: string, format: uuid, nullable: true }
+        fingerprintRef: { type: object, additionalProperties: true, nullable: true }
+        meta: { type: object, additionalProperties: true }
+        createdAt: { type: string, format: date-time }
+    CreateProxyRequest:
+      type: object
+      required: [type, geo, provider, credentials]
+      properties:
+        type: { type: string, enum: [residential, mobile, isp, datacenter] }
+        geo: { type: string }
+        provider: { type: string }
+        credentials: { type: string, description: 'host:port:user:pass — шифруется на сервере, в открытом виде не хранится/не возвращается' }
+        expiresAt: { type: string, format: date-time, nullable: true }
+        meta: { type: object, additionalProperties: true }
+    ProxyImportRequest:
+      type: object
+      required: [items]
+      properties:
+        items: { type: array, items: { $ref: '#/components/schemas/CreateProxyRequest' } }
+    ProxyImportReport:
+      type: object
+      description: Итог импорта. skipped — пустые/битые строки и дубликаты (хэш credentials).
+      properties:
+        added: { type: integer }
+        skipped: { type: integer }
+    CreateOctoProfileRequest:
+      type: object
+      required: [name]
+      properties:
+        name: { type: string }
+        externalId: { type: string, nullable: true }
+        proxyItemId: { type: string, format: uuid, nullable: true }
+        exportRef: { type: string, nullable: true, description: Ссылка на экспорт/шеринг — шифруется на сервере }
+        fingerprintRef: { type: object, additionalProperties: true, nullable: true }
+        meta: { type: object, additionalProperties: true }
+    UpdateOctoProfileRequest:
+      type: object
+      description: Частичное обновление (напр. приложить exportRef, когда профиль готов).
+      properties:
+        name: { type: string }
+        externalId: { type: string, nullable: true }
+        proxyItemId: { type: string, format: uuid, nullable: true }
+        status: { type: string, enum: [draft, ready, delivered] }
+        exportRef: { type: string, nullable: true }
+        fingerprintRef: { type: object, additionalProperties: true, nullable: true }
+        meta: { type: object, additionalProperties: true }
+    JobInventory:
+      type: object
+      description: Ресурсы, привязанные к warm-задаче (операторский обзор, без секретов).
+      properties:
+        proxy: { allOf: [ { $ref: '#/components/schemas/ProxyItem' } ], nullable: true }
+        octo: { allOf: [ { $ref: '#/components/schemas/OctoProfile' } ], nullable: true }
 
   responses:
     BadRequest:
@@ -1549,6 +1626,192 @@ paths:
       responses:
         '200': { description: OK, content: { application/json: { schema: { $ref: '#/components/schemas/WarmingJobDetail' } } } }
         '403': { $ref: '#/components/responses/Forbidden' }
+        '409': { $ref: '#/components/responses/Conflict' }
+
+  # ---------- Инвентарь: прокси и Octo-профили (E7, RBAC admin/support) ----------
+  # Провижининг вручную; платформа только учёт ресурсов и связок с warm-задачами
+  # (граница, docs/09). Секреты (credentials/exportRef) шифруются на сервере и
+  # НИКОГДА не возвращаются этими эндпоинтами — только в комплекте Vault владельца.
+  /admin/warming/jobs/{id}/inventory:
+    get:
+      tags: [Inventory]
+      summary: Ресурсы (прокси + Octo), привязанные к warm-задаче
+      description: Операторский обзор; без секретов.
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: string, format: uuid } }
+      responses:
+        '200': { description: OK, content: { application/json: { schema: { $ref: '#/components/schemas/JobInventory' } } } }
+        '403': { $ref: '#/components/responses/Forbidden' }
+
+  /admin/inventory/proxies:
+    get:
+      tags: [Inventory]
+      summary: Список прокси (фильтры status/type/unassigned)
+      parameters:
+        - $ref: '#/components/parameters/Page'
+        - $ref: '#/components/parameters/Limit'
+        - { name: status, in: query, schema: { type: string, enum: [available, assigned, expired, disabled] } }
+        - { name: type, in: query, schema: { type: string, enum: [residential, mobile, isp, datacenter] } }
+        - { name: unassigned, in: query, schema: { type: boolean } }
+      responses:
+        '200':
+          description: Пагинированный список ProxyItem
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data: { type: array, items: { $ref: '#/components/schemas/ProxyItem' } }
+                  meta:
+                    type: object
+                    properties:
+                      total: { type: integer }
+                      page: { type: integer }
+                      limit: { type: integer }
+        '403': { $ref: '#/components/responses/Forbidden' }
+    post:
+      tags: [Inventory]
+      summary: Зарегистрировать прокси (credentials шифруются)
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/CreateProxyRequest' }
+      responses:
+        '201': { description: Created, content: { application/json: { schema: { $ref: '#/components/schemas/ProxyItem' } } } }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '409': { description: Прокси с такими credentials уже существует, content: { application/json: { schema: { $ref: '#/components/schemas/Error' } } } }
+
+  /admin/inventory/proxies/import:
+    post:
+      tags: [Inventory]
+      summary: Массовый импорт прокси (JSON или text/plain)
+      description: 'JSON `{ items: CreateProxyRequest[] }` ИЛИ text/plain (строка на прокси: `type,geo,provider,host:port:user:pass[,expiresAt]`, `#` — комментарий). Дедуп по хэшу credentials; пустые/битые/дубли пропускаются.'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/ProxyImportRequest' }
+          text/plain:
+            schema: { type: string }
+      responses:
+        '201': { description: Created, content: { application/json: { schema: { $ref: '#/components/schemas/ProxyImportReport' } } } }
+        '403': { $ref: '#/components/responses/Forbidden' }
+
+  /admin/inventory/proxies/{id}/bind:
+    post:
+      tags: [Inventory]
+      summary: Привязать свободный прокси к warm-задаче (available→assigned, exactly-once)
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: string, format: uuid } }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { type: object, required: [jobId], properties: { jobId: { type: string, format: uuid } } }
+      responses:
+        '200': { description: OK, content: { application/json: { schema: { $ref: '#/components/schemas/ProxyItem' } } } }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409': { description: Прокси недоступен / у задачи уже есть прокси, content: { application/json: { schema: { $ref: '#/components/schemas/Error' } } } }
+
+  /admin/inventory/proxies/{id}/unbind:
+    post:
+      tags: [Inventory]
+      summary: Снять прокси с задачи обратно в пул (assigned→available)
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: string, format: uuid } }
+      responses:
+        '200': { description: OK, content: { application/json: { schema: { $ref: '#/components/schemas/ProxyItem' } } } }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409': { $ref: '#/components/responses/Conflict' }
+
+  /admin/inventory/octo:
+    get:
+      tags: [Inventory]
+      summary: Список Octo-профилей (фильтры status/unassigned)
+      parameters:
+        - $ref: '#/components/parameters/Page'
+        - $ref: '#/components/parameters/Limit'
+        - { name: status, in: query, schema: { type: string, enum: [draft, ready, delivered] } }
+        - { name: unassigned, in: query, schema: { type: boolean } }
+      responses:
+        '200':
+          description: Пагинированный список OctoProfile
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data: { type: array, items: { $ref: '#/components/schemas/OctoProfile' } }
+                  meta:
+                    type: object
+                    properties:
+                      total: { type: integer }
+                      page: { type: integer }
+                      limit: { type: integer }
+        '403': { $ref: '#/components/responses/Forbidden' }
+    post:
+      tags: [Inventory]
+      summary: Зарегистрировать Octo-профиль (exportRef шифруется)
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/CreateOctoProfileRequest' }
+      responses:
+        '201': { description: Created, content: { application/json: { schema: { $ref: '#/components/schemas/OctoProfile' } } } }
+        '403': { $ref: '#/components/responses/Forbidden' }
+
+  /admin/inventory/octo/{id}:
+    patch:
+      tags: [Inventory]
+      summary: Изменить Octo-профиль (напр. приложить exportRef, сменить статус)
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: string, format: uuid } }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/UpdateOctoProfileRequest' }
+      responses:
+        '200': { description: OK, content: { application/json: { schema: { $ref: '#/components/schemas/OctoProfile' } } } }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+
+  /admin/inventory/octo/{id}/bind:
+    post:
+      tags: [Inventory]
+      summary: Привязать свободный Octo-профиль к warm-задаче (exactly-once; линкует прокси задачи)
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: string, format: uuid } }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [jobId]
+              properties:
+                jobId: { type: string, format: uuid }
+                proxyItemId: { type: string, format: uuid, nullable: true, description: По умолчанию — прокси, привязанный к задаче }
+      responses:
+        '200': { description: OK, content: { application/json: { schema: { $ref: '#/components/schemas/OctoProfile' } } } }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409': { description: Профиль занят / у задачи уже есть профиль, content: { application/json: { schema: { $ref: '#/components/schemas/Error' } } } }
+
+  /admin/inventory/octo/{id}/unbind:
+    post:
+      tags: [Inventory]
+      summary: Снять Octo-профиль с задачи (→draft)
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: string, format: uuid } }
+      responses:
+        '200': { description: OK, content: { application/json: { schema: { $ref: '#/components/schemas/OctoProfile' } } } }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
         '409': { $ref: '#/components/responses/Conflict' }
 
   /admin/users:

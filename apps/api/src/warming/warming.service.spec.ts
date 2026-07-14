@@ -4,6 +4,7 @@ import { ApiException } from '../common/api-exception';
 import { AuditService } from '../audit/audit.service';
 import { PromoService } from '../cart/promo.service';
 import { PayloadCryptoService } from '../crypto/payload-crypto.service';
+import { InventoryService } from '../inventory/inventory.service';
 import { StockService } from '../stock/stock.service';
 import { IdempotencyService } from '../wallet/idempotency.service';
 import { LedgerService } from '../wallet/ledger.service';
@@ -32,6 +33,7 @@ describe('WarmingService (E6 made-to-order)', () => {
   let prisma: ReturnType<typeof makeFakePrismaService>;
   let orders: OrdersService;
   let warming: WarmingService;
+  let inventory: InventoryService;
   let ledger: LedgerService;
   let crypto: PayloadCryptoService;
   let buyerId: string;
@@ -114,6 +116,7 @@ describe('WarmingService (E6 made-to-order)', () => {
     crypto = new PayloadCryptoService(config);
     const audit = new AuditService(prisma as unknown as PrismaService);
     warming = new WarmingService(prisma as unknown as PrismaService, crypto, audit, ledger, config);
+    inventory = new InventoryService(prisma as unknown as PrismaService, crypto, audit);
     const stock = new StockService(
       prisma as unknown as PrismaService,
       makeFakeRedisService() as unknown as RedisService,
@@ -293,6 +296,64 @@ describe('WarmingService (E6 made-to-order)', () => {
     await expect(warming.assign(adminId, jobId, buyerId, 'en')).rejects.toMatchObject({
       status: 400,
     });
+  });
+
+  it('assembles the bundle with the operator-bound proxy and Octo profile (E7)', async () => {
+    // This variant's bundle includes an Octo profile alongside the proxy.
+    variant.bundleSpec = [
+      { type: 'ACCOUNT' },
+      { type: 'PROXY' },
+      { type: 'OCTO_PROFILE' },
+      { type: 'GUIDE' },
+      { type: 'WARRANTY' },
+    ] as never;
+    const { orderId, itemId, jobId } = await checkoutWarm();
+    await warming.assign(adminId, jobId, operatorId, 'en');
+    await warming.transition(operatorId, jobId, 'start', undefined, 'en');
+    await finishAllStages(jobId);
+    await warming.transition(operatorId, jobId, 'qc', undefined, 'en');
+    await warming.transition(operatorId, jobId, 'ready', undefined, 'en');
+    await warming.setAccountAsset(
+      operatorId,
+      jobId,
+      { payload: 'login: warm@ex.io\npass: S3cr3t' },
+      'en',
+    );
+
+    // Operator binds a real proxy and Octo profile to the job.
+    const proxy = await inventory.createProxy(operatorId, {
+      type: 'residential',
+      geo: 'US',
+      provider: 'brightdata',
+      credentials: 'gw.example.com:8000:usr:PXsecret',
+    });
+    await inventory.bindProxy(operatorId, proxy.id, jobId);
+    expect(prisma.proxyItem.rows[0]!.status).toBe('assigned');
+
+    const octo = await inventory.createOcto(operatorId, {
+      name: 'Aurora-US-01',
+      externalId: 'octo-777',
+      exportRef: 'https://octo.example/share/xyz',
+    });
+    await inventory.bindOcto(operatorId, octo.id, jobId);
+    // The Octo profile links the job's proxy by default.
+    expect(prisma.octoProfile.rows[0]!.proxyItemId).toBe(proxy.id);
+
+    await warming.transition(operatorId, jobId, 'deliver', undefined, 'en');
+
+    // The bundle carries real PROXY/OCTO_PROFILE components with refIds.
+    const proxyComp = prisma.bundleComponent.rows.find((c) => c.type === 'PROXY')!;
+    expect(proxyComp.refId).toBe(proxy.id);
+    expect(proxyComp.payload).toBe(prisma.proxyItem.rows[0]!.credentials); // encrypted snapshot
+    // The Octo profile is now delivered; the proxy stays assigned to its owner.
+    expect(prisma.octoProfile.rows[0]!.status).toBe('delivered');
+    expect(prisma.proxyItem.rows[0]!.status).toBe('assigned');
+
+    // The owner's Vault contains the decrypted proxy credentials and Octo export.
+    const delivery = await orders.getDelivery(buyerId, orderId, itemId);
+    expect(delivery.payload).toContain('gw.example.com:8000:usr:PXsecret');
+    expect(delivery.payload).toContain('https://octo.example/share/xyz');
+    expect(delivery.payload).toContain('warm@ex.io');
   });
 
   it('lists the operator queue oldest-first with filters', async () => {

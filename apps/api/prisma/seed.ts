@@ -679,12 +679,88 @@ async function seedPromoCodes(): Promise<void> {
   console.log(`Seeded ${promoCodes.length} promo codes`);
 }
 
+/**
+ * Demo proxy / Octo inventory (E7) an operator can bind to warm jobs. Secrets
+ * (credentials/exportRef) are encrypted like everywhere else; upsert keys keep
+ * it idempotent and preserve any existing binding/status.
+ */
+async function seedInventory(): Promise<void> {
+  const proxies = [
+    {
+      type: 'residential' as const,
+      geo: 'US',
+      provider: 'brightdata',
+      creds: 'us.pool.example:8000:advault:demo-us-1',
+    },
+    {
+      type: 'residential' as const,
+      geo: 'DE',
+      provider: 'brightdata',
+      creds: 'de.pool.example:8000:advault:demo-de-1',
+    },
+    {
+      type: 'mobile' as const,
+      geo: 'GB',
+      provider: 'soax',
+      creds: 'gb.mobile.example:9000:advault:demo-gb-1',
+    },
+    {
+      type: 'isp' as const,
+      geo: 'US',
+      provider: 'oxylabs',
+      creds: 'us.isp.example:7000:advault:demo-us-2',
+    },
+  ];
+  for (const proxy of proxies) {
+    const credentialsHash = hashPayload(proxy.creds);
+    await prisma.proxyItem.upsert({
+      where: { credentialsHash },
+      update: {}, // keep an existing item (and its status/binding) as-is
+      create: {
+        type: proxy.type,
+        geo: proxy.geo,
+        provider: proxy.provider,
+        credentials: encryptPayload(keyRing, proxy.creds),
+        credentialsHash,
+        meta: { label: `${proxy.provider} ${proxy.geo}` },
+      },
+    });
+  }
+
+  const octoProfiles = [
+    {
+      externalId: 'demo-octo-us-01',
+      name: 'Aurora US 01',
+      exportRef: 'https://octo.example/share/demo-us-01',
+    },
+    {
+      externalId: 'demo-octo-de-01',
+      name: 'Aurora DE 01',
+      exportRef: 'https://octo.example/share/demo-de-01',
+    },
+  ];
+  for (const octo of octoProfiles) {
+    const existing = await prisma.octoProfile.findFirst({ where: { externalId: octo.externalId } });
+    if (existing) continue; // idempotent: leave existing profile (and any binding) untouched
+    await prisma.octoProfile.create({
+      data: {
+        externalId: octo.externalId,
+        name: octo.name,
+        exportRef: encryptPayload(keyRing, octo.exportRef),
+        meta: { note: 'demo profile' },
+      },
+    });
+  }
+  console.log(`Seeded ${proxies.length} proxies and ${octoProfiles.length} Octo profiles`);
+}
+
 async function main(): Promise<void> {
   await seedUsers();
   const categoryIdBySlug = await seedCategories();
   const planIdByKey = await seedWarmingPlans();
   await seedProducts(categoryIdBySlug, planIdByKey);
   await seedPromoCodes();
+  await seedInventory();
 }
 
 main()

@@ -3,6 +3,7 @@ import { ApiBearerAuth, ApiTags } from '@nestjs/swagger';
 import { ApiException } from '../common/api-exception';
 import { CurrentUser, Roles } from '../auth/decorators';
 import { resolveLocale } from '../catalog/locale';
+import { InventoryService } from '../inventory/inventory.service';
 import {
   AssignWarmingJobBody,
   ResolveWarmingJobBody,
@@ -12,7 +13,7 @@ import {
   WarmingTransitionBody,
 } from './dto/warming.dto';
 import { WarmingService } from './warming.service';
-import type { Paginated, WarmingJobDetail, WarmingJobSummary } from '@advault/types';
+import type { JobInventory, Paginated, WarmingJobDetail, WarmingJobSummary } from '@advault/types';
 import type { AccessPayload } from '../auth/token.service';
 
 const uuidPipe = new ParseUUIDPipe({
@@ -29,7 +30,10 @@ const uuidPipe = new ParseUUIDPipe({
 @Roles('admin', 'support')
 @Controller('admin/warming')
 export class WarmingController {
-  constructor(private readonly warming: WarmingService) {}
+  constructor(
+    private readonly warming: WarmingService,
+    private readonly inventory: InventoryService,
+  ) {}
 
   @Get('jobs')
   async listJobs(@Query() query: WarmingQueueDto): Promise<Paginated<WarmingJobSummary>> {
@@ -47,6 +51,12 @@ export class WarmingController {
     @Query() query: WarmingQueueDto,
   ): Promise<WarmingJobDetail> {
     return this.warming.getJob(id, resolveLocale(query.locale));
+  }
+
+  /** Resources (proxy + Octo profile) bound to a job — operator view, no secrets. */
+  @Get('jobs/:id/inventory')
+  async jobInventory(@Param('id', uuidPipe) id: string): Promise<JobInventory> {
+    return this.inventory.getJobInventory(id);
   }
 
   @Post('jobs/:id/assign')
