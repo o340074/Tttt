@@ -21,3 +21,12 @@ export const ORDERS_STAFF: Role[] = ['support', 'operator', 'manager', 'admin'];
 
 /** Destructive / money-touching admin actions — narrowed to managers/admins. */
 export const ELEVATED: Role[] = ['manager', 'admin'];
+
+/** Finance surface (reconciliation, refunds, promo) — managers/admins. */
+export const FINANCE_STAFF: Role[] = ['manager', 'admin'];
+
+/**
+ * Owner-level only: staff management and role changes (a manager must not be
+ * able to escalate anyone — including themselves — to admin). See docs/13.
+ */
+export const ADMIN_ONLY: Role[] = ['admin'];

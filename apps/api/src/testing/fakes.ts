@@ -128,10 +128,82 @@ export function makeFakeRedisService(): RedisService & { client: FakeRedisClient
 export class FakeUserStore {
   readonly rows: DbUser[] = [];
 
-  findUnique({ where }: { where: { id?: string; email?: string } }): Promise<DbUser | null> {
+  /** Orders getter (optional): powers admin _count.orders and recent orders. */
+  constructor(private readonly orders: () => FakeOrderStore | undefined = () => undefined) {}
+
+  private ordersOf(userId: string): DbOrder[] {
+    return (this.orders()?.rows ?? []).filter((o) => o.userId === userId);
+  }
+
+  private decorate(
+    row: DbUser,
+    include?: { _count?: unknown; orders?: { take?: number; orderBy?: unknown } },
+  ): DbUser & { _count?: { orders: number }; orders?: DbOrder[] } {
+    if (!include) return row;
+    const decorated: DbUser & { _count?: { orders: number }; orders?: DbOrder[] } = { ...row };
+    const mine = this.ordersOf(row.id);
+    if (include._count) decorated._count = { orders: mine.length };
+    if (include.orders) {
+      const sorted = [...mine].sort((a, b) => b.createdAt.getTime() - a.createdAt.getTime());
+      decorated.orders = include.orders.take ? sorted.slice(0, include.orders.take) : sorted;
+    }
+    return decorated;
+  }
+
+  findUnique({
+    where,
+    include,
+  }: {
+    where: { id?: string; email?: string };
+    include?: { _count?: unknown; orders?: { take?: number; orderBy?: unknown } };
+  }): Promise<(DbUser & { _count?: { orders: number }; orders?: DbOrder[] }) | null> {
     const row =
       this.rows.find((r) => (where.id ? r.id === where.id : r.email === where.email)) ?? null;
-    return Promise.resolve(row);
+    return Promise.resolve(row ? this.decorate(row, include) : null);
+  }
+
+  private matches(
+    row: DbUser,
+    where?: {
+      status?: DbUser['status'];
+      role?: DbUser['role'];
+      email?: { contains: string; mode?: string };
+    },
+  ): boolean {
+    if (!where) return true;
+    if (where.status !== undefined && row.status !== where.status) return false;
+    if (where.role !== undefined && row.role !== where.role) return false;
+    if (where.email && !row.email.toLowerCase().includes(where.email.contains.toLowerCase())) {
+      return false;
+    }
+    return true;
+  }
+
+  findMany(args: {
+    where?: { status?: DbUser['status']; role?: DbUser['role']; email?: { contains: string } };
+    orderBy?: { createdAt: 'asc' | 'desc' };
+    skip?: number;
+    take?: number;
+    include?: { _count?: unknown };
+  }): Promise<(DbUser & { _count?: { orders: number } })[]> {
+    let rows = this.rows.filter((r) => this.matches(r, args.where));
+    if (args.orderBy?.createdAt === 'desc') {
+      rows = [...rows].sort((a, b) => b.createdAt.getTime() - a.createdAt.getTime());
+    }
+    const skip = args.skip ?? 0;
+    rows = rows.slice(skip, args.take !== undefined ? skip + args.take : undefined);
+    return Promise.resolve(rows.map((r) => this.decorate(r, args.include)));
+  }
+
+  count({ where }: { where?: { status?: DbUser['status']; role?: DbUser['role']; email?: { contains: string } } } = {}): Promise<number> {
+    return Promise.resolve(this.rows.filter((r) => this.matches(r, where)).length);
+  }
+
+  aggregate(args: { _sum: { balance: true } }): Promise<{ _sum: { balance: Prisma.Decimal | null } }> {
+    void args;
+    if (this.rows.length === 0) return Promise.resolve({ _sum: { balance: null } });
+    const sum = this.rows.reduce((acc, r) => acc.plus(r.balance), new Prisma.Decimal(0));
+    return Promise.resolve({ _sum: { balance: sum } });
   }
 
   create({
@@ -347,9 +419,22 @@ export class FakeLedgerStore {
     );
   }
 
-  count({ where }: { where?: { userId?: string } } = {}): Promise<number> {
+  count({
+    where,
+  }: {
+    where?: {
+      userId?: string;
+      direction?: DbLedgerEntry['direction'];
+      refType?: DbLedgerEntry['refType'];
+    };
+  } = {}): Promise<number> {
     return Promise.resolve(
-      this.rows.filter((r) => !where?.userId || r.userId === where.userId).length,
+      this.rows.filter(
+        (r) =>
+          (!where?.userId || r.userId === where.userId) &&
+          (!where?.direction || r.direction === where.direction) &&
+          (!where?.refType || r.refType === where.refType),
+      ).length,
     );
   }
 
@@ -362,6 +447,33 @@ export class FakeLedgerStore {
     );
     const sum = matched.reduce((acc, r) => acc.plus(r.amount), new Prisma.Decimal(0));
     return Promise.resolve({ _sum: { amount: matched.length ? sum : null } });
+  }
+
+  /** Finance summary groups sums by (direction, refType). */
+  groupBy(args: {
+    by: ['direction', 'refType'];
+    _sum: { amount: true };
+  }): Promise<
+    { direction: DbLedgerEntry['direction']; refType: DbLedgerEntry['refType']; _sum: { amount: Prisma.Decimal | null } }[]
+  > {
+    void args;
+    const groups = new Map<
+      string,
+      { direction: DbLedgerEntry['direction']; refType: DbLedgerEntry['refType']; sum: Prisma.Decimal }
+    >();
+    for (const row of this.rows) {
+      const key = `${row.direction}\n${row.refType}`;
+      const bucket = groups.get(key);
+      if (bucket) bucket.sum = bucket.sum.plus(row.amount);
+      else groups.set(key, { direction: row.direction, refType: row.refType, sum: row.amount });
+    }
+    return Promise.resolve(
+      [...groups.values()].map((g) => ({
+        direction: g.direction,
+        refType: g.refType,
+        _sum: { amount: g.sum },
+      })),
+    );
   }
 }
 
@@ -703,6 +815,14 @@ export class FakePromoStore {
     );
   }
 
+  findMany(args?: { orderBy?: { createdAt: 'asc' | 'desc' } }): Promise<DbPromoCode[]> {
+    let rows = [...this.rows];
+    if (args?.orderBy?.createdAt === 'desc') {
+      rows = rows.sort((a, b) => b.createdAt.getTime() - a.createdAt.getTime());
+    }
+    return Promise.resolve(rows);
+  }
+
   create({
     data,
   }: {
@@ -712,6 +832,9 @@ export class FakePromoStore {
       value: Prisma.Decimal | string;
     };
   }): Promise<DbPromoCode> {
+    if (this.rows.some((r) => r.code === data.code)) {
+      return Promise.reject(uniqueViolation('promo_codes_code_key'));
+    }
     const row: DbPromoCode = {
       id: randomUUID(),
       maxUses: null,
@@ -722,6 +845,28 @@ export class FakePromoStore {
       value: new Prisma.Decimal(data.value),
     };
     this.rows.push(row);
+    return Promise.resolve(row);
+  }
+
+  async update({
+    where,
+    data,
+  }: {
+    where: { id: string };
+    data: Partial<Omit<DbPromoCode, 'value'>> & { value?: Prisma.Decimal | string };
+  }): Promise<DbPromoCode> {
+    const row = this.rows.find((r) => r.id === where.id);
+    if (!row) throw new Error('Record not found');
+    const { value, ...rest } = data;
+    Object.assign(row, rest);
+    if (value !== undefined) row.value = new Prisma.Decimal(value);
+    return row;
+  }
+
+  delete({ where }: { where: { id: string } }): Promise<DbPromoCode> {
+    const row = this.rows.find((r) => r.id === where.id);
+    if (!row) throw new Error('Record not found');
+    this.rows.splice(this.rows.indexOf(row), 1);
     return Promise.resolve(row);
   }
 
@@ -912,6 +1057,7 @@ export class FakeOrderItemStore {
   constructor(
     private readonly orders: () => FakeOrderStore,
     private readonly deliveries: () => FakeDeliveryStore,
+    private readonly warming: () => FakeWarmingJobStore | undefined = () => undefined,
   ) {}
 
   /** getDelivery: item by id scoped to its order's owner, with deliveries. */
@@ -920,7 +1066,7 @@ export class FakeOrderItemStore {
     include,
   }: {
     where: { id: string; orderId?: string; order?: { userId: string } };
-    include?: { deliveries?: unknown };
+    include?: { deliveries?: unknown; warmingJob?: unknown };
   }): Promise<FakeOrderItemWithDeliveries | DbOrderItem | null> {
     const row = this.rows.find(
       (r) => r.id === where.id && (where.orderId === undefined || r.orderId === where.orderId),
@@ -930,8 +1076,11 @@ export class FakeOrderItemStore {
       const order = this.orders().rows.find((o) => o.id === row.orderId);
       if (!order || order.userId !== where.order.userId) return Promise.resolve(null);
     }
-    if (!include?.deliveries) return Promise.resolve(row);
-    return Promise.resolve({ ...row, deliveries: this.deliveries().forOrderItem(row.id) });
+    if (!include?.deliveries && !include?.warmingJob) return Promise.resolve(row);
+    const decorated: Record<string, unknown> = { ...row };
+    if (include?.deliveries) decorated.deliveries = this.deliveries().forOrderItem(row.id);
+    if (include?.warmingJob) decorated.warmingJob = this.warming()?.forOrderItem(row.id) ?? null;
+    return Promise.resolve(decorated as FakeOrderItemWithDeliveries);
   }
 
   findUnique({ where }: { where: { id: string } }): Promise<DbOrderItem | null> {
@@ -1741,8 +1890,9 @@ export function makeFakePrismaService(): PrismaService & FakePrismaStores {
   const orderItem = new FakeOrderItemStore(
     () => orderHolder.order!,
     () => delivery,
+    () => warmingHolder.warmingJob,
   );
-  const userStore = new FakeUserStore();
+  const userStore = new FakeUserStore(() => orderHolder.order);
   const order = new FakeOrderStore(
     orderItem,
     promoCode,

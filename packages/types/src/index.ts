@@ -738,3 +738,160 @@ export interface AdminStockRow {
   sold: number;
   total: number;
 }
+
+// ---------- Admin: manual delivery & refunds (E8, RBAC elevated) ----------
+//
+// Money-touching / secret-writing actions on the order surface (docs/13 §2,§11).
+// Refunds credit the buyer's ledger (double entry, docs/05) and are idempotent;
+// manual delivery encrypts the operator-entered payload just like stock (E5).
+
+/**
+ * POST /admin/orders/:id/items/:itemId/deliver — hand a line to the buyer by
+ * entering its payload manually (encrypted at rest, decryptable only by the
+ * owner). Used for READY_STOCK lines that need operator entry; warm lines are
+ * delivered from the warming workspace instead.
+ */
+export interface ManualDeliverRequest {
+  /** Freeform delivery text handed to the buyer (login, keys, notes…). */
+  payload: string;
+  /** Optional non-secret note kept in the audit trail. */
+  note?: string;
+}
+
+/**
+ * POST /admin/orders/:id/refund (requires the Idempotency-Key header). Refund a
+ * single line when `orderItemId` is set, otherwise every not-yet-refunded line
+ * of the order. Each line is credited once (ledger unique per orderItem), a warm
+ * line's job becomes `refunded`, and the order status re-aggregates.
+ */
+export interface RefundRequest {
+  /** Refund just this line; omit to refund the whole order. */
+  orderItemId?: string;
+  /** Required human reason (stored in the audit trail). */
+  reason: string;
+}
+
+/** Result of a refund: which lines were refunded and the total credited. */
+export interface RefundResult {
+  orderId: string;
+  status: OrderStatus;
+  refundedItemIds: string[];
+  amount: Money;
+  currency: string;
+}
+
+/**
+ * GET /admin/finance/summary — ledger reconciliation + money totals (docs/13 §11).
+ * `reconciled` is true when the ledger truth equals the cached balances sum.
+ */
+export interface FinanceSummary {
+  currency: string;
+  /** SUM(credit refType=topup). */
+  topUps: Money;
+  /** SUM(debit refType=order). */
+  orderSpend: Money;
+  /** SUM(credit refType=refund). */
+  refunds: Money;
+  /** SUM(credit refType=adjustment) − SUM(debit refType=adjustment). */
+  adjustments: Money;
+  /** Ledger truth across all users: SUM(credit) − SUM(debit). */
+  ledgerBalance: Money;
+  /** Cached User.balance sum — should equal ledgerBalance. */
+  cachedBalance: Money;
+  reconciled: boolean;
+  orderCount: number;
+  refundCount: number;
+}
+
+// ---------- Admin: users (E8, RBAC staff / elevated) ----------
+//
+// Customer management (docs/13 §10). Reads are staff-wide; blocking is elevated
+// and revokes sessions; role changes are admin-only. Every mutation is audited.
+
+/** GET /admin/users — one row in the users table. */
+export interface AdminUserListItem {
+  id: string;
+  email: string;
+  role: Role;
+  status: UserStatus;
+  balance: Money;
+  currency: string;
+  orderCount: number;
+  emailVerifiedAt: string | null;
+  createdAt: string;
+}
+
+/** A user's order reference on the admin user detail. */
+export interface AdminUserOrderRef {
+  id: string;
+  number: string;
+  status: OrderStatus;
+  total: Money;
+  createdAt: string;
+}
+
+/** GET /admin/users/:id — user card: profile, recent orders, ledger reconciliation. */
+export interface AdminUserDetail extends AdminUserListItem {
+  /** Ledger truth for this user (SUM(credit) − SUM(debit)); should equal balance. */
+  ledgerBalance: Money;
+  recentOrders: AdminUserOrderRef[];
+}
+
+/** Free-text + status/role filters for GET /admin/users. */
+export interface AdminUserQuery {
+  /** Matches email (case-insensitive, contains). */
+  q?: string;
+  status?: UserStatus;
+  role?: Role;
+  page?: number;
+  limit?: number;
+}
+
+/** PATCH /admin/users/:id/role (admin only). */
+export interface UpdateUserRoleRequest {
+  role: Role;
+  /** Optional reason kept in the audit trail. */
+  reason?: string;
+}
+
+/** POST /admin/users/:id/block (elevated). Unblock reuses the same shape. */
+export interface BlockUserRequest {
+  /** Required human reason (audit); revokes the user's sessions on block. */
+  reason: string;
+}
+
+// ---------- Admin: promo codes CRUD (E8, RBAC elevated) ----------
+//
+// Promo management (docs/13 §12): percent/fixed discounts with usage caps and
+// expiry. Redemption stays in checkout (E4); this surface only administers them.
+
+/** GET /admin/promo-codes — a promo code as the admin sees it (full detail). */
+export interface AdminPromoCode {
+  id: string;
+  code: string;
+  type: PromoType;
+  value: Money;
+  maxUses: number | null;
+  usedCount: number;
+  /** ISO 8601 date-time or null (never expires). */
+  expiresAt: string | null;
+  createdAt: string;
+}
+
+/** POST /admin/promo-codes. */
+export interface CreatePromoCodeRequest {
+  code: string;
+  type: PromoType;
+  /** Percent (1–100) or a fixed amount in the accounting currency. */
+  value: string;
+  maxUses?: number | null;
+  expiresAt?: string | null;
+}
+
+/** PATCH /admin/promo-codes/:id — code is immutable once created. */
+export interface UpdatePromoCodeRequest {
+  type?: PromoType;
+  value?: string;
+  maxUses?: number | null;
+  expiresAt?: string | null;
+}
