@@ -253,4 +253,39 @@ describe('Warming pipeline smoke (e2e)', () => {
       prisma.auditLog.rows.filter((r) => r.action === 'delivery.payload_accessed'),
     ).toHaveLength(1);
   });
+
+  it('keeps the admin orders table off-limits to buyers (RBAC 403)', async () => {
+    const res = await buyer(request(http).get('/api/v1/admin/orders')).expect(403);
+    expect(res.body.error.code).toBe('FORBIDDEN');
+  });
+
+  it('lists the order in the admin table with the buyer and filters by number/status', async () => {
+    const all = await admin(request(http).get('/api/v1/admin/orders')).expect(200);
+    expect(all.body.meta.total).toBe(1);
+    const row = all.body.data[0];
+    expect(row).toMatchObject({ id: orderId, status: 'delivered', itemCount: 1 });
+    expect(row.buyer.email).toBe('warm-buyer@advault.dev');
+
+    // Free-text on the buyer email; status filter narrows the set.
+    const byEmail = await admin(request(http).get('/api/v1/admin/orders?q=warm-buyer')).expect(200);
+    expect(byEmail.body.meta.total).toBe(1);
+    const wrongStatus = await admin(
+      request(http).get('/api/v1/admin/orders?status=refunded'),
+    ).expect(200);
+    expect(wrongStatus.body.meta.total).toBe(0);
+  });
+
+  it('returns the full admin order detail with warming progress (no secrets)', async () => {
+    const res = await admin(request(http).get(`/api/v1/admin/orders/${orderId}`)).expect(200);
+    expect(res.body).toMatchObject({ number: expect.any(String), status: 'delivered' });
+    expect(res.body.buyer.email).toBe('warm-buyer@advault.dev');
+    expect(res.body.items[0].warming.status).toBe('delivered');
+    // The admin surface never carries a decrypted delivery payload.
+    expect(JSON.stringify(res.body)).not.toContain('warm@ex.io');
+  });
+
+  it('404s an unknown admin order id', async () => {
+    const res = await admin(request(http).get(`/api/v1/admin/orders/${randomUUID()}`)).expect(404);
+    expect(res.body.error.code).toBe('NOT_FOUND');
+  });
 });

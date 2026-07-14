@@ -58,7 +58,22 @@ export interface ApiError {
 
 // ---------- Auth & users (E1) ----------
 
-export type Role = 'user' | 'support' | 'admin';
+/**
+ * Access roles. `user` is a customer; the rest are staff (E8, docs/13):
+ * `support` fields tickets and reads orders, `operator` runs the warming
+ * workspace and inventory, `manager` oversees catalog/orders/finance, and
+ * `admin` is the owner-level superset. Staff scopes are additive here — the
+ * granular StaffUser entity can arrive later without breaking this contract.
+ */
+export type Role = 'user' | 'support' | 'operator' | 'manager' | 'admin';
+
+/** Roles that may reach the admin/operator area at all (any non-customer). */
+export const STAFF_ROLES: readonly Role[] = ['support', 'operator', 'manager', 'admin'];
+
+/** True when a role is any staff role (not a plain customer). */
+export function isStaffRole(role: Role): boolean {
+  return role !== 'user';
+}
 export type UserStatus = 'active' | 'blocked';
 
 /** GET /me — current user profile. */
@@ -656,4 +671,70 @@ export interface BindOctoProfileRequest {
 export interface JobInventory {
   proxy: ProxyItemView | null;
   octo: OctoProfileView | null;
+}
+
+// ---------- Admin: orders & stock (E8, RBAC staff) ----------
+//
+// The admin surface reads every buyer's orders and the stock pool (docs/13).
+// Secrets are never exposed here — delivery payloads stay owner-only (E5).
+
+/** Short buyer reference shown on admin order views. */
+export interface OrderBuyer {
+  id: string;
+  email: string;
+}
+
+/** GET /admin/orders — one row in the admin orders table. */
+export interface AdminOrderListItem {
+  id: string;
+  number: string;
+  status: OrderStatus;
+  buyer: OrderBuyer;
+  /** Total quantity across the order's lines. */
+  itemCount: number;
+  total: Money;
+  currency: string;
+  createdAt: string;
+}
+
+/** GET /admin/orders/:id — full admin order detail (no secrets). */
+export interface AdminOrderDetail {
+  id: string;
+  number: string;
+  status: OrderStatus;
+  buyer: OrderBuyer;
+  subtotal: Money;
+  discount: Money;
+  total: Money;
+  currency: string;
+  promoCode: string | null;
+  /** Lines with delivery status + warming progress (reuses the buyer shape). */
+  items: OrderItem[];
+  createdAt: string;
+}
+
+/** Free-text filter target and status filter for GET /admin/orders. */
+export interface AdminOrderQuery {
+  status?: OrderStatus;
+  /** Matches order number or buyer email (case-insensitive, contains). */
+  q?: string;
+  page?: number;
+  limit?: number;
+}
+
+/**
+ * GET /admin/stock — one READY_STOCK variant with pool counts (docs/13).
+ * Aggregated by variant; no payloads are ever returned.
+ */
+export interface AdminStockRow {
+  productId: string;
+  productSlug: string;
+  variantId: string;
+  sku: string;
+  /** Localized "product · variant" name. */
+  name: string;
+  available: number;
+  reserved: number;
+  sold: number;
+  total: number;
 }

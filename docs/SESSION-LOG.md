@@ -7,12 +7,14 @@
 
 ## 📍 Текущий статус
 
-- **Фаза:** разработка. E0 (каркас), E1 (аутентификация), E2 (каталог), E3 (кошелёк),
-  E4 (корзина/заказы/оплата), E5 (выдача из стока), E6 (прогрев: модель и очередь) и
-  E7 (инвентарь: прокси и Octo-профили) готовы и проверены end-to-end.
-- **Следующий эпик:** **E8 — Полная админка / операторка** (см. `docs/16-development-plan.md` §4).
-- **Ветка:** актуальная база — `claude/advault-e7-proxy-octo-inventory-vsnw75` (E0…E7; в
-  main код ещё не влит). Разработку следующих эпиков вести на feature-ветках per эпик от неё.
+- **Фаза:** разработка. E0…E7 готовы и проверены end-to-end. **E8 (админка/операторка)
+  — в работе**: сделан вертикальный срез Orders + Warming-workspace + Inventory-UI
+  (см. запись ниже). Осталось для E8: Catalog/Promo/Users CRUD, Finance/Tickets/Reports/
+  Settings, ручная выдача/refund из UI.
+- **Следующий шаг:** **E8-cont** (остальные модули админки), затем **E9 — Поддержка и
+  уведомления** (см. `docs/16-development-plan.md`).
+- **Ветка:** актуальная база — `claude/advault-e8-admin-panel-s4ia8e` (E0…E7 + срез E8;
+  ветка E8 фаст-форворднута на код E7 и продолжена). В main код ещё не влит.
 - **Прогресс по эпикам (из `docs/16`):**
 
 | Эпик | Название | Статус |
@@ -26,7 +28,7 @@
 | E5 | Выдача из стока (READY_STOCK) | ✅ готово |
 | E6 | Прогрев: модель и очередь | ✅ готово |
 | E7 | Инвентарь: прокси и Octo-профили | ✅ готово |
-| E8 | Полная админка / операторка | ⬜ следующий |
+| E8 | Полная админка / операторка | 🟡 в работе (Orders+Warming+Inventory-UI) |
 | E9 | Поддержка и уведомления | ⬜ |
 | E10 | Гарантии, замены, возвраты | ⬜ |
 | E11 | Полировка, безопасность, запуск | ⬜ |
@@ -36,6 +38,70 @@
 ---
 
 ## Записи
+
+### Сессия — Админка/операторка: срез Orders + Warming-workspace + Inventory (эпик E8, часть 1)
+- **Развилки (asking):** объём сессии — **Orders + Warming + Inventory** (как «начни с
+  Orders + Warming-workspace»); модель ролей — **расширить `User.role`** (без отдельной
+  StaffUser в MVP).
+- **RBAC:** enum `Role` расширен — `operator` (руки: warming-workspace + инвентарь) и
+  `manager` (надзор каталог/заказы/финансы); миграция `20260714000000_staff_roles`
+  (`ALTER TYPE … ADD VALUE`; deploy + diff на живом Postgres 16 — дрифта нет, порядок
+  `user/support/operator/manager/admin`). Группы ролей вынесены в `auth/roles.ts`
+  (`STAFF/WARMING_STAFF/INVENTORY_STAFF/ORDERS_STAFF/ELEVATED`); `@Roles` на
+  warming/inventory расширены. **Багфикс:** `WarmingService.assign` принимал только
+  support/admin → теперь любую warming-роль (operator/support/manager/admin), плоского
+  покупателя отклоняет 400 (unit-тест добавлен).
+- **API (контракты вперёд):** `docs/backend/openapi.md` — уточнены `GET /admin/orders`
+  (фильтры status + `q` по номеру/email, схема `AdminOrderListItem`), новый
+  `GET /admin/orders/:id` (`AdminOrderDetail` с покупателем + warm-прогрессом, без
+  секретов), `GET /admin/stock` (`AdminStockRow` — счётчики пула по статусам); схемы
+  `OrderBuyer/PageMeta/AdminOrderListItem/AdminOrderDetail/AdminStockRow`.
+  `docs/backend/prisma-schema.md` — enum `Role` + пояснение аддитивных ролей. Типы
+  отзеркалены в `@advault/types` (+`STAFF_ROLES`/`isStaffRole`). Модуль `admin/`:
+  `AdminOrdersService` (list с фильтрами/пагинацией + detail, include user/items/warming,
+  404 на чужой/несуществующий), `AdminStockService` (`groupBy` StockItem по
+  variant×status, локализованное имя, без payload'ов), контроллеры под `ORDERS_STAFF`/
+  `INVENTORY_STAFF`. Warming/inventory API уже были из E6/E7.
+- **Web:** новый операторский shell `AdminLayout` (сайдбар + мобильный топбар, i18n-переключатель),
+  guard `RequireStaff` (`isStaffRole`), маршруты `/admin/*`; ссылка «Админка» в шапке
+  для staff. Хуки `features/admin/api.ts` (orders/stock/warming/inventory на TanStack
+  Query, инвалидация). Страницы: **Orders** (таблица + поиск `q` + фильтр статуса +
+  пагинация) и **деталь** (покупатель, позиции, warm-прогресс-бар); **Stock** (счётчики
+  пула); **Warming Kanban** (колонки по статусам, карточки → workspace); **Warming
+  workspace** (`WarmingJobPage` — «взять себе», контекстные переходы по таблице server,
+  чек-лист этапов, захват аккаунта, resolve reassign/refund; danger-confirm на
+  deliver/fail/refund) + **`JobInventoryPanel`** (bind/unbind прокси+Octo из E7 прямо из
+  задачи); **Inventory** (табы прокси/Octo: список, создание, импорт прокси text/plain).
+  Бейджи статусов (`badges.tsx`), i18n EN/RU (блок `admin.*` + `nav.admin`),
+  loading/empty/error везде; иконки из спрайта (без эмодзи).
+- **Тесты (+1 unit, +4 e2e; всего api 183 / web 2):** unit `AdminStockService` (агрегация
+  по статусам, локализация EN/RU, нулевой пул); unit warming assign (operator принимается,
+  покупатель 400); e2e (в `warming.e2e`) — buyer 403 на `/admin/orders`, list с покупателем
+  + фильтр по номеру/статусу, detail с warm-прогрессом без секретов, 404 на неизвестный id.
+  Фейк `FakeOrderStore` расширен (buyer-user в include, generic-where status/OR-contains).
+- **Проверено вживую:** локальные Postgres 16 + Redis + собранный API; `migrate deploy`
+  всех 8 миграций + `migrate diff` (нет дрифта) + enum-порядок; сидер (53 стока, 4 прокси,
+  2 Octo). Через curl под **новой ролью `operator`**: `/admin/stock` (5 вариантов со
+  счётчиками), `/admin/inventory/proxies` (4), `/admin/warming/jobs`; buyer→`/admin/orders`
+  = **403**; полный warm-заказ end-to-end операторкой (assign **operator** → start →
+  этапы → qc → ready → захват аккаунта → **bind прокси+Octo** → deliver=delivered, bundle
+  delivered); Vault покупателя содержит ACCOUNT (реальные креды) + PROXY + OCTO;
+  `/admin/orders` показывает заказ (buyer email, фильтр `q=buyer2`), `/admin/orders/:id?locale=ru`
+  — RU-имя + `warming.status=queued`/6 этапов, без секретов. lint/typecheck/тесты/build зелёные.
+- **Решения:** роли аддитивны на `User.role` (StaffUser отложен, контракты не ломаются);
+  назначение задачи — «взять себе» (operatorId = текущий staff-user; отдельного списка
+  операторов пока нет); danger-действия из UI (deliver/fail/refund) — через confirm +
+  серверный AuditLog (E6/E7); admin-таблицы read-only, мутации выдачи идут через
+  warming/inventory; Kanban грузит одну страницу (≤100 задач) и группирует на клиенте.
+- **Проблемы/долги (в E8-cont):** Catalog CRUD, Promo CRUD, Users, Finance, Tickets,
+  Reports, Staff&roles UI, Settings — не сделаны (следующая под-сессия); ручная выдача
+  `/admin/orders/:id/items/:itemId/deliver` и `/admin/orders/:id/refund` из UI (черновики
+  в openapi) — не реализованы; браузерный скриншот админки в этой сессии не снимался
+  (playwright-пакет не установлен) — web проверен build+typecheck против живого API;
+  Kanban без пагинации/вебсокетов (поллинг ручной кнопкой); expired-прокси по TTL и
+  политика ресурсов на reassign (долг E7) — по-прежнему открыты.
+- **Дальше:** **E8-cont** — остальные модули админки (Catalog/Promo/Users/Finance/…),
+  затем **E9 — Поддержка и уведомления** (промт в `docs/NEXT-SESSION-PROMPT.md`).
 
 ### Сессия — Инвентарь: прокси и Octo-профили (эпик E7)
 - **Сделано (контракты):** `docs/backend/prisma-schema.md` — модели `ProxyItem`

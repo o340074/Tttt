@@ -1,7 +1,15 @@
 import { Route, Routes } from 'react-router-dom';
+import { AdminLayout } from './components/layout/AdminLayout';
 import { AppLayout } from './components/layout/AppLayout';
 import { AuthLayout } from './features/auth/AuthLayout';
+import { RequireStaff } from './features/admin/RequireStaff';
 import { RedirectIfAuthed, RequireAuth } from './features/auth/guards';
+import { AdminOrderDetailPage } from './pages/admin/AdminOrderDetailPage';
+import { AdminOrdersPage } from './pages/admin/AdminOrdersPage';
+import { AdminStockPage } from './pages/admin/AdminStockPage';
+import { InventoryPage } from './pages/admin/InventoryPage';
+import { WarmingBoardPage } from './pages/admin/WarmingBoardPage';
+import { WarmingJobPage } from './pages/admin/WarmingJobPage';
 import { AccountPage } from './pages/AccountPage';
 import { CatalogPage } from './pages/CatalogPage';
 import { CheckoutPage } from './pages/CheckoutPage';
@@ -31,6 +39,19 @@ export function App() {
           <Route path="orders/:id" element={<OrderPage />} />
         </Route>
         <Route path="*" element={<NotFoundPage />} />
+      </Route>
+
+      {/* Admin / operator area (docs/13) — staff-only, own layout. */}
+      <Route element={<RequireStaff />}>
+        <Route path="admin" element={<AdminLayout />}>
+          <Route index element={<AdminOrdersPage />} />
+          <Route path="orders" element={<AdminOrdersPage />} />
+          <Route path="orders/:id" element={<AdminOrderDetailPage />} />
+          <Route path="warming" element={<WarmingBoardPage />} />
+          <Route path="warming/:id" element={<WarmingJobPage />} />
+          <Route path="inventory" element={<InventoryPage />} />
+          <Route path="stock" element={<AdminStockPage />} />
+        </Route>
       </Route>
 
       <Route path="auth" element={<AuthLayout />}>

@@ -702,6 +702,63 @@ components:
         proxy: { allOf: [ { $ref: '#/components/schemas/ProxyItem' } ], nullable: true }
         octo: { allOf: [ { $ref: '#/components/schemas/OctoProfile' } ], nullable: true }
 
+    PageMeta:
+      type: object
+      properties:
+        total: { type: integer }
+        page: { type: integer }
+        limit: { type: integer }
+
+    OrderBuyer:
+      type: object
+      description: Краткая ссылка на покупателя в админ-представлениях заказа.
+      properties:
+        id: { type: string, format: uuid }
+        email: { type: string, format: email }
+
+    AdminOrderListItem:
+      type: object
+      description: Строка таблицы заказов в админке (E8).
+      properties:
+        id: { type: string, format: uuid }
+        number: { type: string }
+        status: { type: string, enum: [pending, paid, partially_delivered, delivered, cancelled, refunded] }
+        buyer: { $ref: '#/components/schemas/OrderBuyer' }
+        itemCount: { type: integer, description: Суммарное количество по позициям }
+        total: { type: string }
+        currency: { type: string }
+        createdAt: { type: string, format: date-time }
+
+    AdminOrderDetail:
+      type: object
+      description: Полная карточка заказа для админки/операторки (E8, без секретов).
+      properties:
+        id: { type: string, format: uuid }
+        number: { type: string }
+        status: { type: string, enum: [pending, paid, partially_delivered, delivered, cancelled, refunded] }
+        buyer: { $ref: '#/components/schemas/OrderBuyer' }
+        subtotal: { type: string }
+        discount: { type: string }
+        total: { type: string }
+        currency: { type: string }
+        promoCode: { type: string, nullable: true }
+        items: { type: array, items: { $ref: '#/components/schemas/OrderItem' } }
+        createdAt: { type: string, format: date-time }
+
+    AdminStockRow:
+      type: object
+      description: Один READY_STOCK-вариант со счётчиками пула по статусам (E8).
+      properties:
+        productId: { type: string, format: uuid }
+        productSlug: { type: string }
+        variantId: { type: string, format: uuid }
+        sku: { type: string }
+        name: { type: string, description: 'Локализованное «товар · вариант»' }
+        available: { type: integer }
+        reserved: { type: integer }
+        sold: { type: integer }
+        total: { type: integer }
+
   responses:
     BadRequest:
       description: Ошибка валидации.
@@ -1426,24 +1483,61 @@ paths:
   /admin/stock:
     get:
       tags: [Admin]
-      summary: Просмотр стоков и статусов
+      summary: Пул READY_STOCK по вариантам (E8, RBAC staff)
+      description: >-
+        Счётчики StockItem по статусам на каждый READY_STOCK-вариант. Payload'ы
+        не читаются (секреты — только в Vault покупателя, E5). Пополнение — на
+        `/admin/products/{id}/variants/{variantId}/stock/import`.
       parameters:
-        - $ref: '#/components/parameters/Page'
-        - $ref: '#/components/parameters/Limit'
-        - { name: variantId, in: query, schema: { type: string, format: uuid } }
-        - { name: status, in: query, schema: { type: string, enum: [available, reserved, sold] } }
-      responses: { '200': { description: OK }, '403': { $ref: '#/components/responses/Forbidden' } }
+        - { name: locale, in: query, schema: { type: string, enum: [en, ru] } }
+      responses:
+        '200':
+          description: Список строк стока
+          content:
+            application/json:
+              schema: { type: array, items: { $ref: '#/components/schemas/AdminStockRow' } }
+        '403': { $ref: '#/components/responses/Forbidden' }
 
   /admin/orders:
     get:
       tags: [Admin]
-      summary: Все заказы, фильтры
+      summary: Все заказы, фильтры (E8, RBAC staff)
+      description: >-
+        Пагинированная таблица заказов всех покупателей, новейшие первыми.
+        Read-only — выдача идёт через warming/inventory. Секреты не возвращаются.
       parameters:
         - $ref: '#/components/parameters/Page'
         - $ref: '#/components/parameters/Limit'
-        - { name: status, in: query, schema: { type: string } }
-        - { name: userId, in: query, schema: { type: string, format: uuid } }
-      responses: { '200': { description: OK }, '403': { $ref: '#/components/responses/Forbidden' } }
+        - { name: status, in: query, schema: { type: string, enum: [pending, paid, partially_delivered, delivered, cancelled, refunded] } }
+        - { name: q, in: query, description: 'Номер заказа или email покупателя (contains, ci)', schema: { type: string } }
+      responses:
+        '200':
+          description: Пагинированный список AdminOrderListItem
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data: { type: array, items: { $ref: '#/components/schemas/AdminOrderListItem' } }
+                  meta: { $ref: '#/components/schemas/PageMeta' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+
+  /admin/orders/{id}:
+    get:
+      tags: [Admin]
+      summary: Деталь заказа для админки/операторки (E8, RBAC staff)
+      description: Полная карточка заказа с покупателем, позициями и warm-прогрессом. Без секретов доставки.
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: string, format: uuid } }
+        - { name: locale, in: query, schema: { type: string, enum: [en, ru] } }
+      responses:
+        '200':
+          description: AdminOrderDetail
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/AdminOrderDetail' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
 
   /admin/orders/{id}/items/{itemId}/deliver:
     post:

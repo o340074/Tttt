@@ -221,6 +221,24 @@ describe('WarmingService (E6 made-to-order)', () => {
     });
   });
 
+  it('assigns to any warming-staff role (operator) and rejects a plain customer (E8)', async () => {
+    const { jobId } = await checkoutWarm();
+
+    // A plain customer cannot own a job — 400, and the job stays queued.
+    await expect(warming.assign(adminId, jobId, buyerId, 'en')).rejects.toMatchObject({
+      status: 400,
+    });
+    expect(prisma.warmingJob.rows[0]!.status).toBe('queued');
+
+    // The new `operator` role can own a job.
+    const op = await prisma.user.create({
+      data: { email: 'operator@advault.dev', passwordHash: 'x', role: 'operator' },
+    });
+    await warming.assign(adminId, jobId, op.id, 'en');
+    expect(prisma.warmingJob.rows[0]!.status).toBe('assigned');
+    expect(prisma.warmingJob.rows[0]!.assignedTo).toBe(op.id);
+  });
+
   it('recomputes the ETA with a buffer on hold and shrinks it on resume', async () => {
     const { jobId } = await checkoutWarm();
     await warming.assign(adminId, jobId, operatorId, 'en');

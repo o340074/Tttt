@@ -18,6 +18,8 @@ datasource db {
 enum Role {
   user
   support
+  operator
+  manager
   admin
 }
 

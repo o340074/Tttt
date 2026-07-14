@@ -36,8 +36,14 @@ generator client {
 enum Role {
   user
   support
+  operator // E8: hands-on warming/inventory operator
+  manager // E8: catalog/orders/finance oversight
   admin
 }
+// E8 (docs/13): роли аддитивны на User.role (без отдельной StaffUser в MVP).
+// support — тикеты/чтение заказов; operator — warming-workspace + инвентарь;
+// manager — надзор над каталогом/заказами/финансами; admin — суперсет (owner).
+// Гранулярный StaffUser можно ввести позже, не ломая контракты.
 
 enum UserStatus {
   active

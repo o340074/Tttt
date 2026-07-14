@@ -10,7 +10,8 @@
     "language": "Language",
     "account": "Account",
     "signIn": "Sign in",
-    "cart": "Cart"
+    "cart": "Cart",
+    "admin": "Admin"
   },
   "auth": {
     "switchLabel": "Choose form",
@@ -421,5 +422,174 @@
   },
   "footer": {
     "rights": "All rights reserved."
+  },
+  "admin": {
+    "title": "Operator panel",
+    "backToStore": "Back to store",
+    "retry": "Retry",
+    "cancel": "Cancel",
+    "pagination": "Pagination",
+    "prev": "Prev",
+    "next": "Next",
+    "page": "Page {{page}} of {{total}}",
+    "nav": {
+      "orders": "Orders",
+      "warming": "Warming",
+      "inventory": "Inventory",
+      "stock": "Stock"
+    },
+    "deliveryTypes": {
+      "auto": "Instant",
+      "manual": "Made to order"
+    },
+    "warmStatuses": {
+      "queued": "Queued",
+      "assigned": "Assigned",
+      "in_progress": "In progress",
+      "qc": "QC",
+      "ready": "Ready",
+      "delivered": "Delivered",
+      "on_hold": "On hold",
+      "failed": "Failed",
+      "refunded": "Refunded"
+    },
+    "taskStatuses": {
+      "pending": "Pending",
+      "in_progress": "In progress",
+      "done": "Done",
+      "skipped": "Skipped",
+      "blocked": "Blocked"
+    },
+    "proxyStatuses": {
+      "available": "Available",
+      "assigned": "Assigned",
+      "expired": "Expired",
+      "disabled": "Disabled"
+    },
+    "octoStatuses": {
+      "draft": "Draft",
+      "ready": "Ready",
+      "delivered": "Delivered"
+    },
+    "proxyTypes": {
+      "residential": "Residential",
+      "mobile": "Mobile",
+      "isp": "ISP",
+      "datacenter": "Datacenter"
+    },
+    "orders": {
+      "title": "Orders",
+      "subtitle": "Every buyer's orders — read-only; fulfilment runs through warming/inventory.",
+      "searchPlaceholder": "Search by order number or buyer email",
+      "searchBtn": "Search",
+      "filter": "Status filter",
+      "all": "All",
+      "error": "Could not load orders.",
+      "empty": "No orders match.",
+      "colNumber": "Order",
+      "colBuyer": "Buyer",
+      "colStatus": "Status",
+      "colItems": "Items",
+      "colTotal": "Total",
+      "colDate": "Date",
+      "back": "Back to orders",
+      "detailError": "Could not load the order.",
+      "discount": "Discount",
+      "warmProgress": "Stage {{current}} of {{total}}",
+      "eta": "ETA",
+      "openWorkspace": "Open warming workspace"
+    },
+    "stock": {
+      "title": "Stock pool",
+      "subtitle": "READY_STOCK units by status. Import replenishes; secrets stay in the buyer's Vault.",
+      "error": "Could not load stock.",
+      "empty": "No READY_STOCK variants yet.",
+      "colVariant": "Variant",
+      "colAvailable": "Available",
+      "colReserved": "Reserved",
+      "colSold": "Sold",
+      "colTotal": "Total"
+    },
+    "warming": {
+      "title": "Warming board",
+      "subtitle": "Made-to-order jobs by stage. Open a card to run it.",
+      "refresh": "Refresh",
+      "error": "Could not load the queue.",
+      "empty": "No warming jobs yet.",
+      "stage": "Stage {{current}}/{{total}}",
+      "assigned": "Assigned",
+      "back": "Back to board",
+      "eta": "ETA",
+      "actionError": "The action failed.",
+      "detailError": "Could not load the job.",
+      "assignMe": "Assign to me",
+      "terminal": "No further actions.",
+      "stages": "Stages",
+      "expectedMin": "~{{min}} min",
+      "account": "Account data",
+      "accountCaptured": "Captured",
+      "accountReplace": "Replace account data",
+      "accountAdd": "Add account data",
+      "accountPayloadPh": "login: ...\\npassword: ...",
+      "accountRecoveryPh": "Recovery (optional)",
+      "accountHint": "Encrypted server-side and never logged. Reaches only the buyer's Vault.",
+      "save": "Save",
+      "resources": "Resources (proxy / Octo)",
+      "proxy": "Proxy",
+      "octo": "Octo profile",
+      "unbind": "Unbind",
+      "bind": "Bind",
+      "pickProxy": "Pick a free proxy…",
+      "pickOcto": "Pick a free profile…",
+      "manageInventory": "Manage inventory",
+      "actions": {
+        "start": "Start",
+        "hold": "Hold",
+        "resume": "Resume",
+        "qc": "To QC",
+        "ready": "Mark ready",
+        "deliver": "Deliver bundle",
+        "fail": "Mark failed",
+        "reassign": "Reassign",
+        "refund": "Refund"
+      },
+      "confirm": {
+        "deliver": "Deliver the bundle to the buyer? The account and resources become theirs.",
+        "fail": "Mark this job as failed?",
+        "reassign": "Reassign this job back to the queue?",
+        "refund": "Refund the buyer? This returns the money and closes the line."
+      }
+    },
+    "inventory": {
+      "title": "Inventory",
+      "subtitle": "Proxy and Octo profiles (E7). Provisioning is manual; the platform records and binds resources.",
+      "proxies": "Proxies",
+      "octo": "Octo profiles",
+      "proxyPool": "Proxy pool",
+      "octoPool": "Octo profiles",
+      "noProxies": "No proxies yet.",
+      "noOcto": "No Octo profiles yet.",
+      "error": "Could not load inventory.",
+      "provider": "Provider",
+      "geo": "Geo",
+      "type": "Type",
+      "status": "Status",
+      "name": "Name",
+      "externalId": "External ID",
+      "addProxy": "Add proxy",
+      "addOcto": "Add Octo profile",
+      "geoPh": "Geo (e.g. US)",
+      "providerPh": "Provider",
+      "credHint": "Credentials are encrypted server-side and never shown again.",
+      "add": "Add",
+      "import": "Bulk import",
+      "importHint": "One per line: type,geo,provider,host:port:user:pass[,expiresAt]",
+      "importBtn": "Import",
+      "created": "Created.",
+      "imported": "Imported {{added}}, skipped {{skipped}}.",
+      "namePh": "Profile name",
+      "externalIdPh": "External ID (optional)",
+      "exportRefPh": "Export reference (optional)"
+    }
   }
 }

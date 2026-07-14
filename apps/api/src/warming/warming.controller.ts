@@ -2,6 +2,7 @@ import { Body, Controller, Get, HttpCode, Param, ParseUUIDPipe, Post, Query } fr
 import { ApiBearerAuth, ApiTags } from '@nestjs/swagger';
 import { ApiException } from '../common/api-exception';
 import { CurrentUser, Roles } from '../auth/decorators';
+import { WARMING_STAFF } from '../auth/roles';
 import { resolveLocale } from '../catalog/locale';
 import { InventoryService } from '../inventory/inventory.service';
 import {
@@ -27,7 +28,7 @@ const uuidPipe = new ParseUUIDPipe({
  */
 @ApiTags('Warming')
 @ApiBearerAuth()
-@Roles('admin', 'support')
+@Roles(...WARMING_STAFF)
 @Controller('admin/warming')
 export class WarmingController {
   constructor(

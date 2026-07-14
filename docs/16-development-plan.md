@@ -117,7 +117,14 @@
 - **Приёмка**: оператор привязывает прокси и профиль к warm-заказу; попадают в Bundle.
 - **Зависимости**: E6.
 
-### E8. Полная админка / операторка (MVP-core) — ~16–22 dd
+### E8. Полная админка / операторка (MVP-core) — ~16–22 dd — 🟡 в работе
+> **Сделано (часть 1):** RBAC-роли operator/manager (аддитивно на User.role), admin
+> Orders (таблица+деталь), Warming Kanban + operator workspace (assign/переходы/чек-лист/
+> захват аккаунта/resolve + bind прокси/Octo из E7), Inventory-UI (прокси/Octo:
+> список/создание/импорт), admin Stock read. Проверено вживую end-to-end под ролью
+> operator. **Осталось:** Catalog/Bundles CRUD, Warming plans CRUD, Promo CRUD, Users,
+> Finance, Tickets, Reports, Staff&roles UI, Settings, ручная выдача/refund из UI,
+> real-time очередей.
 - RBAC (Owner/Admin/Manager/Operator/Support), StaffUser, гварды, аудит-лог.
 - Модули (см. [13](./13-admin-panel-spec.md)): Dashboard, Orders, **Warming Kanban**,
   **Operator workspace** (чек-листы этапов, привязка ресурсов, сборка Bundle),

@@ -753,7 +753,18 @@ type FakeOrderItemWithWarming = DbOrderItem & {
 type FakeOrderWithRels = DbOrder & {
   items: FakeOrderItemWithWarming[];
   promoCode: DbPromoCode | null;
+  user: Pick<DbUser, 'id' | 'email'> | null;
 };
+
+/** Admin order list where (status + free-text on number/email); all optional. */
+interface AdminOrderWhere {
+  userId?: string;
+  status?: DbOrder['status'];
+  OR?: {
+    number?: { contains: string; mode?: string };
+    user?: { email: { contains: string; mode?: string } };
+  }[];
+}
 
 export class FakeOrderStore {
   readonly rows: DbOrder[] = [];
@@ -762,10 +773,13 @@ export class FakeOrderStore {
     private readonly items: FakeOrderItemStore,
     private readonly promos: FakePromoStore,
     private readonly warming: () => FakeWarmingJobStore,
+    private readonly users: () => FakeUserStore = () => new FakeUserStore(),
   ) {}
 
   private withRels(row: DbOrder): FakeOrderWithRels {
+    const buyer = this.users().rows.find((u) => u.id === row.userId) ?? null;
     return {
+      user: buyer ? { id: buyer.id, email: buyer.email } : null,
       ...row,
       items: this.items.rows
         .filter((i) => i.orderId === row.id)
@@ -825,22 +839,44 @@ export class FakeOrderStore {
     return Promise.resolve(this.withRels(row));
   }
 
+  /** Matches both the buyer scope ({userId}) and the admin filters (status/OR). */
+  private matches(row: DbOrder, where: AdminOrderWhere = {}): boolean {
+    if (where.userId !== undefined && row.userId !== where.userId) return false;
+    if (where.status !== undefined && row.status !== where.status) return false;
+    if (where.OR) {
+      const buyer = this.users().rows.find((u) => u.id === row.userId);
+      const hit = where.OR.some((clause) => {
+        if (clause.number) {
+          return row.number.toLowerCase().includes(clause.number.contains.toLowerCase());
+        }
+        if (clause.user) {
+          return (buyer?.email ?? '')
+            .toLowerCase()
+            .includes(clause.user.email.contains.toLowerCase());
+        }
+        return false;
+      });
+      if (!hit) return false;
+    }
+    return true;
+  }
+
   findMany(args: {
-    where: { userId: string };
+    where?: AdminOrderWhere;
     include?: unknown;
     orderBy?: { createdAt: 'asc' | 'desc' };
     skip?: number;
     take?: number;
   }): Promise<FakeOrderWithRels[]> {
-    let rows = this.rows.filter((r) => r.userId === args.where.userId);
+    let rows = this.rows.filter((r) => this.matches(r, args.where));
     if (args.orderBy?.createdAt === 'desc') rows = [...rows].reverse();
     const skip = args.skip ?? 0;
     rows = rows.slice(skip, args.take !== undefined ? skip + args.take : undefined);
     return Promise.resolve(rows.map((row) => this.withRels(row)));
   }
 
-  count({ where }: { where: { userId: string } }): Promise<number> {
-    return Promise.resolve(this.rows.filter((r) => r.userId === where.userId).length);
+  count({ where }: { where?: AdminOrderWhere } = {}): Promise<number> {
+    return Promise.resolve(this.rows.filter((r) => this.matches(r, where)).length);
   }
 
   findFirst({
@@ -1706,7 +1742,13 @@ export function makeFakePrismaService(): PrismaService & FakePrismaStores {
     () => orderHolder.order!,
     () => delivery,
   );
-  const order = new FakeOrderStore(orderItem, promoCode, () => warmingHolder.warmingJob!);
+  const userStore = new FakeUserStore();
+  const order = new FakeOrderStore(
+    orderItem,
+    promoCode,
+    () => warmingHolder.warmingJob!,
+    () => userStore,
+  );
   orderHolder.order = order;
   const warmingTask = new FakeWarmingTaskStore();
   const accountAsset = new FakeAccountAssetStore();
@@ -1721,7 +1763,7 @@ export function makeFakePrismaService(): PrismaService & FakePrismaStores {
   );
   warmingHolder.warmingJob = warmingJob;
   const stores: FakePrismaStores = {
-    user: new FakeUserStore(),
+    user: userStore,
     category: new FakeCategoryStore(),
     product,
     productVariant,

@@ -2,6 +2,7 @@ import { Injectable } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { Prisma } from '@prisma/client';
 import { ApiException } from '../common/api-exception';
+import { WARMING_STAFF } from '../auth/roles';
 import { AuditService } from '../audit/audit.service';
 import { PayloadCryptoService } from '../crypto/payload-crypto.service';
 import { PrismaService } from '../prisma/prisma.service';
@@ -233,10 +234,11 @@ export class WarmingService {
         status: job.status,
       });
     }
+    // Any warming-capable staff role may own a job (E8: operator/support/manager/admin).
     const operator = await this.prisma.user.findUnique({ where: { id: operatorId } });
-    if (!operator || (operator.role !== 'support' && operator.role !== 'admin')) {
-      throw new ApiException('VALIDATION_ERROR', 'operatorId must be a support/admin user', 400, {
-        fields: { operatorId: ['not a support/admin user'] },
+    if (!operator || !WARMING_STAFF.includes(operator.role)) {
+      throw new ApiException('VALIDATION_ERROR', 'operatorId must be a warming-staff user', 400, {
+        fields: { operatorId: ['not a warming-staff user'] },
       });
     }
     await this.prisma.warmingJob.update({

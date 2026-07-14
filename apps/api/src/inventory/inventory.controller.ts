@@ -13,6 +13,7 @@ import {
 import { ApiBearerAuth, ApiTags } from '@nestjs/swagger';
 import { ApiException } from '../common/api-exception';
 import { CurrentUser, Roles } from '../auth/decorators';
+import { INVENTORY_STAFF } from '../auth/roles';
 import {
   BindOctoBody,
   BindProxyBody,
@@ -40,7 +41,7 @@ const uuidPipe = new ParseUUIDPipe({
  */
 @ApiTags('Inventory')
 @ApiBearerAuth()
-@Roles('admin', 'support')
+@Roles(...INVENTORY_STAFF)
 @Controller('admin/inventory')
 export class InventoryController {
   constructor(private readonly inventory: InventoryService) {}

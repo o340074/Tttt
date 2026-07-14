@@ -10,7 +10,8 @@
     "language": "Язык",
     "account": "Кабинет",
     "signIn": "Войти",
-    "cart": "Корзина"
+    "cart": "Корзина",
+    "admin": "Админка"
   },
   "auth": {
     "switchLabel": "Выбор формы",
@@ -429,5 +430,174 @@
   },
   "footer": {
     "rights": "Все права защищены."
+  },
+  "admin": {
+    "title": "Панель оператора",
+    "backToStore": "В магазин",
+    "retry": "Повторить",
+    "cancel": "Отмена",
+    "pagination": "Пагинация",
+    "prev": "Назад",
+    "next": "Вперёд",
+    "page": "Страница {{page}} из {{total}}",
+    "nav": {
+      "orders": "Заказы",
+      "warming": "Прогрев",
+      "inventory": "Инвентарь",
+      "stock": "Сток"
+    },
+    "deliveryTypes": {
+      "auto": "Мгновенно",
+      "manual": "Под заказ"
+    },
+    "warmStatuses": {
+      "queued": "В очереди",
+      "assigned": "Назначена",
+      "in_progress": "В работе",
+      "qc": "Контроль",
+      "ready": "Готово",
+      "delivered": "Выдано",
+      "on_hold": "На паузе",
+      "failed": "Сбой",
+      "refunded": "Возврат"
+    },
+    "taskStatuses": {
+      "pending": "Ожидает",
+      "in_progress": "В работе",
+      "done": "Готово",
+      "skipped": "Пропущено",
+      "blocked": "Заблокировано"
+    },
+    "proxyStatuses": {
+      "available": "Свободен",
+      "assigned": "Привязан",
+      "expired": "Истёк",
+      "disabled": "Отключён"
+    },
+    "octoStatuses": {
+      "draft": "Черновик",
+      "ready": "Готов",
+      "delivered": "Выдан"
+    },
+    "proxyTypes": {
+      "residential": "Резидентский",
+      "mobile": "Мобильный",
+      "isp": "ISP",
+      "datacenter": "Дата-центр"
+    },
+    "orders": {
+      "title": "Заказы",
+      "subtitle": "Заказы всех покупателей — только просмотр; выдача идёт через прогрев/инвентарь.",
+      "searchPlaceholder": "Поиск по номеру заказа или email покупателя",
+      "searchBtn": "Найти",
+      "filter": "Фильтр статуса",
+      "all": "Все",
+      "error": "Не удалось загрузить заказы.",
+      "empty": "Ничего не найдено.",
+      "colNumber": "Заказ",
+      "colBuyer": "Покупатель",
+      "colStatus": "Статус",
+      "colItems": "Позиции",
+      "colTotal": "Сумма",
+      "colDate": "Дата",
+      "back": "К заказам",
+      "detailError": "Не удалось загрузить заказ.",
+      "discount": "Скидка",
+      "warmProgress": "Этап {{current}} из {{total}}",
+      "eta": "ETA",
+      "openWorkspace": "Открыть операторку прогрева"
+    },
+    "stock": {
+      "title": "Сток",
+      "subtitle": "Единицы READY_STOCK по статусам. Импорт пополняет; секреты — только в Vault покупателя.",
+      "error": "Не удалось загрузить сток.",
+      "empty": "Пока нет READY_STOCK-вариантов.",
+      "colVariant": "Вариант",
+      "colAvailable": "Свободно",
+      "colReserved": "Резерв",
+      "colSold": "Продано",
+      "colTotal": "Всего"
+    },
+    "warming": {
+      "title": "Доска прогрева",
+      "subtitle": "Заказы под прогрев по этапам. Откройте карточку, чтобы вести её.",
+      "refresh": "Обновить",
+      "error": "Не удалось загрузить очередь.",
+      "empty": "Пока нет задач прогрева.",
+      "stage": "Этап {{current}}/{{total}}",
+      "assigned": "Назначена",
+      "back": "К доске",
+      "eta": "ETA",
+      "actionError": "Действие не выполнено.",
+      "detailError": "Не удалось загрузить задачу.",
+      "assignMe": "Взять себе",
+      "terminal": "Действий больше нет.",
+      "stages": "Этапы",
+      "expectedMin": "~{{min}} мин",
+      "account": "Данные аккаунта",
+      "accountCaptured": "Захвачено",
+      "accountReplace": "Заменить данные аккаунта",
+      "accountAdd": "Внести данные аккаунта",
+      "accountPayloadPh": "логин: ...\\nпароль: ...",
+      "accountRecoveryPh": "Восстановление (опц.)",
+      "accountHint": "Шифруется на сервере и не логируется. Попадает только в Vault покупателя.",
+      "save": "Сохранить",
+      "resources": "Ресурсы (прокси / Octo)",
+      "proxy": "Прокси",
+      "octo": "Octo-профиль",
+      "unbind": "Отвязать",
+      "bind": "Привязать",
+      "pickProxy": "Выберите свободный прокси…",
+      "pickOcto": "Выберите свободный профиль…",
+      "manageInventory": "Управление инвентарём",
+      "actions": {
+        "start": "Начать",
+        "hold": "На паузу",
+        "resume": "Возобновить",
+        "qc": "На контроль",
+        "ready": "Готово",
+        "deliver": "Выдать комплект",
+        "fail": "Отметить сбой",
+        "reassign": "Переназначить",
+        "refund": "Вернуть деньги"
+      },
+      "confirm": {
+        "deliver": "Выдать комплект покупателю? Аккаунт и ресурсы станут его.",
+        "fail": "Отметить задачу как сбойную?",
+        "reassign": "Вернуть задачу в очередь?",
+        "refund": "Вернуть деньги покупателю? Это закроет позицию."
+      }
+    },
+    "inventory": {
+      "title": "Инвентарь",
+      "subtitle": "Прокси и Octo-профили (E7). Провижининг вручную; платформа фиксирует и привязывает ресурсы.",
+      "proxies": "Прокси",
+      "octo": "Octo-профили",
+      "proxyPool": "Пул прокси",
+      "octoPool": "Octo-профили",
+      "noProxies": "Пока нет прокси.",
+      "noOcto": "Пока нет Octo-профилей.",
+      "error": "Не удалось загрузить инвентарь.",
+      "provider": "Провайдер",
+      "geo": "Гео",
+      "type": "Тип",
+      "status": "Статус",
+      "name": "Имя",
+      "externalId": "Внешний ID",
+      "addProxy": "Добавить прокси",
+      "addOcto": "Добавить Octo-профиль",
+      "geoPh": "Гео (напр. US)",
+      "providerPh": "Провайдер",
+      "credHint": "Учётные данные шифруются на сервере и больше не показываются.",
+      "add": "Добавить",
+      "import": "Массовый импорт",
+      "importHint": "По строке: type,geo,provider,host:port:user:pass[,expiresAt]",
+      "importBtn": "Импортировать",
+      "created": "Создано.",
+      "imported": "Добавлено {{added}}, пропущено {{skipped}}.",
+      "namePh": "Имя профиля",
+      "externalIdPh": "Внешний ID (опц.)",
+      "exportRefPh": "Ссылка экспорта (опц.)"
+    }
   }
 }
