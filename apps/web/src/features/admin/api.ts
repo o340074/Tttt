@@ -4,10 +4,25 @@ import { useContentLocale } from '../catalog/api';
 import { useAuth } from '../auth/useAuth';
 import { isStaffRole } from '@advault/types';
 import type {
+  AdminCategory,
   AdminOrderDetail,
   AdminOrderListItem,
+  AdminProductDetail,
+  AdminProductListItem,
+  AdminProductQuery,
   AdminPromoCode,
   AdminStockRow,
+  AdminVariant,
+  AdminWarmingPlanDetail,
+  AdminWarmingPlanListItem,
+  CreateCategoryRequest,
+  CreateProductRequest,
+  CreateVariantRequest,
+  CreateWarmingPlanRequest,
+  UpdateCategoryRequest,
+  UpdateProductRequest,
+  UpdateVariantRequest,
+  UpdateWarmingPlanRequest,
   AdminUserDetail,
   AdminUserListItem,
   BindOctoProfileRequest,
@@ -462,6 +477,138 @@ export function useUnbindOcto() {
   return useMutation({
     mutationFn: (id: string) =>
       apiFetch<OctoProfileView>(`/admin/inventory/octo/${id}/unbind`, { method: 'POST' }),
+    onSuccess: invalidate,
+  });
+}
+
+// ---------- Catalog & bundles (manager+) ----------
+
+export function useAdminCategories() {
+  return useQuery({
+    queryKey: ['admin', 'categories'],
+    queryFn: () => apiFetch<AdminCategory[]>('/admin/categories'),
+  });
+}
+
+function useCatalogInvalidation() {
+  const queryClient = useQueryClient();
+  return () => {
+    void queryClient.invalidateQueries({ queryKey: ['admin', 'products'] });
+    void queryClient.invalidateQueries({ queryKey: ['admin', 'product'] });
+    void queryClient.invalidateQueries({ queryKey: ['admin', 'categories'] });
+  };
+}
+
+export function useCreateCategory() {
+  const invalidate = useCatalogInvalidation();
+  return useMutation({
+    mutationFn: (body: CreateCategoryRequest) =>
+      apiFetch<AdminCategory>('/admin/categories', { method: 'POST', body }),
+    onSuccess: invalidate,
+  });
+}
+
+export function useUpdateCategory() {
+  const invalidate = useCatalogInvalidation();
+  return useMutation({
+    mutationFn: ({ id, ...body }: { id: string } & UpdateCategoryRequest) =>
+      apiFetch<AdminCategory>(`/admin/categories/${id}`, { method: 'PATCH', body }),
+    onSuccess: invalidate,
+  });
+}
+
+export function useAdminProducts(query: AdminProductQuery) {
+  return useQuery({
+    queryKey: ['admin', 'products', query],
+    queryFn: () => apiFetch<AdminProductListItem[]>(`/admin/products${qs({ ...query })}`),
+  });
+}
+
+export function useAdminProduct(id: string | undefined) {
+  return useQuery({
+    queryKey: ['admin', 'product', id],
+    queryFn: () => apiFetch<AdminProductDetail>(`/admin/products/${id}`),
+    enabled: Boolean(id),
+  });
+}
+
+export function useCreateProduct() {
+  const invalidate = useCatalogInvalidation();
+  return useMutation({
+    mutationFn: (body: CreateProductRequest) =>
+      apiFetch<AdminProductDetail>('/admin/products', { method: 'POST', body }),
+    onSuccess: invalidate,
+  });
+}
+
+export function useUpdateProduct(id: string) {
+  const invalidate = useCatalogInvalidation();
+  return useMutation({
+    mutationFn: (body: UpdateProductRequest) =>
+      apiFetch<AdminProductDetail>(`/admin/products/${id}`, { method: 'PATCH', body }),
+    onSuccess: invalidate,
+  });
+}
+
+export function useCreateVariant(productId: string) {
+  const invalidate = useCatalogInvalidation();
+  return useMutation({
+    mutationFn: (body: CreateVariantRequest) =>
+      apiFetch<AdminVariant>(`/admin/products/${productId}/variants`, { method: 'POST', body }),
+    onSuccess: invalidate,
+  });
+}
+
+export function useUpdateVariant() {
+  const invalidate = useCatalogInvalidation();
+  return useMutation({
+    mutationFn: ({ id, ...body }: { id: string } & UpdateVariantRequest) =>
+      apiFetch<AdminVariant>(`/admin/variants/${id}`, { method: 'PATCH', body }),
+    onSuccess: invalidate,
+  });
+}
+
+// ---------- Warming plans (manager+) ----------
+
+export function useWarmingPlans() {
+  return useQuery({
+    queryKey: ['admin', 'plans'],
+    queryFn: () => apiFetch<AdminWarmingPlanListItem[]>('/admin/warming-plans'),
+  });
+}
+
+export function useWarmingPlan(id: string | undefined) {
+  return useQuery({
+    queryKey: ['admin', 'plan', id],
+    queryFn: () => apiFetch<AdminWarmingPlanDetail>(`/admin/warming-plans/${id}`),
+    enabled: Boolean(id),
+  });
+}
+
+function usePlanInvalidation() {
+  const queryClient = useQueryClient();
+  return () => {
+    void queryClient.invalidateQueries({ queryKey: ['admin', 'plans'] });
+    void queryClient.invalidateQueries({ queryKey: ['admin', 'plan'] });
+    // A version bump recomputes linked variants' ETA.
+    void queryClient.invalidateQueries({ queryKey: ['admin', 'product'] });
+  };
+}
+
+export function useCreatePlan() {
+  const invalidate = usePlanInvalidation();
+  return useMutation({
+    mutationFn: (body: CreateWarmingPlanRequest) =>
+      apiFetch<AdminWarmingPlanDetail>('/admin/warming-plans', { method: 'POST', body }),
+    onSuccess: invalidate,
+  });
+}
+
+export function useUpdatePlan(id: string) {
+  const invalidate = usePlanInvalidation();
+  return useMutation({
+    mutationFn: (body: UpdateWarmingPlanRequest) =>
+      apiFetch<AdminWarmingPlanDetail>(`/admin/warming-plans/${id}`, { method: 'PATCH', body }),
     onSuccess: invalidate,
   });
 }

@@ -26,6 +26,13 @@ export const ELEVATED: Role[] = ['manager', 'admin'];
 export const FINANCE_STAFF: Role[] = ['manager', 'admin'];
 
 /**
+ * Catalog & warming-plan management (docs/13 §5–6): editing what the shop sells
+ * and how it is warmed is a merchandising decision — managers/admins only.
+ * Operators run the warming they are handed; they do not author plans.
+ */
+export const CATALOG_STAFF: Role[] = ['manager', 'admin'];
+
+/**
  * Owner-level only: staff management and role changes (a manager must not be
  * able to escalate anyone — including themselves — to admin). See docs/13.
  */

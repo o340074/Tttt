@@ -4,6 +4,7 @@ import { supportedLocales } from '../../i18n';
 import { useAuth } from '../../features/auth/useAuth';
 import { Icon } from '../ui/Icon';
 import type { IconName } from '../ui/Icon';
+import type { Role } from '@advault/types';
 
 interface NavItem {
   to: string;
@@ -11,11 +12,18 @@ interface NavItem {
   icon: IconName;
   /** Match nested routes (detail pages) as active too. */
   end?: boolean;
+  /** Restrict the item to these roles; omitted → visible to all staff. */
+  roles?: Role[];
 }
+
+/** Catalog & warming plans are merchandising — managers/admins only (docs/13). */
+const ELEVATED: Role[] = ['manager', 'admin'];
 
 const NAV: NavItem[] = [
   { to: '/admin/orders', labelKey: 'admin.nav.orders', icon: 'box' },
   { to: '/admin/warming', labelKey: 'admin.nav.warming', icon: 'spark' },
+  { to: '/admin/catalog', labelKey: 'admin.nav.catalog', icon: 'ads', roles: ELEVATED },
+  { to: '/admin/plans', labelKey: 'admin.nav.plans', icon: 'clock', roles: ELEVATED },
   { to: '/admin/inventory', labelKey: 'admin.nav.inventory', icon: 'shield' },
   { to: '/admin/stock', labelKey: 'admin.nav.stock', icon: 'briefcase' },
   { to: '/admin/users', labelKey: 'admin.nav.users', icon: 'user' },
@@ -27,6 +35,7 @@ const NAV: NavItem[] = [
 export function AdminLayout() {
   const { t, i18n } = useTranslation();
   const { user } = useAuth();
+  const nav = NAV.filter((item) => !item.roles || (user && item.roles.includes(user.role)));
 
   return (
     <div className="flex min-h-screen bg-void text-text">
@@ -41,7 +50,7 @@ export function AdminLayout() {
         </Link>
 
         <nav className="flex flex-col gap-1" aria-label={t('admin.title')}>
-          {NAV.map((item) => (
+          {nav.map((item) => (
             <NavLink
               key={item.to}
               to={item.to}
@@ -101,7 +110,7 @@ export function AdminLayout() {
       {/* Mobile top bar with the same sections. */}
       <div className="flex min-w-0 flex-1 flex-col">
         <header className="flex items-center gap-2 overflow-x-auto border-b border-border bg-surface/60 px-4 py-3 md:hidden">
-          {NAV.map((item) => (
+          {nav.map((item) => (
             <NavLink
               key={item.to}
               to={item.to}

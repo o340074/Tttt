@@ -4,9 +4,13 @@ import { AppLayout } from './components/layout/AppLayout';
 import { AuthLayout } from './features/auth/AuthLayout';
 import { RequireStaff } from './features/admin/RequireStaff';
 import { RedirectIfAuthed, RequireAuth } from './features/auth/guards';
+import { AdminCatalogPage } from './pages/admin/AdminCatalogPage';
 import { AdminFinancePage } from './pages/admin/AdminFinancePage';
 import { AdminOrderDetailPage } from './pages/admin/AdminOrderDetailPage';
 import { AdminOrdersPage } from './pages/admin/AdminOrdersPage';
+import { AdminPlanDetailPage } from './pages/admin/AdminPlanDetailPage';
+import { AdminPlansPage } from './pages/admin/AdminPlansPage';
+import { AdminProductDetailPage } from './pages/admin/AdminProductDetailPage';
 import { AdminPromoPage } from './pages/admin/AdminPromoPage';
 import { AdminStockPage } from './pages/admin/AdminStockPage';
 import { AdminUserDetailPage } from './pages/admin/AdminUserDetailPage';
@@ -53,6 +57,10 @@ export function App() {
           <Route path="orders/:id" element={<AdminOrderDetailPage />} />
           <Route path="warming" element={<WarmingBoardPage />} />
           <Route path="warming/:id" element={<WarmingJobPage />} />
+          <Route path="catalog" element={<AdminCatalogPage />} />
+          <Route path="catalog/:id" element={<AdminProductDetailPage />} />
+          <Route path="plans" element={<AdminPlansPage />} />
+          <Route path="plans/:id" element={<AdminPlanDetailPage />} />
           <Route path="inventory" element={<InventoryPage />} />
           <Route path="stock" element={<AdminStockPage />} />
           <Route path="users" element={<AdminUsersPage />} />

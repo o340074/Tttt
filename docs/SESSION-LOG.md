@@ -8,14 +8,14 @@
 ## 📍 Текущий статус
 
 - **Фаза:** разработка. E0…E7 готовы и проверены end-to-end. **E8 (админка/операторка)
-  — в работе**: сделаны Orders + Warming-workspace + Inventory-UI (часть 1) и
-  **Finance (ручной refund + ручная выдача + сверка ledger) + Users (список/блок/роль) +
-  Promo CRUD (часть 2)**. Осталось для E8: Catalog & Bundles CRUD + Warming plans CRUD
-  (+конструктор комплекта/версии), Tickets, Reports/Dashboard, Staff&roles UI, Settings.
-- **Следующий шаг:** **E8-cont2** — Catalog/Bundles + Warming-plans CRUD (ядро «управлять
-  каталогом/прогревом из UI»), затем остальное E8 и **E9 — Поддержка и уведомления**.
-- **Ветка:** актуальная база — `claude/advault-e8-admin-continuation-flz7jy` (E0…E7 +
-  E8 части 1–2; фаст-форворднута с `…e8-admin-panel-s4ia8e`). В main код ещё не влит.
+  — в работе**: Orders + Warming-workspace + Inventory-UI (часть 1); Finance (ручной
+  refund + ручная выдача + сверка ledger) + Users + Promo CRUD (часть 2); **Catalog &
+  Bundles CRUD + Warming plans CRUD с версионированием (часть 3)**. Осталось для E8:
+  Tickets, Reports/Dashboard, Staff&roles UI, Settings, inline-edit промо.
+- **Следующий шаг:** **E8-cont3** — Dashboard/Reports + Tickets + Staff&roles UI +
+  Settings (добить админку), затем **E9 — Поддержка и уведомления**.
+- **Ветка:** актуальная база — `claude/advault-e8-catalog-warming-4uvpad` (E0…E7 +
+  E8 части 1–3; отходит от `…e8-admin-continuation-flz7jy`). В main код ещё не влит.
 - **Прогресс по эпикам (из `docs/16`):**
 
 | Эпик | Название | Статус |
@@ -29,7 +29,7 @@
 | E5 | Выдача из стока (READY_STOCK) | ✅ готово |
 | E6 | Прогрев: модель и очередь | ✅ готово |
 | E7 | Инвентарь: прокси и Octo-профили | ✅ готово |
-| E8 | Полная админка / операторка | 🟡 в работе (Orders+Warming+Inventory + Finance/Users/Promo) |
+| E8 | Полная админка / операторка | 🟡 в работе (Orders+Warming+Inventory + Finance/Users/Promo + Catalog/Bundles+Warming-plans) |
 | E9 | Поддержка и уведомления | ⬜ |
 | E10 | Гарантии, замены, возвраты | ⬜ |
 | E11 | Полировка, безопасность, запуск | ⬜ |
@@ -39,6 +39,74 @@
 ---
 
 ## Записи
+
+### Сессия — Админка: Catalog & Bundles CRUD + Warming plans CRUD (эпик E8, часть 3)
+- **Развилки (asking, все по рекомендации):** объём — **только ядро** (Catalog/Bundles +
+  Warming-plans CRUD; Dashboard/Reports/Tickets/Staff/Settings отложены в E8-cont3);
+  конструктор комплекта — **тип + типизированные параметры** (PROXY→{proxyType,geo,term},
+  OCTO_PROFILE→{profileType}, GUIDE→{locale}, WARRANTY→{hours}, ACCOUNT→{geo}); правка
+  опубликованного — **на месте** (snapshot в OrderItem защищает прошлые заказы, без версий
+  вариантов); удаление — **архивирование** (product→hidden, variant→isActive:false,
+  plan→isActive:false; жёсткого delete нет — целостность ссылок и аудит).
+- **RBAC:** новая группа `CATALOG_STAFF = [manager, admin]` в `auth/roles.ts` (мерчендайзинг
+  — не операторская работа). Все `/admin/{categories,products,products/:id/variants,
+  variants,warming-plans}` под ней; support/operator/buyer → 403. Каждая мутация → `AuditLog`.
+- **Без новых моделей/миграций:** переиспользованы Category/CategoryTranslation/Product/
+  ProductTranslation/ProductVariant (bundleSpec, warmingPlanId, etaMinutes, warrantyHours) и
+  WarmingPlan/WarmingStageTemplate. `migrate deploy` — те же 8 миграций.
+- **API (контракты вперёд):** `docs/backend/openapi.md` — пути `/admin/categories(+/:id)`,
+  `/admin/products(+/:id, +/:id/variants)`, `/admin/variants/:id`, `/admin/warming-plans(+/:id)`
+  + схемы (AdminCategory/Product*/Variant, TranslationInput, AdminWarmingPlan*/Stage, Create/
+  Update*). Типы отзеркалены в `@advault/types`. `prisma-schema.md` — заметка «E8-cont2 без
+  моделей». Модуль `admin/`: `catalog.logic.ts` (чистая логика — normalizeBundleSpec с
+  типизированными параметрами, computeEtaMinutes, deriveDeliveryType, slug/sku, assertPublishable),
+  `AdminCatalogService` (категории/товары/варианты; deliveryType выводится из fulfillmentType;
+  ETA MADE_TO_ORDER = сумма этапов плана; публикация требует активный вариант + ETA;
+  slug/sku unique→409), `AdminPlansService` (планы + этапы; версия: правка stages → version+1
+  + `productVariant.updateMany` пересчёт etaMinutes; goal/tier/version unique→409).
+- **Web:** хуки `features/admin/api.ts` (categories/products/variants/plans, инвалидация);
+  страницы **Catalog** (таблица товаров + фильтр status/q + менеджер категорий + форма
+  товара), **ProductDetail** (правка info/переводы, publish/unpublish/archive с danger-confirm,
+  список вариантов + **VariantEditor с конструктором комплекта** — чекбоксы 7 компонентов +
+  типизированные поля, ETA из плана/ручной), **Plans** (таблица + форма создания),
+  **PlanDetail** (метаданные + `StageEditor` этапов с чек-листом/компонентами, save→версия,
+  archive/restore). Общие `StageEditor`/`stageUtils`, `ProductStatusBadge`. Роуты в App.tsx,
+  нав Catalog/Plans в AdminLayout — только manager/admin. i18n EN/RU (`admin.catalog/plans/
+  fulfillmentTypes/bundleTypes/productStatuses`, синхронно — locales.spec зелёный). Состояния
+  loading/empty/error, иконки из спрайта (без эмодзи).
+- **Тесты (+32, всего api 244 / web 2):** unit `catalog.logic` (14 — bundleSpec: типы/дубли/
+  битые параметры/не-массив, ETA, slug/sku, publish-guard); unit `AdminCatalogService` (10 —
+  категория EN обязателен, draft→variant(READY_STOCK+bundle)→publish, ETA из плана,
+  неизвестный план→400, архив варианта, dup slug/sku→409, publish без вариантов→409,
+  чужая категория→400, фильтр q); unit `AdminPlansService` (5 — create+ETA, dup goal/tier→409,
+  метаданные без версии / stages→version+1+пересчёт ETA связанного варианта, архив, 404);
+  e2e `admin-catalog.e2e` (RBAC buyer/support→403, полный цикл plan→category→product→variant
+  →publish→version bump с пересчётом ETA, битый bundle→400). Фейки расширены: create/update/
+  findUnique/findMany/count для category/product/productVariant/warmingPlan + новые стора
+  categoryTranslation/productTranslation/warmingStageTemplate (стора этапов ассемблируются в
+  plan.findUnique/findMany; inline-фикстуры makeWarmingPlanRow сохранены).
+- **Проверено вживую:** локальный Postgres 16 + Redis + собранный API; `migrate deploy` (8
+  миграций, новых нет) + сидер. curl под ролями: RBAC (buyer→403, admin→200); полный цикл
+  из UI-контрактов — создан план (v1, ETA 240) → категория → черновик товара → MADE_TO_ORDER
+  вариант с планом (deliveryType=manual, **ETA 240 из плана**, bundle с типизированными
+  параметрами) → публикация → **товар виден в витрине** `/products/:slug` и `/products`
+  (реальные Prisma-связи: отдельные translation/variant-создания подхватываются include);
+  **версионирование** — правка stages (30+30+30) → план v2, ETA 90 → **связанный вариант
+  пересчитан на 90** и в админке, и в витрине. AuditLog: plan.create/category.create/
+  product.create/variant.create/product.published/plan.version, без секретов. lint/format/
+  typecheck/тесты(244+2)/build — зелёные.
+- **Решения:** конструктор комплекта — валидация типизированных параметров в чистой
+  `catalog.logic` (страйп неизвестных ключей, дубль типа→400); ETA всегда из плана для
+  MADE_TO_ORDER (ручной etaMinutes только без плана); версия плана — in-place bump на той же
+  строке (snapshot в WarmingJob уже защищает идущие задачи, вариант ссылается на тот же
+  planId); flat-запись переводов/вариантов (как в сидере), storefront-read через relations.
+- **Проблемы/долги (в E8-cont3):** Dashboard/Reports, Tickets, Staff&roles UI, Settings —
+  не сделаны; inline-edit промокода (UI формы правки нет); reorder категорий/варианты как
+  отдельные версии — нет (по решению не нужны); браузерный скрин админки не снимался
+  (проверено curl полного цикла + build/typecheck/lint); долги E7 (expired-прокси по TTL,
+  политика ресурсов на reassign) по-прежнему открыты.
+- **Дальше:** **E8-cont3** — Dashboard/Reports + Tickets + Staff&roles UI + Settings (промт
+  в `docs/NEXT-SESSION-PROMPT.md`), затем **E9**.
 
 ### Сессия — Админка: Finance (refund + ручная выдача) + Users + Promo (эпик E8, часть 2)
 - **Развилки (asking):** объём — **Finance + Users + Promo** (Catalog/Bundles + Warming-plans

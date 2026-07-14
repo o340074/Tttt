@@ -49,6 +49,15 @@ enum Role {
 // LedgerEntry/PromoCode/AuditLog. Refund = LedgerEntry(credit, refType=refund,
 // refId=orderItemId) — unique (refType,refId,direction) защищает от двойного
 // возврата; смена роли/блокировка отзывают refresh-сессии (Redis).
+// E8-cont2: Catalog & Bundles CRUD (категории/товары/варианты + конструктор
+// комплекта) и Warming plans CRUD (версионирование) НЕ добавляют моделей —
+// переиспользуют Category/CategoryTranslation/Product/ProductTranslation/
+// ProductVariant (bundleSpec, warmingPlanId, etaMinutes, warrantyHours) и
+// WarmingPlan/WarmingStageTemplate. Правка опубликованного — на месте (OrderItem
+// хранит snapshot цены/имени/типа); удаление = архив (product→hidden,
+// variant→isActive:false, plan→isActive:false). Версия плана: правка stages
+// делает version+1 и пересчитывает etaMinutes связанных вариантов; уже идущие
+// WarmingJob сохраняют planVersion + stagesSnapshot (не ломаются).
 
 enum UserStatus {
   active

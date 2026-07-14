@@ -127,8 +127,14 @@
 > список/поиск/фильтры, карточка с ledger-сверкой, block (отзыв сессий)/смена роли
 > (admin-only) с аудитом; Promo CRUD. Всё под RBAC (FINANCE_STAFF/ELEVATED/ADMIN_ONLY),
 > danger-confirm + AuditLog. Проверено вживую end-to-end под ролями admin/support/user.
-> **Осталось:** Catalog/Bundles CRUD (+конструктор комплекта), Warming plans CRUD (+версии),
-> Tickets, Reports/Dashboard, Staff&roles UI, Settings, inline-edit промо, real-time очередей.
+> **Сделано (часть 3):** Catalog & Bundles CRUD — категории/товары/варианты (SKU) с
+> переводами EN/RU, публикация/архив, **конструктор комплекта** (bundleSpec: 7 типов +
+> типизированные параметры), ETA варианта авто из плана; Warming plans CRUD с этапами
+> (чек-лист/компоненты/QC) и **версионированием** (правка stages → version+1 + пересчёт
+> ETA связанных вариантов; идущие WarmingJob сохраняют snapshot). RBAC `CATALOG_STAFF`
+> (manager+), AuditLog на каждую мутацию. Проверено вживую (Postgres+Redis): цикл
+> план→товар→вариант→публикация→витрина + версионирование с пересчётом ETA.
+> **Осталось:** Tickets, Reports/Dashboard, Staff&roles UI, Settings, inline-edit промо, real-time очередей.
 - RBAC (Owner/Admin/Manager/Operator/Support), StaffUser, гварды, аудит-лог.
 - Модули (см. [13](./13-admin-panel-spec.md)): Dashboard, Orders, **Warming Kanban**,
   **Operator workspace** (чек-листы этапов, привязка ресурсов, сборка Bundle),

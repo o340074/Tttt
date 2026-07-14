@@ -283,6 +283,73 @@ export class FakeCategoryStore {
   findMany(_args?: unknown): Promise<FakeCategoryRow[]> {
     return Promise.resolve([...this.rows]);
   }
+
+  findUnique({ where }: { where: { id: string } }): Promise<FakeCategoryRow | null> {
+    return Promise.resolve(this.rows.find((r) => r.id === where.id) ?? null);
+  }
+
+  create({
+    data,
+  }: {
+    data: { slug: string; parentId?: string | null; position?: number };
+  }): Promise<FakeCategoryRow> {
+    if (this.rows.some((r) => r.slug === data.slug)) throw uniqueViolation('Category.slug');
+    const row: FakeCategoryRow = {
+      id: randomUUID(),
+      slug: data.slug,
+      parentId: data.parentId ?? null,
+      position: data.position ?? 0,
+      translations: [],
+    };
+    this.rows.push(row);
+    return Promise.resolve(row);
+  }
+
+  update({
+    where,
+    data,
+  }: {
+    where: { id: string };
+    data: { slug?: string; parentId?: string | null; position?: number };
+  }): Promise<FakeCategoryRow> {
+    const row = this.rows.find((r) => r.id === where.id);
+    if (!row) throw new Error('Record not found');
+    if (
+      data.slug !== undefined &&
+      data.slug !== row.slug &&
+      this.rows.some((r) => r.slug === data.slug)
+    ) {
+      throw uniqueViolation('Category.slug');
+    }
+    Object.assign(row, data);
+    return Promise.resolve(row);
+  }
+}
+
+export class FakeCategoryTranslationStore {
+  readonly rows: CategoryTranslation[] = [];
+
+  findMany({ where }: { where: { categoryId: string } }): Promise<CategoryTranslation[]> {
+    return Promise.resolve(this.rows.filter((r) => r.categoryId === where.categoryId));
+  }
+
+  create({
+    data,
+  }: {
+    data: { categoryId: string; locale: string; name: string };
+  }): Promise<CategoryTranslation> {
+    const row: CategoryTranslation = { id: randomUUID(), ...data };
+    this.rows.push(row);
+    return Promise.resolve(row);
+  }
+
+  deleteMany({ where }: { where: { categoryId: string } }): Promise<{ count: number }> {
+    const before = this.rows.length;
+    for (let i = this.rows.length - 1; i >= 0; i -= 1) {
+      if (this.rows[i]!.categoryId === where.categoryId) this.rows.splice(i, 1);
+    }
+    return Promise.resolve({ count: before - this.rows.length });
+  }
 }
 
 export class FakeProductStore {
@@ -306,6 +373,108 @@ export class FakeProductStore {
           (slug === undefined || r.slug === slug) && (status === undefined || r.status === status),
       ) ?? null,
     );
+  }
+
+  findUnique({ where }: { where: { id: string } }): Promise<FakeProductRow | null> {
+    return Promise.resolve(this.rows.find((r) => r.id === where.id) ?? null);
+  }
+
+  count({ where }: { where?: { categoryId?: string; status?: string } }): Promise<number> {
+    const w = where ?? {};
+    return Promise.resolve(
+      this.rows.filter(
+        (r) =>
+          (w.categoryId === undefined || r.categoryId === w.categoryId) &&
+          (w.status === undefined || r.status === w.status),
+      ).length,
+    );
+  }
+
+  create({
+    data,
+  }: {
+    data: {
+      categoryId: string;
+      slug: string;
+      status?: DbProduct['status'];
+      attributes?: Prisma.JsonValue;
+    };
+  }): Promise<FakeProductRow> {
+    if (this.rows.some((r) => r.slug === data.slug)) throw uniqueViolation('Product.slug');
+    const now = new Date();
+    const row: FakeProductRow = {
+      id: randomUUID(),
+      categoryId: data.categoryId,
+      slug: data.slug,
+      status: data.status ?? 'draft',
+      ratingAvg: null,
+      attributes: (data.attributes ?? {}) as FakeProductRow['attributes'],
+      createdAt: now,
+      updatedAt: now,
+      translations: [],
+      variants: [],
+      // Storefront-only stub; admin resolves the category via the category store.
+      category: {
+        id: data.categoryId,
+        parentId: null,
+        slug: '',
+        position: 0,
+      } as DbCategory,
+    };
+    this.rows.push(row);
+    return Promise.resolve(row);
+  }
+
+  update({
+    where,
+    data,
+  }: {
+    where: { id: string };
+    data: Record<string, unknown>;
+  }): Promise<FakeProductRow> {
+    const row = this.rows.find((r) => r.id === where.id);
+    if (!row) throw new Error('Record not found');
+    if (
+      typeof data.slug === 'string' &&
+      data.slug !== row.slug &&
+      this.rows.some((r) => r.slug === data.slug)
+    ) {
+      throw uniqueViolation('Product.slug');
+    }
+    Object.assign(row, data, { updatedAt: new Date() });
+    return Promise.resolve(row);
+  }
+}
+
+export class FakeProductTranslationStore {
+  readonly rows: ProductTranslation[] = [];
+
+  findMany({ where }: { where: { productId: string } }): Promise<ProductTranslation[]> {
+    return Promise.resolve(this.rows.filter((r) => r.productId === where.productId));
+  }
+
+  create({
+    data,
+  }: {
+    data: { productId: string; locale: string; name: string; description?: string | null };
+  }): Promise<ProductTranslation> {
+    const row: ProductTranslation = {
+      id: randomUUID(),
+      productId: data.productId,
+      locale: data.locale,
+      name: data.name,
+      description: data.description ?? null,
+    };
+    this.rows.push(row);
+    return Promise.resolve(row);
+  }
+
+  deleteMany({ where }: { where: { productId: string } }): Promise<{ count: number }> {
+    const before = this.rows.length;
+    for (let i = this.rows.length - 1; i >= 0; i -= 1) {
+      if (this.rows[i]!.productId === where.productId) this.rows.splice(i, 1);
+    }
+    return Promise.resolve({ count: before - this.rows.length });
   }
 }
 
@@ -680,38 +849,116 @@ export class FakeVariantStore {
     );
   }
 
-  /** Supports the checkout guard: id + isActive + optional stockCount >= qty. */
+  /** Admin catalog: variants of a product / of a plan. */
+  findMany({
+    where,
+  }: {
+    where?: { productId?: string; warmingPlanId?: string };
+  }): Promise<DbVariant[]> {
+    const w = where ?? {};
+    return Promise.resolve(
+      this.rows.filter(
+        (r) =>
+          (w.productId === undefined || r.productId === w.productId) &&
+          (w.warmingPlanId === undefined || r.warmingPlanId === w.warmingPlanId),
+      ),
+    );
+  }
+
+  count({ where }: { where?: { warmingPlanId?: string; productId?: string } }): Promise<number> {
+    const w = where ?? {};
+    return Promise.resolve(
+      this.rows.filter(
+        (r) =>
+          (w.warmingPlanId === undefined || r.warmingPlanId === w.warmingPlanId) &&
+          (w.productId === undefined || r.productId === w.productId),
+      ).length,
+    );
+  }
+
+  create({ data }: { data: Record<string, unknown> }): Promise<DbVariant> {
+    if (this.rows.some((r) => r.sku === data.sku)) throw uniqueViolation('ProductVariant.sku');
+    const now = new Date();
+    const fulfillmentType = (data.fulfillmentType ?? 'READY_STOCK') as DbVariant['fulfillmentType'];
+    const row: DbVariant = {
+      id: randomUUID(),
+      productId: data.productId as string,
+      sku: data.sku as string,
+      price:
+        data.price instanceof Prisma.Decimal
+          ? data.price
+          : new Prisma.Decimal(String(data.price ?? '0')),
+      currency: (data.currency as string) ?? 'USD',
+      fulfillmentType,
+      deliveryType: (data.deliveryType ??
+        (fulfillmentType === 'READY_STOCK' ? 'auto' : 'manual')) as DbVariant['deliveryType'],
+      stockCount: (data.stockCount as number) ?? 0,
+      isActive: (data.isActive as boolean) ?? true,
+      attributes: (data.attributes ?? {}) as DbVariant['attributes'],
+      goal: (data.goal as string | null) ?? null,
+      tier: (data.tier as string | null) ?? null,
+      warmingPlanId: (data.warmingPlanId as string | null) ?? null,
+      bundleSpec: (data.bundleSpec ?? []) as DbVariant['bundleSpec'],
+      etaMinutes: (data.etaMinutes as number | null) ?? null,
+      warrantyHours: (data.warrantyHours as number | null) ?? null,
+      createdAt: now,
+      updatedAt: now,
+    };
+    this.rows.push(row);
+    return Promise.resolve(row);
+  }
+
+  /**
+   * Checkout guard (id + isActive + stockCount>=qty, decrement) AND the plan
+   * ETA recompute (warmingPlanId + fulfillmentType, set etaMinutes).
+   */
   updateMany({
     where,
     data,
   }: {
-    where: { id: string; isActive?: boolean; stockCount?: { gte: number } };
-    data: { stockCount?: { decrement: number }; updatedAt?: Date };
+    where: {
+      id?: string;
+      isActive?: boolean;
+      stockCount?: { gte: number };
+      warmingPlanId?: string;
+      fulfillmentType?: DbVariant['fulfillmentType'];
+    };
+    data: { stockCount?: { decrement: number }; updatedAt?: Date; etaMinutes?: number | null };
   }): Promise<{ count: number }> {
     const matched = this.rows.filter(
       (r) =>
-        r.id === where.id &&
+        (where.id === undefined || r.id === where.id) &&
         (where.isActive === undefined || r.isActive === where.isActive) &&
-        (where.stockCount === undefined || r.stockCount >= where.stockCount.gte),
+        (where.stockCount === undefined || r.stockCount >= where.stockCount.gte) &&
+        (where.warmingPlanId === undefined || r.warmingPlanId === where.warmingPlanId) &&
+        (where.fulfillmentType === undefined || r.fulfillmentType === where.fulfillmentType),
     );
     for (const row of matched) {
       if (data.stockCount) row.stockCount -= data.stockCount.decrement;
+      if (data.etaMinutes !== undefined) row.etaMinutes = data.etaMinutes;
       if (data.updatedAt) row.updatedAt = data.updatedAt;
     }
     return Promise.resolve({ count: matched.length });
   }
 
-  /** StockService recomputes the stockCount cache from the pool via update. */
+  /** Stock cache recompute + admin variant edits (arbitrary scalar fields). */
   async update({
     where,
     data,
   }: {
     where: { id: string };
-    data: { stockCount?: number };
+    data: Record<string, unknown>;
   }): Promise<DbVariant> {
     const row = this.rows.find((r) => r.id === where.id);
     if (!row) throw new Error('Record not found');
-    Object.assign(row, data);
+    if (
+      typeof data.sku === 'string' &&
+      data.sku !== row.sku &&
+      this.rows.some((r) => r.sku === data.sku)
+    ) {
+      throw uniqueViolation('ProductVariant.sku');
+    }
+    Object.assign(row, data, { updatedAt: new Date() });
     return row;
   }
 }
@@ -1121,10 +1368,62 @@ export class FakeOrderItemStore {
 
 type PlanWithStages = DbWarmingPlan & { stages: DbWarmingStageTemplate[] };
 
+export class FakeWarmingStageStore {
+  readonly rows: DbWarmingStageTemplate[] = [];
+
+  forPlan(planId: string): DbWarmingStageTemplate[] {
+    return this.rows.filter((r) => r.planId === planId).sort((a, b) => a.order - b.order);
+  }
+
+  create({
+    data,
+  }: {
+    data: {
+      planId: string;
+      order: number;
+      name: string;
+      expectedMinutes: number;
+      checklist?: Prisma.JsonValue;
+      requiredComponents?: Prisma.JsonValue;
+    };
+  }): Promise<DbWarmingStageTemplate> {
+    const row: DbWarmingStageTemplate = {
+      id: randomUUID(),
+      planId: data.planId,
+      order: data.order,
+      name: data.name,
+      expectedMinutes: data.expectedMinutes,
+      checklist: (data.checklist ?? []) as DbWarmingStageTemplate['checklist'],
+      requiredComponents: (data.requiredComponents ??
+        []) as DbWarmingStageTemplate['requiredComponents'],
+    };
+    this.rows.push(row);
+    return Promise.resolve(row);
+  }
+
+  deleteMany({ where }: { where: { planId: string } }): Promise<{ count: number }> {
+    const before = this.rows.length;
+    for (let i = this.rows.length - 1; i >= 0; i -= 1) {
+      if (this.rows[i]!.planId === where.planId) this.rows.splice(i, 1);
+    }
+    return Promise.resolve({ count: before - this.rows.length });
+  }
+}
+
 export class FakeWarmingPlanStore {
   readonly rows: PlanWithStages[] = [];
 
-  /** createJobForItem loads the plan with its stages ordered. */
+  constructor(private readonly stages: () => FakeWarmingStageStore) {}
+
+  /** Assemble stages from the stage store, falling back to inline fixtures. */
+  private assemble(row: PlanWithStages): PlanWithStages {
+    const fromStore = this.stages().forPlan(row.id);
+    const stages =
+      fromStore.length > 0 ? fromStore : [...row.stages].sort((a, b) => a.order - b.order);
+    return { ...row, stages };
+  }
+
+  /** createJobForItem / catalog ETA load the plan with its stages ordered. */
   findUnique({
     where,
   }: {
@@ -1132,8 +1431,77 @@ export class FakeWarmingPlanStore {
     include?: unknown;
   }): Promise<PlanWithStages | null> {
     const row = this.rows.find((r) => r.id === where.id) ?? null;
-    if (!row) return Promise.resolve(null);
-    return Promise.resolve({ ...row, stages: [...row.stages].sort((a, b) => a.order - b.order) });
+    return Promise.resolve(row ? this.assemble(row) : null);
+  }
+
+  findMany(_args?: { include?: unknown; orderBy?: unknown }): Promise<PlanWithStages[]> {
+    const rows = [...this.rows].sort(
+      (a, b) =>
+        a.goal.localeCompare(b.goal) ||
+        (a.tier ?? '').localeCompare(b.tier ?? '') ||
+        b.version - a.version,
+    );
+    return Promise.resolve(rows.map((r) => this.assemble(r)));
+  }
+
+  create({
+    data,
+  }: {
+    data: {
+      goal: string;
+      tier?: string | null;
+      name: string;
+      version?: number;
+      isActive?: boolean;
+      qcRules?: Prisma.JsonValue;
+    };
+  }): Promise<PlanWithStages> {
+    const version = data.version ?? 1;
+    if (
+      this.rows.some(
+        (r) => r.goal === data.goal && r.tier === (data.tier ?? null) && r.version === version,
+      )
+    ) {
+      throw uniqueViolation('WarmingPlan.goal_tier_version');
+    }
+    const now = new Date();
+    const row: PlanWithStages = {
+      id: randomUUID(),
+      goal: data.goal,
+      tier: data.tier ?? null,
+      name: data.name,
+      version,
+      isActive: data.isActive ?? true,
+      qcRules: (data.qcRules ?? {}) as PlanWithStages['qcRules'],
+      createdAt: now,
+      updatedAt: now,
+      stages: [],
+    };
+    this.rows.push(row);
+    return Promise.resolve(row);
+  }
+
+  update({
+    where,
+    data,
+  }: {
+    where: { id: string };
+    data: Record<string, unknown>;
+  }): Promise<PlanWithStages> {
+    const row = this.rows.find((r) => r.id === where.id);
+    if (!row) throw new Error('Record not found');
+    const nextGoal = (data.goal as string) ?? row.goal;
+    const nextTier = data.tier !== undefined ? (data.tier as string | null) : row.tier;
+    const nextVersion = (data.version as number) ?? row.version;
+    if (
+      this.rows.some(
+        (r) => r !== row && r.goal === nextGoal && r.tier === nextTier && r.version === nextVersion,
+      )
+    ) {
+      throw uniqueViolation('WarmingPlan.goal_tier_version');
+    }
+    Object.assign(row, data, { updatedAt: new Date() });
+    return Promise.resolve(row);
   }
 }
 
@@ -1832,7 +2200,9 @@ export class FakeAuditStore {
 export interface FakePrismaStores {
   user: FakeUserStore;
   category: FakeCategoryStore;
+  categoryTranslation: FakeCategoryTranslationStore;
   product: FakeProductStore;
+  productTranslation: FakeProductTranslationStore;
   productVariant: FakeVariantStore;
   cart: FakeCartStore;
   cartItem: FakeCartItemStore;
@@ -1846,6 +2216,7 @@ export interface FakePrismaStores {
   delivery: FakeDeliveryStore;
   auditLog: FakeAuditStore;
   warmingPlan: FakeWarmingPlanStore;
+  warmingStageTemplate: FakeWarmingStageStore;
   warmingJob: FakeWarmingJobStore;
   warmingTask: FakeWarmingTaskStore;
   accountAsset: FakeAccountAssetStore;
@@ -1923,10 +2294,13 @@ export function makeFakePrismaService(): PrismaService & FakePrismaStores {
     () => bundle,
   );
   warmingHolder.warmingJob = warmingJob;
+  const warmingStageTemplate = new FakeWarmingStageStore();
   const stores: FakePrismaStores = {
     user: userStore,
     category: new FakeCategoryStore(),
+    categoryTranslation: new FakeCategoryTranslationStore(),
     product,
+    productTranslation: new FakeProductTranslationStore(),
     productVariant,
     cart: cartStore,
     cartItem,
@@ -1939,7 +2313,8 @@ export function makeFakePrismaService(): PrismaService & FakePrismaStores {
     stockItem: new FakeStockItemStore(),
     delivery,
     auditLog: new FakeAuditStore(),
-    warmingPlan: new FakeWarmingPlanStore(),
+    warmingPlan: new FakeWarmingPlanStore(() => warmingStageTemplate),
+    warmingStageTemplate,
     warmingJob,
     warmingTask,
     accountAsset,

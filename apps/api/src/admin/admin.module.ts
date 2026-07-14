@@ -4,10 +4,14 @@ import { StockModule } from '../stock/stock.module';
 import { WalletModule } from '../wallet/wallet.module';
 import { WarmingModule } from '../warming/warming.module';
 import { AdminController } from './admin.controller';
+import { AdminCatalogController } from './admin-catalog.controller';
+import { AdminCatalogService } from './admin-catalog.service';
 import { AdminFinanceController } from './admin-finance.controller';
 import { AdminFinanceService } from './admin-finance.service';
 import { AdminOrdersController } from './admin-orders.controller';
 import { AdminOrdersService } from './admin-orders.service';
+import { AdminPlansController } from './admin-plans.controller';
+import { AdminPlansService } from './admin-plans.service';
 import { AdminPromoController } from './admin-promo.controller';
 import { AdminPromoService } from './admin-promo.service';
 import { AdminStockController } from './admin-stock.controller';
@@ -33,6 +37,8 @@ import { AdminService } from './admin.service';
     AdminFinanceController,
     AdminUsersController,
     AdminPromoController,
+    AdminCatalogController,
+    AdminPlansController,
   ],
   providers: [
     AdminService,
@@ -41,6 +47,8 @@ import { AdminService } from './admin.service';
     AdminFinanceService,
     AdminUsersService,
     AdminPromoService,
+    AdminCatalogService,
+    AdminPlansService,
   ],
 })
 export class AdminModule {}

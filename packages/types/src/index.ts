@@ -895,3 +895,216 @@ export interface UpdatePromoCodeRequest {
   maxUses?: number | null;
   expiresAt?: string | null;
 }
+
+// ---------- Admin: catalog & bundles CRUD (E8, RBAC manager+) ----------
+//
+// Managing what the shop sells (docs/13 §5): categories, products, variants
+// (SKUs) with the delivery-kit constructor. Editing a published entity is
+// in-place — orders keep a price/name/type snapshot on OrderItem (E4), so past
+// purchases are unaffected. Removal is archiving (product→hidden, variant→
+// inactive), never a hard delete, to preserve order/stock references and audit.
+
+/** Publication state of a product. */
+export type ProductStatus = 'draft' | 'published' | 'hidden';
+
+/** A localized name/description pair for a catalog entity (EN/RU). */
+export interface TranslationInput {
+  locale: Locale;
+  name: string;
+  description?: string | null;
+}
+
+/** GET /admin/categories — a category with both translations for editing. */
+export interface AdminCategory {
+  id: string;
+  parentId: string | null;
+  slug: string;
+  position: number;
+  /** Name per locale (missing locales fall back to the slug). */
+  names: Record<Locale, string>;
+  /** Products directly in this category (any status). */
+  productCount: number;
+}
+
+/** POST /admin/categories. */
+export interface CreateCategoryRequest {
+  slug: string;
+  parentId?: string | null;
+  position?: number;
+  translations: TranslationInput[];
+}
+
+/** PATCH /admin/categories/:id. */
+export interface UpdateCategoryRequest {
+  slug?: string;
+  parentId?: string | null;
+  position?: number;
+  translations?: TranslationInput[];
+}
+
+/** GET /admin/products — one row in the admin products table. */
+export interface AdminProductListItem {
+  id: string;
+  slug: string;
+  status: ProductStatus;
+  categoryId: string;
+  categorySlug: string;
+  /** Default-locale (EN) name, falling back to the slug. */
+  name: string;
+  variantCount: number;
+  activeVariantCount: number;
+  createdAt: string;
+}
+
+/** A variant (SKU) as the admin edits it — full, incl. bundle spec & plan link. */
+export interface AdminVariant {
+  id: string;
+  productId: string;
+  sku: string;
+  price: Money;
+  currency: string;
+  fulfillmentType: FulfillmentType;
+  /** Derived snapshot of the fulfillment model (auto ⇔ READY_STOCK). */
+  deliveryType: DeliveryType;
+  goal: string | null;
+  tier: string | null;
+  warmingPlanId: string | null;
+  /** Cached ETA — computed from the linked plan for MADE_TO_ORDER. */
+  etaMinutes: number | null;
+  warrantyHours: number | null;
+  bundle: BundleComponent[];
+  stockCount: number;
+  isActive: boolean;
+  /** Variant name per locale (from attributes.name_<locale>). */
+  names: Partial<Record<Locale, string>>;
+  attributes: Record<string, unknown>;
+}
+
+/** GET /admin/products/:id — full product detail for editing. */
+export interface AdminProductDetail {
+  id: string;
+  slug: string;
+  status: ProductStatus;
+  categoryId: string;
+  categorySlug: string;
+  attributes: Record<string, unknown>;
+  translations: TranslationInput[];
+  variants: AdminVariant[];
+  createdAt: string;
+  updatedAt: string;
+}
+
+/** Free-text + status filter for GET /admin/products. */
+export interface AdminProductQuery {
+  status?: ProductStatus;
+  /** Matches slug or a translated name (case-insensitive, contains). */
+  q?: string;
+}
+
+/** POST /admin/products (creates a draft). */
+export interface CreateProductRequest {
+  categoryId: string;
+  slug: string;
+  attributes?: Record<string, unknown>;
+  translations: TranslationInput[];
+}
+
+/** PATCH /admin/products/:id (status transitions validated server-side). */
+export interface UpdateProductRequest {
+  categoryId?: string;
+  slug?: string;
+  status?: ProductStatus;
+  attributes?: Record<string, unknown>;
+  translations?: TranslationInput[];
+}
+
+/** POST /admin/products/:id/variants. */
+export interface CreateVariantRequest {
+  sku: string;
+  price: Money;
+  currency?: string;
+  fulfillmentType: FulfillmentType;
+  goal?: string | null;
+  tier?: string | null;
+  /** Warming plan link (MADE_TO_ORDER); its stages drive etaMinutes. */
+  warmingPlanId?: string | null;
+  /** Manual ETA — used only when no plan is linked. */
+  etaMinutes?: number | null;
+  warrantyHours?: number | null;
+  bundle?: BundleComponent[];
+  names?: Partial<Record<Locale, string>>;
+  isActive?: boolean;
+}
+
+/** PATCH /admin/variants/:id — every field optional (archive via isActive:false). */
+export type UpdateVariantRequest = Partial<CreateVariantRequest>;
+
+// ---------- Admin: warming plans CRUD (E8, RBAC manager+) ----------
+//
+// Authoring warming plans (docs/13 §6): an ordered list of stages (duration,
+// checklist, required components) plus QC rules. Plans are versioned — editing
+// the stages bumps `version` and recomputes linked variants' ETA, while jobs
+// already in flight keep the snapshot they pinned at checkout (docs/15).
+
+/** A plan stage as authored in the editor. */
+export interface WarmingStageInput {
+  name: string;
+  /** Expected duration in minutes — contributes to the plan ETA/SLA. */
+  expectedMinutes: number;
+  checklist?: string[];
+  /** Component kinds this stage prepares (PROXY, OCTO_PROFILE, …). */
+  requiredComponents?: BundleComponentType[];
+}
+
+/** A stored plan stage (input + persisted id/order and normalized arrays). */
+export interface AdminWarmingStage {
+  id: string;
+  order: number;
+  name: string;
+  expectedMinutes: number;
+  checklist: string[];
+  requiredComponents: BundleComponentType[];
+}
+
+/** GET /admin/warming-plans — one row in the plans table. */
+export interface AdminWarmingPlanListItem {
+  id: string;
+  name: string;
+  goal: string;
+  tier: string | null;
+  version: number;
+  isActive: boolean;
+  stageCount: number;
+  /** Sum of stage durations (minutes). */
+  etaMinutes: number;
+  /** Variants currently linked to this plan. */
+  variantCount: number;
+  updatedAt: string;
+}
+
+/** GET /admin/warming-plans/:id — plan with its stages and QC rules. */
+export interface AdminWarmingPlanDetail extends AdminWarmingPlanListItem {
+  qcRules: Record<string, unknown>;
+  stages: AdminWarmingStage[];
+  createdAt: string;
+}
+
+/** POST /admin/warming-plans. */
+export interface CreateWarmingPlanRequest {
+  goal: string;
+  tier?: string | null;
+  name: string;
+  qcRules?: Record<string, unknown>;
+  stages: WarmingStageInput[];
+}
+
+/** PATCH /admin/warming-plans/:id (archive via isActive:false). */
+export interface UpdateWarmingPlanRequest {
+  goal?: string;
+  tier?: string | null;
+  name?: string;
+  isActive?: boolean;
+  qcRules?: Record<string, unknown>;
+  /** When present, replaces the stage list and bumps the plan version. */
+  stages?: WarmingStageInput[];
+}

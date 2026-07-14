@@ -711,6 +711,180 @@ components:
         maxUses: { type: integer, nullable: true }
         expiresAt: { type: string, format: date-time, nullable: true }
 
+    # --- Admin: catalog & bundles CRUD (E8, RBAC manager+) ---
+    TranslationInput:
+      type: object
+      required: [locale, name]
+      properties:
+        locale: { type: string, enum: [en, ru] }
+        name: { type: string }
+        description: { type: string, nullable: true }
+    AdminCategory:
+      type: object
+      properties:
+        id: { type: string, format: uuid }
+        parentId: { type: string, format: uuid, nullable: true }
+        slug: { type: string }
+        position: { type: integer }
+        names: { type: object, additionalProperties: { type: string }, description: '{ en, ru }' }
+        productCount: { type: integer }
+    CreateCategoryRequest:
+      type: object
+      required: [slug, translations]
+      properties:
+        slug: { type: string, description: '2–64 lower-case a-z0-9 with single dashes' }
+        parentId: { type: string, format: uuid, nullable: true }
+        position: { type: integer }
+        translations: { type: array, items: { $ref: '#/components/schemas/TranslationInput' } }
+    UpdateCategoryRequest:
+      type: object
+      properties:
+        slug: { type: string }
+        parentId: { type: string, format: uuid, nullable: true }
+        position: { type: integer }
+        translations: { type: array, items: { $ref: '#/components/schemas/TranslationInput' } }
+    AdminProductListItem:
+      type: object
+      properties:
+        id: { type: string, format: uuid }
+        slug: { type: string }
+        status: { type: string, enum: [draft, published, hidden] }
+        categoryId: { type: string, format: uuid }
+        categorySlug: { type: string }
+        name: { type: string, description: 'default-locale (EN) name' }
+        variantCount: { type: integer }
+        activeVariantCount: { type: integer }
+        createdAt: { type: string, format: date-time }
+    AdminVariant:
+      type: object
+      properties:
+        id: { type: string, format: uuid }
+        productId: { type: string, format: uuid }
+        sku: { type: string }
+        price: { $ref: '#/components/schemas/Money' }
+        currency: { type: string }
+        fulfillmentType: { type: string, enum: [READY_STOCK, MADE_TO_ORDER] }
+        deliveryType: { type: string, enum: [auto, manual] }
+        goal: { type: string, nullable: true }
+        tier: { type: string, nullable: true }
+        warmingPlanId: { type: string, format: uuid, nullable: true }
+        etaMinutes: { type: integer, nullable: true, description: 'derived from the linked plan for MADE_TO_ORDER' }
+        warrantyHours: { type: integer, nullable: true }
+        bundle: { type: array, items: { $ref: '#/components/schemas/BundleComponent' } }
+        stockCount: { type: integer }
+        isActive: { type: boolean }
+        names: { type: object, additionalProperties: { type: string } }
+        attributes: { type: object, additionalProperties: true }
+    AdminProductDetail:
+      type: object
+      properties:
+        id: { type: string, format: uuid }
+        slug: { type: string }
+        status: { type: string, enum: [draft, published, hidden] }
+        categoryId: { type: string, format: uuid }
+        categorySlug: { type: string }
+        attributes: { type: object, additionalProperties: true }
+        translations: { type: array, items: { $ref: '#/components/schemas/TranslationInput' } }
+        variants: { type: array, items: { $ref: '#/components/schemas/AdminVariant' } }
+        createdAt: { type: string, format: date-time }
+        updatedAt: { type: string, format: date-time }
+    CreateProductRequest:
+      type: object
+      required: [categoryId, slug, translations]
+      properties:
+        categoryId: { type: string, format: uuid }
+        slug: { type: string }
+        attributes: { type: object, additionalProperties: true }
+        translations: { type: array, items: { $ref: '#/components/schemas/TranslationInput' } }
+    UpdateProductRequest:
+      type: object
+      description: 'В т.ч. смена status (публикация требует активный вариант и ETA у каждого MADE_TO_ORDER).'
+      properties:
+        categoryId: { type: string, format: uuid }
+        slug: { type: string }
+        status: { type: string, enum: [draft, published, hidden] }
+        attributes: { type: object, additionalProperties: true }
+        translations: { type: array, items: { $ref: '#/components/schemas/TranslationInput' } }
+    CreateVariantRequest:
+      type: object
+      required: [sku, price, fulfillmentType]
+      properties:
+        sku: { type: string, description: '2–64 upper-case A-Z0-9 with single dashes' }
+        price: { type: string, description: 'Decimal >0' }
+        currency: { type: string }
+        fulfillmentType: { type: string, enum: [READY_STOCK, MADE_TO_ORDER] }
+        goal: { type: string, nullable: true }
+        tier: { type: string, nullable: true }
+        warmingPlanId: { type: string, format: uuid, nullable: true, description: 'MADE_TO_ORDER: stages drive etaMinutes' }
+        etaMinutes: { type: integer, nullable: true, description: 'used only when no plan is linked' }
+        warrantyHours: { type: integer, nullable: true }
+        bundle: { type: array, items: { $ref: '#/components/schemas/BundleComponent' } }
+        names: { type: object, additionalProperties: { type: string } }
+        isActive: { type: boolean }
+    UpdateVariantRequest:
+      type: object
+      description: 'Все поля опциональны; архив варианта — isActive:false.'
+      allOf: [{ $ref: '#/components/schemas/CreateVariantRequest' }]
+
+    # --- Admin: warming plans CRUD (E8, RBAC manager+) ---
+    WarmingStageInput:
+      type: object
+      required: [name, expectedMinutes]
+      properties:
+        name: { type: string }
+        expectedMinutes: { type: integer, description: 'вклад в ETA/SLA' }
+        checklist: { type: array, items: { type: string } }
+        requiredComponents: { type: array, items: { type: string, enum: [ACCOUNT, PROXY, OCTO_PROFILE, RECOVERY, SECRETS, GUIDE, WARRANTY] } }
+    AdminWarmingStage:
+      type: object
+      properties:
+        id: { type: string, format: uuid }
+        order: { type: integer }
+        name: { type: string }
+        expectedMinutes: { type: integer }
+        checklist: { type: array, items: { type: string } }
+        requiredComponents: { type: array, items: { type: string } }
+    AdminWarmingPlanListItem:
+      type: object
+      properties:
+        id: { type: string, format: uuid }
+        name: { type: string }
+        goal: { type: string }
+        tier: { type: string, nullable: true }
+        version: { type: integer }
+        isActive: { type: boolean }
+        stageCount: { type: integer }
+        etaMinutes: { type: integer, description: 'сумма длительностей этапов' }
+        variantCount: { type: integer }
+        updatedAt: { type: string, format: date-time }
+    AdminWarmingPlanDetail:
+      allOf:
+        - { $ref: '#/components/schemas/AdminWarmingPlanListItem' }
+        - type: object
+          properties:
+            qcRules: { type: object, additionalProperties: true }
+            stages: { type: array, items: { $ref: '#/components/schemas/AdminWarmingStage' } }
+            createdAt: { type: string, format: date-time }
+    CreateWarmingPlanRequest:
+      type: object
+      required: [goal, name, stages]
+      properties:
+        goal: { type: string }
+        tier: { type: string, nullable: true }
+        name: { type: string }
+        qcRules: { type: object, additionalProperties: true }
+        stages: { type: array, items: { $ref: '#/components/schemas/WarmingStageInput' } }
+    UpdateWarmingPlanRequest:
+      type: object
+      description: 'stages present → replaces the list and bumps version (in-flight jobs keep their snapshot).'
+      properties:
+        goal: { type: string }
+        tier: { type: string, nullable: true }
+        name: { type: string }
+        isActive: { type: boolean }
+        qcRules: { type: object, additionalProperties: true }
+        stages: { type: array, items: { $ref: '#/components/schemas/WarmingStageInput' } }
+
     StockImportRequest:
       type: object
       required: [items]
@@ -1814,6 +1988,136 @@ paths:
         - { name: id, in: path, required: true, schema: { type: string, format: uuid } }
       responses:
         '204': { description: Удалён }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+
+  # --- Catalog & bundles CRUD (E8, RBAC manager+) ---
+  /admin/categories:
+    get:
+      tags: [Admin]
+      summary: Категории (список с переводами) — RBAC manager/admin
+      responses:
+        '200': { description: OK, content: { application/json: { schema: { type: array, items: { $ref: '#/components/schemas/AdminCategory' } } } } }
+        '403': { $ref: '#/components/responses/Forbidden' }
+    post:
+      tags: [Admin]
+      summary: Создать категорию — RBAC manager/admin
+      requestBody: { required: true, content: { application/json: { schema: { $ref: '#/components/schemas/CreateCategoryRequest' } } } }
+      responses:
+        '201': { description: Создана, content: { application/json: { schema: { $ref: '#/components/schemas/AdminCategory' } } } }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '409': { $ref: '#/components/responses/Conflict' }
+  /admin/categories/{id}:
+    patch:
+      tags: [Admin]
+      summary: Изменить категорию — RBAC manager/admin
+      parameters: [{ name: id, in: path, required: true, schema: { type: string, format: uuid } }]
+      requestBody: { required: true, content: { application/json: { schema: { $ref: '#/components/schemas/UpdateCategoryRequest' } } } }
+      responses:
+        '200': { description: OK, content: { application/json: { schema: { $ref: '#/components/schemas/AdminCategory' } } } }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409': { $ref: '#/components/responses/Conflict' }
+  /admin/products:
+    get:
+      tags: [Admin]
+      summary: Товары (все статусы, фильтр status/q) — RBAC manager/admin
+      parameters:
+        - { name: status, in: query, schema: { type: string, enum: [draft, published, hidden] } }
+        - { name: q, in: query, schema: { type: string } }
+      responses:
+        '200': { description: OK, content: { application/json: { schema: { type: array, items: { $ref: '#/components/schemas/AdminProductListItem' } } } } }
+        '403': { $ref: '#/components/responses/Forbidden' }
+    post:
+      tags: [Admin]
+      summary: Создать товар (черновик) — RBAC manager/admin
+      requestBody: { required: true, content: { application/json: { schema: { $ref: '#/components/schemas/CreateProductRequest' } } } }
+      responses:
+        '201': { description: Создан, content: { application/json: { schema: { $ref: '#/components/schemas/AdminProductDetail' } } } }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '409': { $ref: '#/components/responses/Conflict' }
+  /admin/products/{id}:
+    get:
+      tags: [Admin]
+      summary: Товар (детально, с вариантами и bundleSpec) — RBAC manager/admin
+      parameters: [{ name: id, in: path, required: true, schema: { type: string, format: uuid } }]
+      responses:
+        '200': { description: OK, content: { application/json: { schema: { $ref: '#/components/schemas/AdminProductDetail' } } } }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+    patch:
+      tags: [Admin]
+      summary: Изменить товар (в т.ч. публикация/архив) — RBAC manager/admin
+      parameters: [{ name: id, in: path, required: true, schema: { type: string, format: uuid } }]
+      requestBody: { required: true, content: { application/json: { schema: { $ref: '#/components/schemas/UpdateProductRequest' } } } }
+      responses:
+        '200': { description: OK, content: { application/json: { schema: { $ref: '#/components/schemas/AdminProductDetail' } } } }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409': { description: 'Публикация без активного варианта / без ETA у MADE_TO_ORDER, либо дубликат slug' }
+  /admin/products/{id}/variants:
+    post:
+      tags: [Admin]
+      summary: Добавить вариант (SKU) с конструктором комплекта — RBAC manager/admin
+      parameters: [{ name: id, in: path, required: true, schema: { type: string, format: uuid } }]
+      requestBody: { required: true, content: { application/json: { schema: { $ref: '#/components/schemas/CreateVariantRequest' } } } }
+      responses:
+        '201': { description: Создан, content: { application/json: { schema: { $ref: '#/components/schemas/AdminVariant' } } } }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409': { $ref: '#/components/responses/Conflict' }
+  /admin/variants/{id}:
+    patch:
+      tags: [Admin]
+      summary: Изменить вариант (архив — isActive:false; ETA пересчитывается) — RBAC manager/admin
+      parameters: [{ name: id, in: path, required: true, schema: { type: string, format: uuid } }]
+      requestBody: { required: true, content: { application/json: { schema: { $ref: '#/components/schemas/UpdateVariantRequest' } } } }
+      responses:
+        '200': { description: OK, content: { application/json: { schema: { $ref: '#/components/schemas/AdminVariant' } } } }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409': { $ref: '#/components/responses/Conflict' }
+
+  # --- Warming plans CRUD (E8, RBAC manager+) ---
+  /admin/warming-plans:
+    get:
+      tags: [Admin]
+      summary: Планы прогрева (список) — RBAC manager/admin
+      responses:
+        '200': { description: OK, content: { application/json: { schema: { type: array, items: { $ref: '#/components/schemas/AdminWarmingPlanListItem' } } } } }
+        '403': { $ref: '#/components/responses/Forbidden' }
+    post:
+      tags: [Admin]
+      summary: Создать план (goal/tier + этапы) — RBAC manager/admin
+      requestBody: { required: true, content: { application/json: { schema: { $ref: '#/components/schemas/CreateWarmingPlanRequest' } } } }
+      responses:
+        '201': { description: Создан, content: { application/json: { schema: { $ref: '#/components/schemas/AdminWarmingPlanDetail' } } } }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '409': { description: 'План для этого goal/tier уже есть — редактируйте его' }
+  /admin/warming-plans/{id}:
+    get:
+      tags: [Admin]
+      summary: План (детально, с этапами и QC) — RBAC manager/admin
+      parameters: [{ name: id, in: path, required: true, schema: { type: string, format: uuid } }]
+      responses:
+        '200': { description: OK, content: { application/json: { schema: { $ref: '#/components/schemas/AdminWarmingPlanDetail' } } } }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+    patch:
+      tags: [Admin]
+      summary: Изменить план; при передаче stages — bump version + пересчёт ETA вариантов — RBAC manager/admin
+      parameters: [{ name: id, in: path, required: true, schema: { type: string, format: uuid } }]
+      requestBody: { required: true, content: { application/json: { schema: { $ref: '#/components/schemas/UpdateWarmingPlanRequest' } } } }
+      responses:
+        '200': { description: OK, content: { application/json: { schema: { $ref: '#/components/schemas/AdminWarmingPlanDetail' } } } }
+        '400': { $ref: '#/components/responses/BadRequest' }
         '403': { $ref: '#/components/responses/Forbidden' }
         '404': { $ref: '#/components/responses/NotFound' }
 

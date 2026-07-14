@@ -3,6 +3,7 @@ import type {
   OctoProfileStatus,
   OrderItemDeliveryStatus,
   OrderStatus,
+  ProductStatus,
   ProxyStatus,
   Role,
   UserStatus,
@@ -120,4 +121,19 @@ const ROLE_STYLE: Record<Role, string> = {
 export function RoleBadge({ role }: { role: Role }) {
   const { t } = useTranslation();
   return <span className={`${PILL} ${ROLE_STYLE[role]}`}>{t(`admin.roles.${role}`)}</span>;
+}
+
+const PRODUCT_STATUS: Record<ProductStatus, string> = {
+  draft: 'bg-surface-2 text-text-lo',
+  published: 'bg-[rgba(43,217,166,0.14)] text-success',
+  hidden: 'bg-[rgba(245,183,64,0.14)] text-warning',
+};
+
+export function ProductStatusBadge({ status }: { status: ProductStatus }) {
+  const { t } = useTranslation();
+  return (
+    <span className={`${PILL} ${PRODUCT_STATUS[status]}`}>
+      {t(`admin.productStatuses.${status}`)}
+    </span>
+  );
 }
