@@ -4,6 +4,8 @@ import type {
   OrderItemDeliveryStatus,
   OrderStatus,
   ProxyStatus,
+  Role,
+  UserStatus,
   WarmingJobStatus,
 } from '@advault/types';
 
@@ -93,4 +95,29 @@ export function OctoStatusBadge({ status }: { status: OctoProfileStatus }) {
   return (
     <span className={`${PILL} ${OCTO_STATUS[status]}`}>{t(`admin.octoStatuses.${status}`)}</span>
   );
+}
+
+const USER_STATUS: Record<UserStatus, string> = {
+  active: 'bg-[rgba(43,217,166,0.14)] text-success',
+  blocked: 'bg-[rgba(255,77,109,0.14)] text-danger',
+};
+
+export function UserStatusBadge({ status }: { status: UserStatus }) {
+  const { t } = useTranslation();
+  return (
+    <span className={`${PILL} ${USER_STATUS[status]}`}>{t(`admin.userStatuses.${status}`)}</span>
+  );
+}
+
+const ROLE_STYLE: Record<Role, string> = {
+  user: 'bg-surface-2 text-text-lo',
+  support: 'bg-[rgba(34,211,238,0.14)] text-beam',
+  operator: 'bg-[rgba(124,125,250,0.16)] text-volt-400',
+  manager: 'bg-[rgba(245,183,64,0.14)] text-warning',
+  admin: 'bg-[rgba(43,217,166,0.14)] text-success',
+};
+
+export function RoleBadge({ role }: { role: Role }) {
+  const { t } = useTranslation();
+  return <span className={`${PILL} ${ROLE_STYLE[role]}`}>{t(`admin.roles.${role}`)}</span>;
 }

@@ -18,6 +18,9 @@ const NAV: NavItem[] = [
   { to: '/admin/warming', labelKey: 'admin.nav.warming', icon: 'spark' },
   { to: '/admin/inventory', labelKey: 'admin.nav.inventory', icon: 'shield' },
   { to: '/admin/stock', labelKey: 'admin.nav.stock', icon: 'briefcase' },
+  { to: '/admin/users', labelKey: 'admin.nav.users', icon: 'user' },
+  { to: '/admin/finance', labelKey: 'admin.nav.finance', icon: 'wallet' },
+  { to: '/admin/promo', labelKey: 'admin.nav.promo', icon: 'tag' },
 ];
 
 /** Operator/admin shell (docs/13): fixed sidebar + content outlet, own chrome. */

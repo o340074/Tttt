@@ -195,11 +195,17 @@ export class FakeUserStore {
     return Promise.resolve(rows.map((r) => this.decorate(r, args.include)));
   }
 
-  count({ where }: { where?: { status?: DbUser['status']; role?: DbUser['role']; email?: { contains: string } } } = {}): Promise<number> {
+  count({
+    where,
+  }: {
+    where?: { status?: DbUser['status']; role?: DbUser['role']; email?: { contains: string } };
+  } = {}): Promise<number> {
     return Promise.resolve(this.rows.filter((r) => this.matches(r, where)).length);
   }
 
-  aggregate(args: { _sum: { balance: true } }): Promise<{ _sum: { balance: Prisma.Decimal | null } }> {
+  aggregate(args: {
+    _sum: { balance: true };
+  }): Promise<{ _sum: { balance: Prisma.Decimal | null } }> {
     void args;
     if (this.rows.length === 0) return Promise.resolve({ _sum: { balance: null } });
     const sum = this.rows.reduce((acc, r) => acc.plus(r.balance), new Prisma.Decimal(0));
@@ -450,16 +456,21 @@ export class FakeLedgerStore {
   }
 
   /** Finance summary groups sums by (direction, refType). */
-  groupBy(args: {
-    by: ['direction', 'refType'];
-    _sum: { amount: true };
-  }): Promise<
-    { direction: DbLedgerEntry['direction']; refType: DbLedgerEntry['refType']; _sum: { amount: Prisma.Decimal | null } }[]
+  groupBy(args: { by: ['direction', 'refType']; _sum: { amount: true } }): Promise<
+    {
+      direction: DbLedgerEntry['direction'];
+      refType: DbLedgerEntry['refType'];
+      _sum: { amount: Prisma.Decimal | null };
+    }[]
   > {
     void args;
     const groups = new Map<
       string,
-      { direction: DbLedgerEntry['direction']; refType: DbLedgerEntry['refType']; sum: Prisma.Decimal }
+      {
+        direction: DbLedgerEntry['direction'];
+        refType: DbLedgerEntry['refType'];
+        sum: Prisma.Decimal;
+      }
     >();
     for (const row of this.rows) {
       const key = `${row.direction}\n${row.refType}`;

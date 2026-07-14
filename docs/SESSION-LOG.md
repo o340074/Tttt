@@ -8,13 +8,14 @@
 ## 📍 Текущий статус
 
 - **Фаза:** разработка. E0…E7 готовы и проверены end-to-end. **E8 (админка/операторка)
-  — в работе**: сделан вертикальный срез Orders + Warming-workspace + Inventory-UI
-  (см. запись ниже). Осталось для E8: Catalog/Promo/Users CRUD, Finance/Tickets/Reports/
-  Settings, ручная выдача/refund из UI.
-- **Следующий шаг:** **E8-cont** (остальные модули админки), затем **E9 — Поддержка и
-  уведомления** (см. `docs/16-development-plan.md`).
-- **Ветка:** актуальная база — `claude/advault-e8-admin-panel-s4ia8e` (E0…E7 + срез E8;
-  ветка E8 фаст-форворднута на код E7 и продолжена). В main код ещё не влит.
+  — в работе**: сделаны Orders + Warming-workspace + Inventory-UI (часть 1) и
+  **Finance (ручной refund + ручная выдача + сверка ledger) + Users (список/блок/роль) +
+  Promo CRUD (часть 2)**. Осталось для E8: Catalog & Bundles CRUD + Warming plans CRUD
+  (+конструктор комплекта/версии), Tickets, Reports/Dashboard, Staff&roles UI, Settings.
+- **Следующий шаг:** **E8-cont2** — Catalog/Bundles + Warming-plans CRUD (ядро «управлять
+  каталогом/прогревом из UI»), затем остальное E8 и **E9 — Поддержка и уведомления**.
+- **Ветка:** актуальная база — `claude/advault-e8-admin-continuation-flz7jy` (E0…E7 +
+  E8 части 1–2; фаст-форворднута с `…e8-admin-panel-s4ia8e`). В main код ещё не влит.
 - **Прогресс по эпикам (из `docs/16`):**
 
 | Эпик | Название | Статус |
@@ -28,7 +29,7 @@
 | E5 | Выдача из стока (READY_STOCK) | ✅ готово |
 | E6 | Прогрев: модель и очередь | ✅ готово |
 | E7 | Инвентарь: прокси и Octo-профили | ✅ готово |
-| E8 | Полная админка / операторка | 🟡 в работе (Orders+Warming+Inventory-UI) |
+| E8 | Полная админка / операторка | 🟡 в работе (Orders+Warming+Inventory + Finance/Users/Promo) |
 | E9 | Поддержка и уведомления | ⬜ |
 | E10 | Гарантии, замены, возвраты | ⬜ |
 | E11 | Полировка, безопасность, запуск | ⬜ |
@@ -38,6 +39,79 @@
 ---
 
 ## Записи
+
+### Сессия — Админка: Finance (refund + ручная выдача) + Users + Promo (эпик E8, часть 2)
+- **Развилки (asking):** объём — **Finance + Users + Promo** (Catalog/Bundles + Warming-plans
+  CRUD отложены в E8-cont2); модель ролей — **остаёмся на `User.role`** (StaffUser не вводим);
+  политика возврата — **полный ИЛИ частичный по позиции**, refund warm-позиции → её WarmingJob=
+  refunded, ручная выдача помечает позицию delivered.
+- **RBAC (группы в `auth/roles.ts`):** добавлены `FINANCE_STAFF` (manager/admin) и `ADMIN_ONLY`.
+  Refund/ручная выдача/promo/finance-summary — `FINANCE_STAFF`; users list/detail — `ORDERS_STAFF`
+  (support читает); block/unblock — `ELEVATED`; смена роли — `ADMIN_ONLY` (менеджер не эскалирует
+  до admin). Никаких новых миграций — модели переиспользованы (User/Order/OrderItem/Delivery/
+  Ledger/PromoCode/AuditLog).
+- **API (контракты вперёд):** `docs/backend/openapi.md` — уточнены `RefundRequest`
+  (orderItemId?+reason) и `ManualDeliverRequest` (+note); новые схемы `RefundResult`,
+  `FinanceSummary`, `AdminUserListItem/Detail`, `Block/UpdateUserRole`, `AdminPromoCode`,
+  `Create/UpdatePromoCodeRequest`; новые пути `/admin/orders/:id/refund` (200→RefundResult,
+  идемпотентно), `…/items/:itemId/deliver` (200→AdminOrderDetail, warm→409),
+  `/admin/finance/summary`, `/admin/users(+:id/block/unblock/role)`, `/admin/promo-codes` CRUD.
+  Типы отзеркалены в `@advault/types`. `prisma-schema.md` — заметка «E8-cont без моделей».
+  Модуль `admin/`: `AdminFinanceService` (refund per-orderItem ledger-credit exactly-once,
+  warm-job→refunded, пересчёт статуса заказа, idempotency; ручная выдача — шифрование payload
+  как E5, warm/delivered/refunded→409; finance summary через `groupBy` ledger + `aggregate`
+  balance, `reconciled`), `AdminUsersService` (list/фильтры, карточка с order-count + ledger-
+  сверкой, block→`revokeAllSessions`, роль→admin-only, self-guards, before→after аудит),
+  `AdminPromoService` (CRUD, upper-case+уникальность кода, percent 1–100/fixed>0, delete через
+  SetNull). Всё пишет `AuditLog` (без секретов). Контроллеры под своими RBAC-группами.
+- **Web:** новые хуки `features/admin/api.ts` (finance/users/promo, refund с Idempotency-Key,
+  инвалидация). Страницы: **Finance** (карточка сверки reconciled/discrepancy + плитки топапы/
+  оплаты/возвраты/корректировки/кол-ва); **Users** (таблица + поиск + фильтры статус/роль +
+  пагинация) и **деталь** (профиль, баланс+ledger-сверка, последние заказы, block/unblock,
+  смена роли — только admin, danger-confirm + причина); **Promo** (таблица + форма создания
+  percent/fixed с лимитами/сроком + delete-confirm). В `AdminOrderDetailPage` — блок действий:
+  refund всего заказа и по позиции + ручная выдача не-warm позиции (textarea payload+note),
+  danger-confirm. Бейджи `RoleBadge`/`UserStatusBadge`; нав пополнен (Users/Finance/Promo);
+  i18n EN/RU (блоки `admin.finance/users/promo/roles/userStatuses` + действия orders);
+  loading/empty/error; иконки из спрайта (без эмодзи). `Banner` получил опц. `className`.
+- **Тесты (+29, всего api 212 / web 2):** unit `AdminFinanceService` (single/full refund,
+  двойной refund→409, warm-job→refunded, идемпотентный replay без двойного кредита,
+  «нечего возвращать»→409, ручная выдача: шифрование+delivered+без секрета в аудите,
+  warm→409, delivered→409, 404); unit `AdminUsersService` (фильтр-поиск, карточка+ledger-
+  сверка, block+revoke+аудит, self-block/ self-role guard, 409 already-blocked, role change
+  before→after); unit `AdminPromoService` (create upper-case/аудит, percent>100/≤0/битый код
+  →400, dup→409, update+ре-валидация по типу, delete+404); e2e `admin-finance.e2e`
+  (RBAC: buyer 403 везде, support 403 на finance/promo/refund но 200 на users; users list+
+  block; promo CRUD; full-order refund с ledger-кредитом + идемпотентный replay). Фейки
+  расширены: ledger `groupBy`/`count` по direction+refType, user `findMany/count/aggregate`+
+  order-count/recent, orderItem.findFirst attaches warmingJob, promo `findMany/update/delete`.
+  **Багфикс:** аудит before→after брал роль/статус из живого ряда fake (алиасинг) → снимок
+  `previous*` до мутации (корректно и для реальной Prisma).
+- **Проверено вживую:** локальные Postgres 16 + Redis + собранный API; `migrate deploy` всех
+  8 миграций (новых нет) + сидер. curl под ролями admin/support/user: RBAC (buyer→403,
+  support→403 finance/промо но 200 users); полный цикл денег — топап вебхуком → баланс 100 →
+  покупка стока (−48=52) → **admin refund** (баланс→100, order=refunded, **ровно 1** ledger-
+  credit refund) → **идемпотентный replay** тем же ключом (баланс не задвоился); finance-
+  summary reconciled (ledger=cached=100, refunds=48, refundCount=1); promo create(SMOKE20)/
+  percent>100=400/dup=409/support=403/delete=204; users block (заблокированный buyer→`/me`=403,
+  сессии отозваны)/роль→manager/unblock; ручная выдача на refunded-позицию=409; аудит содержит
+  order.refund/user.block/unblock/role_change/promo.create/delete, **без секретов в diff**.
+  lint/format/typecheck/тесты(212+2)/build зелёные.
+- **Решения:** refund — всегда per-orderItem ledger-кредиты (ключ refId=orderItemId) →
+  «весь заказ» = сумма ещё-не-возвращённых позиций; так возврат композится с warming-refund
+  (E6) и защищён от двойного проведения; сумма = line subtotal (аллокация скидки — E10);
+  ручная выдача — только для не-warm (warm идёт через workspace); смена роли/блокировка →
+  отзыв refresh-сессий; finance-summary — read-only сверка (глобальная), без пер-юзерного
+  пересчёта в фоне; StaffUser по-прежнему отложен.
+- **Проблемы/долги (в E8-cont2):** Catalog & Bundles CRUD + конструктор комплекта и Warming-
+  plans CRUD (+версии) — не сделаны (следующая под-сессия, ядро «управлять магазином/прогревом
+  из UI»); Tickets, Reports/Dashboard, Staff&roles UI, Settings — не сделаны; inline-edit
+  промокода (PATCH-хук есть, UI формы правки нет); частичный refund по нескольким конкретным
+  позициям за один вызов не поддержан (одна позиция или весь заказ); браузерный скрин админки
+  не снимался (проверено curl под ролями + build/typecheck); долги E7 (expired-прокси по TTL,
+  политика ресурсов на reassign) по-прежнему открыты.
+- **Дальше:** **E8-cont2** — Catalog/Bundles + Warming-plans CRUD (промт в
+  `docs/NEXT-SESSION-PROMPT.md`), затем остальное E8 и **E9**.
 
 ### Сессия — Админка/операторка: срез Orders + Warming-workspace + Inventory (эпик E8, часть 1)
 - **Развилки (asking):** объём сессии — **Orders + Warming + Inventory** (как «начни с

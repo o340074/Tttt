@@ -62,9 +62,9 @@ describe('AdminPromoService (E8 promo CRUD)', () => {
 
     // Switching a >100 fixed value to percent must fail.
     await promo.update(adminId, created.id, { value: '120' });
-    await expect(
-      promo.update(adminId, created.id, { type: 'percent' }),
-    ).rejects.toMatchObject({ code: 'VALIDATION_ERROR' });
+    await expect(promo.update(adminId, created.id, { type: 'percent' })).rejects.toMatchObject({
+      code: 'VALIDATION_ERROR',
+    });
   });
 
   it('deletes a code (audited) and 404s afterwards', async () => {

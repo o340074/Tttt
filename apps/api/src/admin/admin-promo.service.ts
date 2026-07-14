@@ -60,11 +60,7 @@ export class AdminPromoService {
     }
   }
 
-  async update(
-    actorId: string,
-    id: string,
-    body: UpdatePromoCodeRequest,
-  ): Promise<AdminPromoCode> {
+  async update(actorId: string, id: string, body: UpdatePromoCodeRequest): Promise<AdminPromoCode> {
     const existing = await this.prisma.promoCode.findUnique({ where: { id } });
     if (!existing) throw new ApiException('NOT_FOUND', 'Promo code not found', 404);
 

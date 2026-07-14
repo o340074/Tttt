@@ -595,16 +595,121 @@ components:
       type: object
       required: [payload]
       properties:
-        payload: { type: string, description: Секретные данные к выдаче; шифруются на сервере }
+        payload: { type: string, description: Секретные данные к выдаче; шифруются на сервере (AES-256-GCM, только владелец расшифрует) }
+        note: { type: string, description: Необязательная непарольная заметка в аудит }
 
     RefundRequest:
       type: object
       required: [reason]
+      description: >
+        Возврат позиции (если задан orderItemId) или всех ещё не возвращённых
+        позиций заказа. Каждая позиция кредитуется один раз (ledger unique по
+        orderItemId), warm-позиция → её WarmingJob=refunded, статус заказа
+        пересчитывается. Возврат = line subtotal (unitPrice×qty), аллокация
+        скидки отложена (E10).
       properties:
+        orderItemId: { type: string, format: uuid, description: Вернуть одну позицию; без него — весь заказ }
+        reason: { type: string, description: Обязательная причина (в аудит) }
+
+    RefundResult:
+      type: object
+      required: [orderId, status, refundedItemIds, amount, currency]
+      properties:
+        orderId: { type: string, format: uuid }
+        status: { type: string, enum: [pending, paid, partially_delivered, delivered, cancelled, refunded] }
+        refundedItemIds: { type: array, items: { type: string, format: uuid } }
+        amount: { $ref: '#/components/schemas/Money' }
+        currency: { type: string }
+
+    FinanceSummary:
+      type: object
+      description: Сверка ledger и денежные сводки (docs/13 §11). reconciled = ledgerBalance == cachedBalance.
+      properties:
+        currency: { type: string }
+        topUps: { $ref: '#/components/schemas/Money' }
+        orderSpend: { $ref: '#/components/schemas/Money' }
+        refunds: { $ref: '#/components/schemas/Money' }
+        adjustments: { $ref: '#/components/schemas/Money' }
+        ledgerBalance: { $ref: '#/components/schemas/Money' }
+        cachedBalance: { $ref: '#/components/schemas/Money' }
+        reconciled: { type: boolean }
+        orderCount: { type: integer }
+        refundCount: { type: integer }
+
+    AdminUserListItem:
+      type: object
+      description: Строка таблицы пользователей (docs/13 §10). Без секретов.
+      properties:
+        id: { type: string, format: uuid }
+        email: { type: string }
+        role: { type: string, enum: [user, support, operator, manager, admin] }
+        status: { type: string, enum: [active, blocked] }
+        balance: { $ref: '#/components/schemas/Money' }
+        currency: { type: string }
+        orderCount: { type: integer }
+        emailVerifiedAt: { type: string, format: date-time, nullable: true }
+        createdAt: { type: string, format: date-time }
+
+    AdminUserDetail:
+      allOf:
+        - $ref: '#/components/schemas/AdminUserListItem'
+        - type: object
+          properties:
+            ledgerBalance: { $ref: '#/components/schemas/Money' }
+            recentOrders:
+              type: array
+              items:
+                type: object
+                properties:
+                  id: { type: string, format: uuid }
+                  number: { type: string }
+                  status: { type: string }
+                  total: { $ref: '#/components/schemas/Money' }
+                  createdAt: { type: string, format: date-time }
+
+    BlockUserRequest:
+      type: object
+      required: [reason]
+      properties:
+        reason: { type: string, description: Обязательная причина (в аудит); блокировка отзывает сессии }
+
+    UpdateUserRoleRequest:
+      type: object
+      required: [role]
+      properties:
+        role: { type: string, enum: [user, support, operator, manager, admin] }
         reason: { type: string }
-        amount:
-          $ref: '#/components/schemas/Money'
-          # необязательно; по умолчанию полный возврат заказа
+
+    AdminPromoCode:
+      type: object
+      properties:
+        id: { type: string, format: uuid }
+        code: { type: string }
+        type: { type: string, enum: [percent, fixed] }
+        value: { $ref: '#/components/schemas/Money' }
+        maxUses: { type: integer, nullable: true }
+        usedCount: { type: integer }
+        expiresAt: { type: string, format: date-time, nullable: true }
+        createdAt: { type: string, format: date-time }
+
+    CreatePromoCodeRequest:
+      type: object
+      required: [code, type, value]
+      properties:
+        code: { type: string, description: '3–32 символа A–Z 0–9 _ - (приводится к upper-case, уникален)' }
+        type: { type: string, enum: [percent, fixed] }
+        value: { type: string, description: 'percent 1–100, fixed >0' }
+        maxUses: { type: integer, nullable: true }
+        expiresAt: { type: string, format: date-time, nullable: true }
+
+    UpdatePromoCodeRequest:
+      type: object
+      description: code неизменяем (это ключ погашения).
+      properties:
+        type: { type: string, enum: [percent, fixed] }
+        value: { type: string }
+        maxUses: { type: integer, nullable: true }
+        expiresAt: { type: string, format: date-time, nullable: true }
 
     StockImportRequest:
       type: object
@@ -1542,8 +1647,12 @@ paths:
   /admin/orders/{id}/items/{itemId}/deliver:
     post:
       tags: [Admin]
-      summary: Ручная выдача (внести payload)
-      description: Создаёт Delivery(type=manual), OrderItem.deliveryStatus=delivered, шифрует payload, пишет AuditLog.
+      summary: Ручная выдача (внести payload) — RBAC manager/admin
+      description: >
+        Для не-warm позиций (warm выдаются из warming-workspace → 409).
+        Создаёт Delivery(type=manual), OrderItem.deliveryStatus=delivered,
+        шифрует payload (только владелец расшифрует), пересчитывает статус
+        заказа, пишет AuditLog (без секрета). Возвращает обновлённый AdminOrderDetail.
       parameters:
         - { name: id, in: path, required: true, schema: { type: string, format: uuid } }
         - { name: itemId, in: path, required: true, schema: { type: string, format: uuid } }
@@ -1553,15 +1662,20 @@ paths:
           application/json:
             schema: { $ref: '#/components/schemas/ManualDeliverRequest' }
       responses:
-        '200': { description: Выдано }
+        '200': { description: Выдано, content: { application/json: { schema: { $ref: '#/components/schemas/AdminOrderDetail' } } } }
         '403': { $ref: '#/components/responses/Forbidden' }
         '404': { $ref: '#/components/responses/NotFound' }
+        '409': { $ref: '#/components/responses/Conflict' }
 
   /admin/orders/{id}/refund:
     post:
       tags: [Admin]
-      summary: Возврат средств (ledger credit + статус refunded)
-      description: В транзакции — LedgerEntry(credit, refType=refund) + User.balance += amount + Order.status=refunded. Пишет AuditLog.
+      summary: Возврат средств (ledger credit + статус refunded) — RBAC manager/admin
+      description: >
+        Идемпотентно (Idempotency-Key). В транзакции по каждой возвращаемой
+        позиции — LedgerEntry(credit, refType=refund, refId=orderItemId) +
+        User.balance += amount; warm-позиция → WarmingJob=refunded; статус
+        заказа пересчитывается. Пишет AuditLog.
       parameters:
         - { name: id, in: path, required: true, schema: { type: string, format: uuid } }
         - $ref: '#/components/parameters/IdempotencyKey'
@@ -1571,9 +1685,137 @@ paths:
           application/json:
             schema: { $ref: '#/components/schemas/RefundRequest' }
       responses:
-        '200': { description: Возврат проведён }
+        '200': { description: Возврат проведён, content: { application/json: { schema: { $ref: '#/components/schemas/RefundResult' } } } }
         '403': { $ref: '#/components/responses/Forbidden' }
         '409': { $ref: '#/components/responses/Conflict' }
+
+  /admin/finance/summary:
+    get:
+      tags: [Admin]
+      summary: Финансовая сводка + сверка ledger — RBAC manager/admin
+      responses:
+        '200': { description: OK, content: { application/json: { schema: { $ref: '#/components/schemas/FinanceSummary' } } } }
+        '403': { $ref: '#/components/responses/Forbidden' }
+
+  /admin/users:
+    get:
+      tags: [Admin]
+      summary: Пользователи (список/поиск) — RBAC support/operator/manager/admin
+      parameters:
+        - $ref: '#/components/parameters/Page'
+        - $ref: '#/components/parameters/Limit'
+        - { name: q, in: query, schema: { type: string }, description: 'contains по email' }
+        - { name: status, in: query, schema: { type: string, enum: [active, blocked] } }
+        - { name: role, in: query, schema: { type: string, enum: [user, support, operator, manager, admin] } }
+      responses:
+        '200':
+          description: Пагинированный список AdminUserListItem
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data: { type: array, items: { $ref: '#/components/schemas/AdminUserListItem' } }
+                  meta: { $ref: '#/components/schemas/PageMeta' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+
+  /admin/users/{id}:
+    get:
+      tags: [Admin]
+      summary: Карточка пользователя (заказы, ledger-сверка) — RBAC support+
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: string, format: uuid } }
+      responses:
+        '200': { description: OK, content: { application/json: { schema: { $ref: '#/components/schemas/AdminUserDetail' } } } }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+
+  /admin/users/{id}/block:
+    post:
+      tags: [Admin]
+      summary: Заблокировать (отзыв сессий + аудит) — RBAC manager/admin
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: string, format: uuid } }
+      requestBody:
+        required: true
+        content: { application/json: { schema: { $ref: '#/components/schemas/BlockUserRequest' } } }
+      responses:
+        '200': { description: OK, content: { application/json: { schema: { $ref: '#/components/schemas/AdminUserDetail' } } } }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '409': { $ref: '#/components/responses/Conflict' }
+
+  /admin/users/{id}/unblock:
+    post:
+      tags: [Admin]
+      summary: Разблокировать — RBAC manager/admin
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: string, format: uuid } }
+      requestBody:
+        required: true
+        content: { application/json: { schema: { $ref: '#/components/schemas/BlockUserRequest' } } }
+      responses:
+        '200': { description: OK, content: { application/json: { schema: { $ref: '#/components/schemas/AdminUserDetail' } } } }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '409': { $ref: '#/components/responses/Conflict' }
+
+  /admin/users/{id}/role:
+    patch:
+      tags: [Admin]
+      summary: Сменить роль — RBAC admin ONLY (менеджер не эскалирует до admin)
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: string, format: uuid } }
+      requestBody:
+        required: true
+        content: { application/json: { schema: { $ref: '#/components/schemas/UpdateUserRoleRequest' } } }
+      responses:
+        '200': { description: OK, content: { application/json: { schema: { $ref: '#/components/schemas/AdminUserDetail' } } } }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '409': { $ref: '#/components/responses/Conflict' }
+
+  /admin/promo-codes:
+    get:
+      tags: [Admin]
+      summary: Промокоды (список) — RBAC manager/admin
+      responses:
+        '200': { description: OK, content: { application/json: { schema: { type: array, items: { $ref: '#/components/schemas/AdminPromoCode' } } } } }
+        '403': { $ref: '#/components/responses/Forbidden' }
+    post:
+      tags: [Admin]
+      summary: Создать промокод — RBAC manager/admin
+      requestBody:
+        required: true
+        content: { application/json: { schema: { $ref: '#/components/schemas/CreatePromoCodeRequest' } } }
+      responses:
+        '201': { description: Создан, content: { application/json: { schema: { $ref: '#/components/schemas/AdminPromoCode' } } } }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '409': { $ref: '#/components/responses/Conflict' }
+
+  /admin/promo-codes/{id}:
+    patch:
+      tags: [Admin]
+      summary: Изменить промокод (code неизменяем) — RBAC manager/admin
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: string, format: uuid } }
+      requestBody:
+        required: true
+        content: { application/json: { schema: { $ref: '#/components/schemas/UpdatePromoCodeRequest' } } }
+      responses:
+        '200': { description: OK, content: { application/json: { schema: { $ref: '#/components/schemas/AdminPromoCode' } } } }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+    delete:
+      tags: [Admin]
+      summary: Удалить промокод (заказы продолжают работать) — RBAC manager/admin
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: string, format: uuid } }
+      responses:
+        '204': { description: Удалён }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
 
   /admin/warming/jobs:
     get:

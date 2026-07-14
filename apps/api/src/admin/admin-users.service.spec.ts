@@ -19,7 +19,9 @@ describe('AdminUsersService (E8 users)', () => {
   let revokeAllSessions: ReturnType<typeof vi.fn>;
   let adminId: string;
 
-  const seedUser = (over: Partial<{ role: Role; status: UserStatus; balance: string; email: string }> = {}): string => {
+  const seedUser = (
+    over: Partial<{ role: Role; status: UserStatus; balance: string; email: string }> = {},
+  ): string => {
     const id = randomUUID();
     prisma.user.rows.push({
       id,

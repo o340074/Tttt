@@ -4,9 +4,13 @@ import { AppLayout } from './components/layout/AppLayout';
 import { AuthLayout } from './features/auth/AuthLayout';
 import { RequireStaff } from './features/admin/RequireStaff';
 import { RedirectIfAuthed, RequireAuth } from './features/auth/guards';
+import { AdminFinancePage } from './pages/admin/AdminFinancePage';
 import { AdminOrderDetailPage } from './pages/admin/AdminOrderDetailPage';
 import { AdminOrdersPage } from './pages/admin/AdminOrdersPage';
+import { AdminPromoPage } from './pages/admin/AdminPromoPage';
 import { AdminStockPage } from './pages/admin/AdminStockPage';
+import { AdminUserDetailPage } from './pages/admin/AdminUserDetailPage';
+import { AdminUsersPage } from './pages/admin/AdminUsersPage';
 import { InventoryPage } from './pages/admin/InventoryPage';
 import { WarmingBoardPage } from './pages/admin/WarmingBoardPage';
 import { WarmingJobPage } from './pages/admin/WarmingJobPage';
@@ -51,6 +55,10 @@ export function App() {
           <Route path="warming/:id" element={<WarmingJobPage />} />
           <Route path="inventory" element={<InventoryPage />} />
           <Route path="stock" element={<AdminStockPage />} />
+          <Route path="users" element={<AdminUsersPage />} />
+          <Route path="users/:id" element={<AdminUserDetailPage />} />
+          <Route path="finance" element={<AdminFinancePage />} />
+          <Route path="promo" element={<AdminPromoPage />} />
         </Route>
       </Route>
 

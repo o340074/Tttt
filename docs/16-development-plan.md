@@ -121,10 +121,14 @@
 > **Сделано (часть 1):** RBAC-роли operator/manager (аддитивно на User.role), admin
 > Orders (таблица+деталь), Warming Kanban + operator workspace (assign/переходы/чек-лист/
 > захват аккаунта/resolve + bind прокси/Octo из E7), Inventory-UI (прокси/Octo:
-> список/создание/импорт), admin Stock read. Проверено вживую end-to-end под ролью
-> operator. **Осталось:** Catalog/Bundles CRUD, Warming plans CRUD, Promo CRUD, Users,
-> Finance, Tickets, Reports, Staff&roles UI, Settings, ручная выдача/refund из UI,
-> real-time очередей.
+> список/создание/импорт), admin Stock read.
+> **Сделано (часть 2):** Finance — ручной refund (идемпотентный ledger-credit per-orderItem,
+> warm-job→refunded, сверка ledger) + ручная выдача (шифрование payload); Users —
+> список/поиск/фильтры, карточка с ledger-сверкой, block (отзыв сессий)/смена роли
+> (admin-only) с аудитом; Promo CRUD. Всё под RBAC (FINANCE_STAFF/ELEVATED/ADMIN_ONLY),
+> danger-confirm + AuditLog. Проверено вживую end-to-end под ролями admin/support/user.
+> **Осталось:** Catalog/Bundles CRUD (+конструктор комплекта), Warming plans CRUD (+версии),
+> Tickets, Reports/Dashboard, Staff&roles UI, Settings, inline-edit промо, real-time очередей.
 - RBAC (Owner/Admin/Manager/Operator/Support), StaffUser, гварды, аудит-лог.
 - Модули (см. [13](./13-admin-panel-spec.md)): Dashboard, Orders, **Warming Kanban**,
   **Operator workspace** (чек-листы этапов, привязка ресурсов, сборка Bundle),

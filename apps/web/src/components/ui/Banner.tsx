@@ -5,6 +5,8 @@ import type { IconName } from './Icon';
 interface BannerProps {
   tone: 'error' | 'info' | 'success';
   children: ReactNode;
+  /** Extra classes (e.g. spacing overrides). */
+  className?: string;
 }
 
 const TONES: Record<BannerProps['tone'], { icon: IconName; className: string }> = {
@@ -23,12 +25,12 @@ const TONES: Record<BannerProps['tone'], { icon: IconName; className: string }> 
 };
 
 /** Form-level message (invalid credentials, reset link sent, …). */
-export function Banner({ tone, children }: BannerProps) {
-  const { icon, className } = TONES[tone];
+export function Banner({ tone, children, className = '' }: BannerProps) {
+  const { icon, className: toneClass } = TONES[tone];
   return (
     <div
       role="alert"
-      className={`fade-up mb-4 flex items-center gap-2.5 rounded-md border px-3.5 py-3 text-[13.5px] ${className}`}
+      className={`fade-up mb-4 flex items-center gap-2.5 rounded-md border px-3.5 py-3 text-[13.5px] ${toneClass} ${className}`}
     >
       <Icon name={icon} className="text-[13px]" />
       <span>{children}</span>

@@ -6,12 +6,18 @@ import { isStaffRole } from '@advault/types';
 import type {
   AdminOrderDetail,
   AdminOrderListItem,
+  AdminPromoCode,
   AdminStockRow,
+  AdminUserDetail,
+  AdminUserListItem,
   BindOctoProfileRequest,
   BindProxyRequest,
   CreateOctoProfileRequest,
+  CreatePromoCodeRequest,
   CreateProxyRequest,
+  FinanceSummary,
   JobInventory,
+  ManualDeliverRequest,
   OctoProfileView,
   OctoProfileStatus,
   OrderStatus,
@@ -19,6 +25,11 @@ import type {
   ProxyImportReport,
   ProxyItemView,
   ProxyStatus,
+  RefundRequest,
+  RefundResult,
+  Role,
+  UpdatePromoCodeRequest,
+  UserStatus,
   WarmingJobAction,
   WarmingJobDetail,
   WarmingJobStatus,
@@ -65,6 +76,149 @@ export function useAdminOrder(id: string | undefined) {
     queryKey: ['admin', 'order', id, locale],
     queryFn: () => apiFetch<AdminOrderDetail>(`/admin/orders/${id}?locale=${locale}`),
     enabled: Boolean(id),
+  });
+}
+
+/** Invalidates an order's detail + the list + the finance summary after a mutation. */
+function useOrderInvalidation(id: string | undefined) {
+  const queryClient = useQueryClient();
+  return () => {
+    void queryClient.invalidateQueries({ queryKey: ['admin', 'order', id] });
+    void queryClient.invalidateQueries({ queryKey: ['admin', 'orders'] });
+    void queryClient.invalidateQueries({ queryKey: ['admin', 'finance'] });
+  };
+}
+
+/** Manual refund (money-touching, idempotent). See docs/13 §2/§11. */
+export function useRefundOrder(id: string) {
+  const invalidate = useOrderInvalidation(id);
+  return useMutation({
+    mutationFn: (body: RefundRequest) =>
+      apiFetch<RefundResult>(`/admin/orders/${id}/refund`, {
+        method: 'POST',
+        body,
+        headers: { 'Idempotency-Key': crypto.randomUUID() },
+      }),
+    onSuccess: invalidate,
+  });
+}
+
+/** Manual delivery — enter a line's payload by hand (encrypted server-side). */
+export function useManualDeliver(id: string) {
+  const invalidate = useOrderInvalidation(id);
+  return useMutation({
+    mutationFn: ({ itemId, ...body }: { itemId: string } & ManualDeliverRequest) =>
+      apiFetch<AdminOrderDetail>(`/admin/orders/${id}/items/${itemId}/deliver`, {
+        method: 'POST',
+        body,
+      }),
+    onSuccess: invalidate,
+  });
+}
+
+// ---------- Finance ----------
+
+export function useFinanceSummary() {
+  return useQuery({
+    queryKey: ['admin', 'finance', 'summary'],
+    queryFn: () => apiFetch<FinanceSummary>('/admin/finance/summary'),
+  });
+}
+
+// ---------- Users ----------
+
+export interface AdminUserFilters {
+  page: number;
+  limit: number;
+  q?: string;
+  status?: UserStatus;
+  role?: Role;
+}
+
+export function useAdminUsers(filters: AdminUserFilters) {
+  return useQuery({
+    queryKey: ['admin', 'users', filters],
+    queryFn: () => apiFetch<Paginated<AdminUserListItem>>(`/admin/users${qs({ ...filters })}`),
+  });
+}
+
+export function useAdminUser(id: string | undefined) {
+  return useQuery({
+    queryKey: ['admin', 'user', id],
+    queryFn: () => apiFetch<AdminUserDetail>(`/admin/users/${id}`),
+    enabled: Boolean(id),
+  });
+}
+
+function useUserInvalidation(id: string) {
+  const queryClient = useQueryClient();
+  return () => {
+    void queryClient.invalidateQueries({ queryKey: ['admin', 'user', id] });
+    void queryClient.invalidateQueries({ queryKey: ['admin', 'users'] });
+  };
+}
+
+export function useSetUserBlocked(id: string) {
+  const invalidate = useUserInvalidation(id);
+  return useMutation({
+    mutationFn: ({ blocked, reason }: { blocked: boolean; reason: string }) =>
+      apiFetch<AdminUserDetail>(`/admin/users/${id}/${blocked ? 'block' : 'unblock'}`, {
+        method: 'POST',
+        body: { reason },
+      }),
+    onSuccess: invalidate,
+  });
+}
+
+export function useSetUserRole(id: string) {
+  const invalidate = useUserInvalidation(id);
+  return useMutation({
+    mutationFn: ({ role, reason }: { role: Role; reason?: string }) =>
+      apiFetch<AdminUserDetail>(`/admin/users/${id}/role`, {
+        method: 'PATCH',
+        body: { role, reason },
+      }),
+    onSuccess: invalidate,
+  });
+}
+
+// ---------- Promo codes ----------
+
+export function usePromoCodes() {
+  return useQuery({
+    queryKey: ['admin', 'promo'],
+    queryFn: () => apiFetch<AdminPromoCode[]>('/admin/promo-codes'),
+  });
+}
+
+function usePromoInvalidation() {
+  const queryClient = useQueryClient();
+  return () => void queryClient.invalidateQueries({ queryKey: ['admin', 'promo'] });
+}
+
+export function useCreatePromo() {
+  const invalidate = usePromoInvalidation();
+  return useMutation({
+    mutationFn: (body: CreatePromoCodeRequest) =>
+      apiFetch<AdminPromoCode>('/admin/promo-codes', { method: 'POST', body }),
+    onSuccess: invalidate,
+  });
+}
+
+export function useUpdatePromo() {
+  const invalidate = usePromoInvalidation();
+  return useMutation({
+    mutationFn: ({ id, ...body }: { id: string } & UpdatePromoCodeRequest) =>
+      apiFetch<AdminPromoCode>(`/admin/promo-codes/${id}`, { method: 'PATCH', body }),
+    onSuccess: invalidate,
+  });
+}
+
+export function useDeletePromo() {
+  const invalidate = usePromoInvalidation();
+  return useMutation({
+    mutationFn: (id: string) => apiFetch<void>(`/admin/promo-codes/${id}`, { method: 'DELETE' }),
+    onSuccess: invalidate,
   });
 }
 

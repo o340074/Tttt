@@ -44,6 +44,11 @@ enum Role {
 // support — тикеты/чтение заказов; operator — warming-workspace + инвентарь;
 // manager — надзор над каталогом/заказами/финансами; admin — суперсет (owner).
 // Гранулярный StaffUser можно ввести позже, не ломая контракты.
+// E8-cont: finance (ручной refund/выдача, сверка ledger), users (block/роль),
+// promo CRUD НЕ добавляют моделей — переиспользуют User/Order/OrderItem/Delivery/
+// LedgerEntry/PromoCode/AuditLog. Refund = LedgerEntry(credit, refType=refund,
+// refId=orderItemId) — unique (refType,refId,direction) защищает от двойного
+// возврата; смена роли/блокировка отзывают refresh-сессии (Redis).
 
 enum UserStatus {
   active
