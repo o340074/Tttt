@@ -8,6 +8,8 @@ import { errorKey } from '../features/auth/errors';
 import { useAuth } from '../features/auth/useAuth';
 import { useAddCartItem } from '../features/cart/api';
 import { StockBadge } from '../features/catalog/StockBadge';
+import { ProductReviews } from '../features/reviews/ProductReviews';
+import { Stars } from '../features/reviews/Stars';
 import { useProduct } from '../features/catalog/api';
 import { catalogIcon, formatEta, formatMoney } from '../features/catalog/format';
 import { ApiRequestError } from '../lib/api';
@@ -129,6 +131,12 @@ export function ProductPage() {
         </div>
         <div className="mt-6">
           <h1 className="mb-3 text-2xl font-bold md:text-3xl">{data.name}</h1>
+          {data.ratingAvg !== null && (
+            <div className="mb-3 flex items-center gap-2">
+              <Stars rating={Number(data.ratingAvg)} />
+              <span className="text-sm font-semibold text-text">{data.ratingAvg}</span>
+            </div>
+          )}
           {data.description && <p className="text-text-lo">{data.description}</p>}
           <div className="mt-5 overflow-x-auto rounded-lg border border-border bg-surface">
             <table className="w-full text-sm">
@@ -170,6 +178,7 @@ export function ProductPage() {
             </table>
           </div>
         </div>
+        <ProductReviews slug={data.slug} />
       </div>
 
       <aside className="rounded-lg border border-border bg-surface p-6 lg:sticky lg:top-24">

@@ -4,6 +4,7 @@ import { ConfigService } from '@nestjs/config';
 import cookieParser from 'cookie-parser';
 import { ApiException } from './common/api-exception';
 import { HttpExceptionFilter } from './common/http-exception.filter';
+import { configureSecurity } from './common/security';
 import type { Env } from './config/env';
 import type { NextFunction, Request, Response } from 'express';
 
@@ -40,6 +41,7 @@ function flattenValidationErrors(errors: ValidationError[], parent = ''): Record
 export function configureApp(app: INestApplication): INestApplication {
   const config = app.get(ConfigService<Env, true>);
 
+  configureSecurity(app, config.get('NODE_ENV', { infer: true }) === 'production');
   app.setGlobalPrefix('api/v1');
   app.use(cookieParser());
   app.use(textBodyParser);

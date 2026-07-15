@@ -5,6 +5,7 @@ import type { ResolveWarrantyClaimRequest, WarrantyClaimStatus } from '@advault/
 const CLAIM_STATUSES: WarrantyClaimStatus[] = [
   'requested',
   'approved',
+  'reworking',
   'rejected',
   'replaced',
   'refunded',

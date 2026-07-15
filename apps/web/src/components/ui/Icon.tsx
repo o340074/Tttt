@@ -1,5 +1,6 @@
 export type IconName =
   | 'shield'
+  | 'star'
   | 'check'
   | 'x'
   | 'info'

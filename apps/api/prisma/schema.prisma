@@ -137,12 +137,16 @@ enum WarrantyClaimType {
   refund
 }
 
-// Warranty claim lifecycle (docs/14, E10). `requested` by the buyer inside the
-// warranty window; staff move it to `approved`/`rejected`; an approved claim is
-// fulfilled to `replaced` (new asset issued) or `refunded` (ledger credit).
+// Warranty claim lifecycle (docs/14, E10; `reworking` added E11). `requested` by
+// the buyer inside the warranty window; staff move it to `approved`/`rejected`.
+// An approved claim is fulfilled to `refunded` (ledger credit) or to a
+// replacement: READY_STOCK issues a new asset straight to `replaced`, while
+// MADE_TO_ORDER re-opens the warm job and the claim sits in `reworking` until
+// the operator re-delivers, which flips it to `replaced`.
 enum WarrantyClaimStatus {
   requested
   approved
+  reworking
   rejected
   replaced
   refunded
@@ -238,6 +242,7 @@ model Product {
   category     Category             @relation(fields: [categoryId], references: [id], onDelete: Restrict)
   translations ProductTranslation[]
   variants     ProductVariant[]
+  reviews      Review[]
 
   @@index([categoryId])
   @@index([status])
@@ -348,6 +353,8 @@ model User {
   warrantyClaimsRaised   WarrantyClaim[] @relation("WarrantyClaimRequester")
   warrantyClaimsResolved WarrantyClaim[] @relation("WarrantyClaimResolver")
 
+  reviews Review[] @relation("ReviewAuthor")
+
   @@index([status])
   @@index([role])
   @@map("users")
@@ -427,6 +434,7 @@ model OrderItem {
   stockItems StockItem[]
   warmingJob WarmingJob? // MADE_TO_ORDER: 1:1 warming job
   warrantyClaims WarrantyClaim[] // E10: replace/refund claims on this line
+  review     Review? // E11: one review per delivered line (proof of purchase)
 
   @@index([orderId])
   @@index([deliveryStatus])
@@ -903,4 +911,34 @@ model Notification {
   @@index([userId, readAt])
   @@index([userId, createdAt])
   @@map("notifications")
+}
+
+// ---------- Reviews & ratings (E11) ----------
+
+/**
+ * A buyer's product review (E11). Tied to a delivered OrderItem as proof of
+ * purchase — the `orderItemId` unique means at most one review per line, and a
+ * review can only be written by the line's owner for a delivered/replaced line.
+ * `hidden` lets moderators suppress abuse without deleting the row. The
+ * product's `ratingAvg` is a denormalized cache of the visible reviews' mean.
+ */
+model Review {
+  id          String   @id @default(uuid()) @db.Uuid
+  productId   String   @db.Uuid
+  orderItemId String   @unique @db.Uuid
+  authorId    String   @db.Uuid
+  rating      Int // 1..5 (validated app-side)
+  title       String?
+  body        String?  @db.Text
+  hidden      Boolean  @default(false)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  product   Product   @relation(fields: [productId], references: [id], onDelete: Cascade)
+  orderItem OrderItem @relation(fields: [orderItemId], references: [id], onDelete: Cascade)
+  author    User      @relation("ReviewAuthor", fields: [authorId], references: [id], onDelete: Cascade)
+
+  @@index([productId, hidden, createdAt])
+  @@index([authorId])
+  @@map("reviews")
 }

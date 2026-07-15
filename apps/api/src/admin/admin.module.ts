@@ -16,6 +16,8 @@ import { AdminPromoController } from './admin-promo.controller';
 import { AdminPromoService } from './admin-promo.service';
 import { AdminReportsController } from './admin-reports.controller';
 import { AdminReportsService } from './admin-reports.service';
+import { AdminReviewsController } from './admin-reviews.controller';
+import { AdminReviewsService } from './admin-reviews.service';
 import { AdminSettingsController } from './admin-settings.controller';
 import { AdminSettingsService } from './admin-settings.service';
 import { AdminStaffController } from './admin-staff.controller';
@@ -54,6 +56,7 @@ import { AdminService } from './admin.service';
     AdminStaffController,
     AdminSettingsController,
     AdminWarrantyController,
+    AdminReviewsController,
   ],
   providers: [
     AdminService,
@@ -69,6 +72,7 @@ import { AdminService } from './admin.service';
     AdminStaffService,
     AdminSettingsService,
     AdminWarrantyService,
+    AdminReviewsService,
   ],
 })
 export class AdminModule {}

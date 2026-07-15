@@ -228,6 +228,12 @@ export function IconSprite() {
           d="M12 2.5l7.5 3.2v5.1c0 4.8-3.2 8-7.5 9.6-4.3-1.6-7.5-4.8-7.5-9.6V5.7L12 2.5Zm-1.1 12.9l4.6-4.6-1.3-1.3-3.3 3.3-1.5-1.5-1.3 1.3 2.8 2.8Z"
         />
       </symbol>
+      <symbol id="ic-star" viewBox="0 0 24 24">
+        <path
+          fill="currentColor"
+          d="M12 2.6l2.9 5.88 6.49.94-4.7 4.58 1.11 6.46L12 17.9l-5.8 3.06 1.1-6.46-4.69-4.58 6.49-.94L12 2.6Z"
+        />
+      </symbol>
       <symbol id="ic-box" viewBox="0 0 24 24">
         <path
           fill="url(#ig-aurora)"

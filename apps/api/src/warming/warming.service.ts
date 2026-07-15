@@ -270,6 +270,8 @@ export class WarmingService {
     const target = nextStatus(job.status, action);
     const stages = (job.stagesSnapshot ?? []) as unknown as StageSnapshot[];
     const now = new Date();
+    // Set when a delivery closes out a warranty-replacement rework (E11 debt).
+    let replacedClaim: { id: string; number: string } | null = null;
 
     await this.prisma.$transaction(async (tx) => {
       const data: Prisma.WarmingJobUpdateInput = { status: target };
@@ -287,7 +289,8 @@ export class WarmingService {
       if (action === 'ready') data.readyAt = now;
       if (action === 'deliver') {
         data.deliveredAt = now;
-        await this.assembleAndDeliver(tx, job, actorId, now);
+        const deliveryId = await this.assembleAndDeliver(tx, job, actorId, now);
+        replacedClaim = await this.resolveReworkingClaim(tx, job.orderItemId, actorId, deliveryId, now);
       }
       await tx.warmingJob.update({ where: { id }, data });
       await this.syncDeliveryStatus(
@@ -314,8 +317,57 @@ export class WarmingService {
         { number: job.orderItem.order.number },
         { orderId: job.orderItem.order.id, orderNumber: job.orderItem.order.number },
       );
+      // If this delivery fulfilled a warranty replacement, the claim is only now
+      // terminal — audit + notify the buyer of the replacement.
+      if (replacedClaim) {
+        const closed = replacedClaim as { id: string; number: string };
+        await this.audit.record({
+          actorId,
+          action: 'warranty.claim.replaced',
+          entity: 'WarrantyClaim',
+          entityId: closed.id,
+          diff: { number: closed.number, orderItemId: job.orderItemId, fulfillment: 'MADE_TO_ORDER' },
+        });
+        await this.notifications.emit(
+          job.orderItem.order.userId,
+          'warrantyReplaced',
+          { number: closed.number },
+          { orderId: job.orderItem.order.id, orderNumber: job.orderItem.order.number },
+        );
+      }
     }
     return this.getJob(id, locale);
+  }
+
+  /**
+   * When a warm delivery closes out a warranty-replacement rework (E11 debt),
+   * flip the line's `reworking` replace-claim to the terminal `replaced` and
+   * point it at the fresh delivery. Returns the claim (id + number) when one was
+   * resolved so the caller can audit + notify, else null. A first-time delivery
+   * (no such claim) is a no-op.
+   */
+  private async resolveReworkingClaim(
+    tx: Prisma.TransactionClient,
+    orderItemId: string,
+    actorId: string,
+    deliveryId: string,
+    now: Date,
+  ): Promise<{ id: string; number: string } | null> {
+    const claim = await tx.warrantyClaim.findFirst({
+      where: { orderItemId, type: 'replace', status: 'reworking' },
+      select: { id: true, number: true },
+    });
+    if (!claim) return null;
+    await tx.warrantyClaim.update({
+      where: { id: claim.id },
+      data: {
+        status: 'replaced',
+        replacementDeliveryId: deliveryId,
+        resolvedById: actorId,
+        resolvedAt: now,
+      },
+    });
+    return { id: claim.id, number: claim.number };
   }
 
   /** Update one stage task; job.currentStage tracks the number completed. */
@@ -536,7 +588,7 @@ export class WarmingService {
     job: JobWithRels,
     actorId: string,
     now: Date,
-  ): Promise<void> {
+  ): Promise<string> {
     const asset = await tx.accountAsset.findUnique({ where: { jobId: job.id } });
     if (!asset) {
       throw new ApiException('CONFLICT', 'Capture the account data before delivering', 409);
@@ -586,7 +638,7 @@ export class WarmingService {
       await tx.octoProfile.update({ where: { id: octo.id }, data: { status: 'delivered' } });
     }
 
-    await tx.delivery.create({
+    const delivery = await tx.delivery.create({
       data: {
         orderItemId: job.orderItemId,
         bundleId: bundle.id,
@@ -596,6 +648,7 @@ export class WarmingService {
         deliveredAt: now,
       },
     });
+    return delivery.id;
   }
 
   /**

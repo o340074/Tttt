@@ -466,7 +466,11 @@
     "backHome": "Back to home"
   },
   "footer": {
-    "rights": "All rights reserved."
+    "rights": "All rights reserved.",
+    "legal": "Legal",
+    "terms": "Terms of Service",
+    "privacy": "Privacy Policy",
+    "refund": "Refund Policy"
   },
   "admin": {
     "title": "Operator panel",
@@ -491,7 +495,8 @@
       "tickets": "Tickets",
       "staff": "Staff & roles",
       "settings": "Settings",
-      "warranty": "Warranties"
+      "warranty": "Warranties",
+      "reviews": "Reviews"
     },
     "fulfillmentTypes": {
       "READY_STOCK": "Ready stock",
@@ -1050,6 +1055,21 @@
       "confirmYes": "Yes, proceed",
       "needFinance": "Fulfillment requires a finance (manager/admin) role.",
       "actionError": "The action could not be completed."
+    },
+    "reviews": {
+      "title": "Reviews",
+      "subtitle": "Moderate product reviews — hide or restore.",
+      "error": "Could not load reviews.",
+      "empty": "No reviews match this filter.",
+      "moderateError": "The review could not be updated.",
+      "hiddenTag": "Hidden",
+      "hide": "Hide",
+      "restore": "Restore",
+      "filters": {
+        "all": "All",
+        "visible": "Visible",
+        "hidden": "Hidden"
+      }
     }
   },
   "warranty": {
@@ -1074,6 +1094,7 @@
     "statuses": {
       "requested": "Requested",
       "approved": "Approved",
+      "reworking": "Re-working",
       "rejected": "Rejected",
       "replaced": "Replaced",
       "refunded": "Refunded"
@@ -1081,6 +1102,123 @@
     "types": {
       "replace": "Replacement",
       "refund": "Refund"
+    }
+  },
+  "reviews": {
+    "heading": "Reviews",
+    "empty": "No reviews yet. Be the first to review this product.",
+    "error": "Couldn't load reviews.",
+    "count_one": "{{count}} review",
+    "count_other": "{{count}} reviews",
+    "prev": "Previous",
+    "next": "Next",
+    "pageOf": "Page {{page}} of {{total}}",
+    "starsAria": "Rated {{rating}} out of 5",
+    "ratingLabel": "Your rating",
+    "nStars_one": "{{count}} star",
+    "nStars_other": "{{count}} stars",
+    "yourRating": "You rated this",
+    "leaveReview": "Leave a review",
+    "formHeading": "Rate your purchase",
+    "titlePlaceholder": "Title (optional)",
+    "bodyPlaceholder": "Share your experience (no passwords or secrets)…",
+    "submit": "Submit review",
+    "cancel": "Cancel"
+  },
+  "legal": {
+    "backHome": "Back to home",
+    "lastUpdated": "Last updated: {{date}}",
+    "disclaimer": "This document is a template and is not legal advice. Consult a qualified lawyer for your jurisdiction before launch.",
+    "tos": {
+      "title": "Terms of Service",
+      "sections": [
+        {
+          "heading": "1. Acceptance of terms",
+          "body": "By creating an account or using AdVault you agree to these Terms. If you do not agree, do not use the service."
+        },
+        {
+          "heading": "2. What we sell",
+          "body": "AdVault is a marketplace for digital goods — ready-made advertising accounts and made-to-order accounts prepared by operators. Each listing describes exactly what is delivered and on what terms."
+        },
+        {
+          "heading": "3. Accounts and eligibility",
+          "body": "You must provide accurate registration data and keep your credentials secure. You are responsible for all activity under your account."
+        },
+        {
+          "heading": "4. Payment and balance",
+          "body": "Purchases are paid from your internal balance, topped up via the supported crypto methods. All amounts are recorded in a double-entry ledger."
+        },
+        {
+          "heading": "5. Delivery",
+          "body": "Ready-stock items are delivered automatically; made-to-order items are prepared by operators with a visible ETA and status. Delivered secrets are encrypted and available only to you."
+        },
+        {
+          "heading": "6. Acceptable use",
+          "body": "You agree not to use the service for unlawful purposes or in violation of third-party platform rules. You are responsible for how you use purchased goods."
+        },
+        {
+          "heading": "7. Warranty and disputes",
+          "body": "Warranty windows and replacement/refund conditions are described per product and in our Refund Policy. Disputed orders are moderated manually."
+        },
+        {
+          "heading": "8. Changes",
+          "body": "We may update these Terms; material changes will be announced. Continued use after changes means acceptance."
+        }
+      ]
+    },
+    "privacy": {
+      "title": "Privacy Policy",
+      "sections": [
+        {
+          "heading": "1. Data we collect",
+          "body": "We collect the minimum needed to run the service: your email, authentication data, orders, balance movements and support messages."
+        },
+        {
+          "heading": "2. How we use data",
+          "body": "To provide the marketplace, process orders and payments, deliver goods, offer support and prevent fraud."
+        },
+        {
+          "heading": "3. Storage and security",
+          "body": "Secrets (accounts, proxies, profile exports) are encrypted at the application layer (AES-256-GCM). Access to decrypt is limited to the owner and audited. Passwords are hashed with argon2id."
+        },
+        {
+          "heading": "4. Sharing",
+          "body": "We do not sell your personal data. We share data only with processors needed to run the service (e.g. payment providers) under appropriate safeguards."
+        },
+        {
+          "heading": "5. Retention",
+          "body": "We keep data only as long as needed for the service and applicable obligations, then delete or anonymize it."
+        },
+        {
+          "heading": "6. Your rights",
+          "body": "Subject to applicable law (e.g. GDPR), you may request access, correction or deletion of your data by contacting support."
+        }
+      ]
+    },
+    "refund": {
+      "title": "Refund Policy",
+      "sections": [
+        {
+          "heading": "1. Warranty window",
+          "body": "Eligible products carry a warranty window shown on the product page and your order. Within that window you may request a replacement or a refund for a delivered line."
+        },
+        {
+          "heading": "2. Replacements",
+          "body": "For ready-stock goods a replacement is a fresh account from the pool. For made-to-order goods the account is re-prepared by an operator and re-delivered."
+        },
+        {
+          "heading": "3. Refunds",
+          "body": "An approved refund is credited to your internal balance and can be withdrawn or reused. Refunds are recorded in the ledger and are idempotent."
+        },
+        {
+          "heading": "4. How to request",
+          "body": "Open the order, choose the delivered line and submit a replace or refund request describing the issue. Do not include passwords or secrets."
+        },
+        {
+          "heading": "5. Exclusions",
+          "body": "Requests outside the warranty window, or where terms were violated (e.g. credentials changed by the buyer), may be declined. Each case is reviewed by staff."
+        }
+      ]
     }
   }
 }

@@ -224,6 +224,77 @@ export interface ProductListItem {
 /** Sort options for GET /products. */
 export type ProductSort = 'price_asc' | 'price_desc' | 'rating' | 'newest';
 
+// ---------- Reviews & ratings (E11) ----------
+
+/** A published product review (public). */
+export interface ProductReview {
+  id: string;
+  /** Integer 1..5. */
+  rating: number;
+  title: string | null;
+  body: string | null;
+  /** Masked author label, e.g. "Ivan P." or "iv***@x.io" — never the raw email. */
+  authorName: string;
+  /** ISO 8601 date-time. */
+  createdAt: string;
+}
+
+/** Rating rollup for a product. */
+export interface ReviewSummary {
+  /** Two-decimal average as a string ("4.50"), or null when there are none. */
+  average: string | null;
+  count: number;
+  /** Number of reviews per star bucket. */
+  distribution: { 1: number; 2: number; 3: number; 4: number; 5: number };
+}
+
+/** GET /products/:slug/reviews — paginated reviews plus the rating rollup. */
+export interface ProductReviewsResponse {
+  data: ProductReview[];
+  meta: { total: number; page: number; limit: number };
+  summary: ReviewSummary;
+}
+
+/**
+ * Whether the buyer may review a delivered order line (attached to OrderItem).
+ * A line is reviewable once delivered/replaced and not yet reviewed.
+ */
+export interface ReviewEligibility {
+  canReview: boolean;
+  /** Slug of the product this line belongs to (deep link to its page). */
+  productSlug: string;
+  /** The buyer's existing review for this line, if any. */
+  myReview: ProductReview | null;
+}
+
+/** POST /reviews — create a review for a delivered order line. */
+export interface CreateReviewRequest {
+  orderItemId: string;
+  /** Integer 1..5. */
+  rating: number;
+  title?: string;
+  body?: string;
+}
+
+/** Admin moderation row (GET /admin/reviews). */
+export interface AdminReviewListItem {
+  id: string;
+  productSlug: string;
+  productName: string;
+  rating: number;
+  title: string | null;
+  body: string | null;
+  /** Full author email — admin-only. */
+  authorEmail: string;
+  hidden: boolean;
+  createdAt: string;
+}
+
+/** PATCH /admin/reviews/:id — hide or restore a review. */
+export interface ModerateReviewRequest {
+  hidden: boolean;
+}
+
 // ---------- Wallet & top-ups (E3) ----------
 
 export type LedgerDirection = 'credit' | 'debit';
@@ -375,6 +446,8 @@ export interface OrderItem {
   /** Warranty window + claim eligibility for a delivered line (E10); null when
    *  the line was never delivered or its variant carries no warranty. */
   warranty?: WarrantyInfo | null;
+  /** Review eligibility for a delivered line (E11); null when not delivered. */
+  review?: ReviewEligibility | null;
 }
 
 /**
@@ -813,7 +886,13 @@ export type WarrantyClaimType = 'replace' | 'refund';
  * it to `approved` or `rejected`; approved claims are fulfilled to `replaced`
  * (a fresh asset is issued) or `refunded` (funds credited to the ledger).
  */
-export type WarrantyClaimStatus = 'requested' | 'approved' | 'rejected' | 'replaced' | 'refunded';
+export type WarrantyClaimStatus =
+  | 'requested'
+  | 'approved'
+  | 'reworking'
+  | 'rejected'
+  | 'replaced'
+  | 'refunded';
 
 /** Compact reference to a claim, embedded in an order line's warranty info. */
 export interface WarrantyClaimRef {

@@ -13,6 +13,7 @@ import { StockService } from '../stock/stock.service';
 import { IdempotencyService } from '../wallet/idempotency.service';
 import { LedgerService } from '../wallet/ledger.service';
 import { WarmingService } from '../warming/warming.service';
+import { isReviewableStatus } from '../reviews/reviews.logic';
 import { computeWindow, isClaimEligible } from '../warranty/warranty.logic';
 import type {
   DeliveryPayload,
@@ -21,6 +22,8 @@ import type {
   OrderItem,
   OrderStatus,
   Paginated,
+  ProductReview,
+  ReviewEligibility,
   WarrantyClaimStatus,
   WarrantyClaimType,
   WarrantyInfo,
@@ -41,7 +44,7 @@ const NUMBER_ATTEMPTS = 3;
 
 type DbOrderItemWithWarming = DbOrderItem & {
   warmingJob: (DbWarmingJob & { tasks: DbWarmingTask[] }) | null;
-  variant: { warrantyHours: number | null };
+  variant: { warrantyHours: number | null; product?: { slug: string } | null };
   deliveries: { id: string; deliveredAt: Date | null; createdAt: Date }[];
   warrantyClaims: {
     id: string;
@@ -49,6 +52,7 @@ type DbOrderItemWithWarming = DbOrderItem & {
     type: WarrantyClaimType;
     status: WarrantyClaimStatus;
   }[];
+  review?: { id: string; rating: number; title: string | null; body: string | null; createdAt: Date } | null;
 };
 type OrderWithItems = DbOrder & {
   items: DbOrderItemWithWarming[];
@@ -64,7 +68,7 @@ const ORDER_INCLUDE = {
   items: {
     include: {
       warmingJob: { include: { tasks: { orderBy: { order: 'asc' } } } },
-      variant: { select: { warrantyHours: true } },
+      variant: { select: { warrantyHours: true, product: { select: { slug: true } } } },
       deliveries: {
         select: { id: true, deliveredAt: true, createdAt: true },
         orderBy: { createdAt: 'asc' },
@@ -73,6 +77,7 @@ const ORDER_INCLUDE = {
         select: { id: true, number: true, type: true, status: true },
         orderBy: { createdAt: 'desc' },
       },
+      review: { select: { id: true, rating: true, title: true, body: true, createdAt: true } },
     },
   },
   promoCode: true,
@@ -439,7 +444,32 @@ export class OrdersService {
       deliveryStatus: item.deliveryStatus,
       warming: this.warming.buildProgress(item.warmingJob),
       warranty: this.buildWarrantyInfo(item),
+      review: this.buildReviewEligibility(item),
     };
+  }
+
+  /**
+   * Review eligibility for a delivered line (E11). Null when the line was never
+   * delivered or the product slug is unavailable, so the UI shows nothing. When
+   * a review already exists it is returned (masked author) with `canReview`
+   * false, so the buyer sees their rating instead of a second form.
+   */
+  private buildReviewEligibility(item: DbOrderItemWithWarming): ReviewEligibility | null {
+    const slug = item.variant?.product?.slug ?? null;
+    if (slug === null) return null;
+    if (!isReviewableStatus(item.deliveryStatus)) return null;
+    const existing = item.review ?? null;
+    const myReview: ProductReview | null = existing
+      ? {
+          id: existing.id,
+          rating: existing.rating,
+          title: existing.title,
+          body: existing.body,
+          authorName: 'you',
+          createdAt: existing.createdAt.toISOString(),
+        }
+      : null;
+    return { canReview: existing === null, productSlug: slug, myReview };
   }
 
   /**
@@ -458,7 +488,9 @@ export class OrdersService {
 
     const window = computeWindow(deliveredAt, warrantyHours);
     const statuses: WarrantyClaimStatus[] = claims.map((c) => c.status);
-    const open = claims.find((c) => c.status === 'requested' || c.status === 'approved');
+    const open = claims.find(
+      (c) => c.status === 'requested' || c.status === 'approved' || c.status === 'reworking',
+    );
     return {
       warrantyHours,
       deliveredAt: deliveredAt.toISOString(),

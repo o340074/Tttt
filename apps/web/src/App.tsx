@@ -17,6 +17,7 @@ import { AdminPlanDetailPage } from './pages/admin/AdminPlanDetailPage';
 import { AdminPlansPage } from './pages/admin/AdminPlansPage';
 import { AdminProductDetailPage } from './pages/admin/AdminProductDetailPage';
 import { AdminPromoPage } from './pages/admin/AdminPromoPage';
+import { AdminReviewsPage } from './pages/admin/AdminReviewsPage';
 import { AdminStockPage } from './pages/admin/AdminStockPage';
 import { AdminUserDetailPage } from './pages/admin/AdminUserDetailPage';
 import { AdminUsersPage } from './pages/admin/AdminUsersPage';
@@ -29,6 +30,7 @@ import { AccountPage } from './pages/AccountPage';
 import { CatalogPage } from './pages/CatalogPage';
 import { CheckoutPage } from './pages/CheckoutPage';
 import { HomePage } from './pages/HomePage';
+import { LegalPage } from './pages/LegalPage';
 import { NotFoundPage } from './pages/NotFoundPage';
 import { OrderPage } from './pages/OrderPage';
 import { OrdersPage } from './pages/OrdersPage';
@@ -49,6 +51,9 @@ export function App() {
         <Route index element={<HomePage />} />
         <Route path="catalog" element={<CatalogPage />} />
         <Route path="product/:slug" element={<ProductPage />} />
+        <Route path="legal/terms" element={<LegalPage doc="tos" />} />
+        <Route path="legal/privacy" element={<LegalPage doc="privacy" />} />
+        <Route path="legal/refund" element={<LegalPage doc="refund" />} />
         <Route element={<RequireAuth />}>
           <Route path="account" element={<AccountPage />} />
           <Route path="wallet" element={<WalletPage />} />
@@ -84,6 +89,7 @@ export function App() {
           <Route path="tickets/:id" element={<AdminTicketDetailPage />} />
           <Route path="warranty" element={<AdminWarrantyPage />} />
           <Route path="warranty/:id" element={<AdminWarrantyDetailPage />} />
+          <Route path="reviews" element={<AdminReviewsPage />} />
           <Route path="dashboard" element={<AdminDashboardPage />} />
           <Route path="staff" element={<AdminStaffPage />} />
           <Route path="settings" element={<AdminSettingsPage />} />

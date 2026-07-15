@@ -27,3 +27,9 @@ Thumbs.db
 .idea/
 .vscode/*
 !.vscode/extensions.json
+
+# Playwright e2e artifacts (E11)
+apps/web/test-results/
+apps/web/playwright-report/
+apps/web/blob-report/
+apps/web/.playwright/

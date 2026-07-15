@@ -6,6 +6,7 @@ import { formatMoney } from '../features/catalog/format';
 import { VaultCard } from '../features/orders/VaultCard';
 import { WarmingCard } from '../features/orders/WarmingCard';
 import { WarrantyControl } from '../features/warranty/WarrantyControl';
+import { LineReview } from '../features/reviews/LineReview';
 import { ApiRequestError } from '../lib/api';
 import { OrderStatusBadge } from './OrdersPage';
 import type { OrderItem } from '@advault/types';
@@ -111,6 +112,7 @@ export function OrderPage() {
               </span>
             </div>
             <WarrantyControl item={item} />
+            <LineReview item={item} />
           </div>
         ))}
       </section>

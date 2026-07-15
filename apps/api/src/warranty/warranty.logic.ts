@@ -6,8 +6,9 @@ import type { OrderItemDeliveryStatus, WarrantyClaimStatus } from '@advault/type
 const CLAIMABLE_DELIVERY_STATES: OrderItemDeliveryStatus[] = ['delivered', 'replaced'];
 
 /** Claim statuses that still occupy the line — a second claim is blocked while
- *  one of these is open (docs/14: one active claim per line at a time). */
-const OPEN_CLAIM_STATES: WarrantyClaimStatus[] = ['requested', 'approved'];
+ *  one of these is open (docs/14: one active claim per line at a time).
+ *  `reworking` (E11) is a warm replacement in progress — still open. */
+const OPEN_CLAIM_STATES: WarrantyClaimStatus[] = ['requested', 'approved', 'reworking'];
 
 export interface WarrantyWindow {
   /** Window start = the latest delivery time; null if never delivered. */

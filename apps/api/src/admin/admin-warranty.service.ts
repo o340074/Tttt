@@ -251,35 +251,43 @@ export class AdminWarrantyService {
         await this.stock.release(reserved); // never strand the reserved unit
         throw error;
       }
-    } else {
-      // MADE_TO_ORDER: re-open the warm job as a rework; operators re-deliver.
-      if (!item.warmingJob) {
-        throw new ApiException('CONFLICT', 'The line has no warming job to rework', 409);
-      }
-      await this.prisma.$transaction(async (tx) => {
-        const flipped = await tx.warrantyClaim.updateMany({
-          where: { id, status: 'approved' },
-          data: { status: 'replaced', resolvedById: actorId, resolvedAt: new Date() },
-        });
-        if (flipped.count !== 1) {
-          throw new ApiException('CONFLICT', 'Claim is no longer approved', 409);
-        }
-        await this.warming.reworkForReplacement(tx, item.warmingJob!.id, item.id, orderId);
+      // A stock replacement is delivered synchronously → terminal now.
+      await this.audit.record({
+        actorId,
+        action: 'warranty.claim.replaced',
+        entity: 'WarrantyClaim',
+        entityId: id,
+        diff: { number: claim.number, orderItemId: item.id, fulfillment: 'READY_STOCK' },
       });
+      await this.notify(claim, 'warrantyReplaced');
+      return this.result(id);
     }
+
+    // MADE_TO_ORDER: re-open the warm job as a rework. The replacement is not
+    // done until an operator re-delivers, so the claim moves to `reworking`
+    // (not the terminal `replaced`) and the buyer is notified only then — the
+    // warming deliver transition flips reworking → replaced (E11 debt closed).
+    if (!item.warmingJob) {
+      throw new ApiException('CONFLICT', 'The line has no warming job to rework', 409);
+    }
+    await this.prisma.$transaction(async (tx) => {
+      const flipped = await tx.warrantyClaim.updateMany({
+        where: { id, status: 'approved' },
+        data: { status: 'reworking', resolvedById: actorId },
+      });
+      if (flipped.count !== 1) {
+        throw new ApiException('CONFLICT', 'Claim is no longer approved', 409);
+      }
+      await this.warming.reworkForReplacement(tx, item.warmingJob!.id, item.id, orderId);
+    });
 
     await this.audit.record({
       actorId,
-      action: 'warranty.claim.replaced',
+      action: 'warranty.claim.rework_started',
       entity: 'WarrantyClaim',
       entityId: id,
-      diff: {
-        number: claim.number,
-        orderItemId: item.id,
-        fulfillment: item.variant.fulfillmentType,
-      },
+      diff: { number: claim.number, orderItemId: item.id, fulfillment: 'MADE_TO_ORDER' },
     });
-    await this.notify(claim, 'warrantyReplaced');
     return this.result(id);
   }
 
