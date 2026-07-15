@@ -812,6 +812,39 @@ model Setting {
 }
 
 // ============================================================
+// Notifications (E9)
+// ============================================================
+//
+// Уведомления покупателя: in-app лента + бейдж непрочитанного. На событие
+// (order.paid / warming.ready / ticket.reply) сервис рендерит шаблон из Settings
+// в локали получателя (User.locale) и параллельно шлёт email через mailer.
+// `data` — только несекретный контекст для диплинка (id/номер заказа/тикета).
+// `readAt` = null до подтверждения. Скоуп строго по владельцу (userId).
+
+enum NotificationType {
+  order_paid
+  warming_ready
+  ticket_reply
+}
+
+model Notification {
+  id        String           @id @default(uuid()) @db.Uuid
+  userId    String           @db.Uuid
+  type      NotificationType
+  title     String
+  body      String           @db.Text
+  data      Json             @default("{}") @db.JsonB
+  readAt    DateTime?
+  createdAt DateTime         @default(now())
+
+  user User @relation("UserNotifications", fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, readAt]) // непрочитанные + бейдж
+  @@index([userId, createdAt]) // лента по времени
+  @@map("notifications")
+}
+
+// ============================================================
 // Reviews
 // ============================================================
 

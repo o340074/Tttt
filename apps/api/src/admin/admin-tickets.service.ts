@@ -3,6 +3,7 @@ import { Prisma } from '@prisma/client';
 import { randomInt } from 'node:crypto';
 import { ApiException } from '../common/api-exception';
 import { AuditService } from '../audit/audit.service';
+import { NotificationsService } from '../notifications/notifications.service';
 import { PrismaService } from '../prisma/prisma.service';
 import type {
   AdminTicketDetail,
@@ -27,9 +28,11 @@ type TicketRow = DbTicket & {
   assignee: Pick<DbUser, 'id' | 'email'> | null;
   order: Pick<DbOrder, 'id' | 'number'> | null;
   _count: { messages: number };
+  /** Latest message (take: 1, desc) — used only to flag customer replies. */
+  messages?: Pick<DbTicketMessage, 'authorId' | 'createdAt'>[];
 };
 
-type TicketDetailRow = TicketRow & {
+type TicketDetailRow = Omit<TicketRow, 'messages'> & {
   messages: (DbTicketMessage & { author: Pick<DbUser, 'id' | 'email'> | null })[];
 };
 
@@ -37,6 +40,16 @@ type TicketDetailRow = TicketRow & {
 function generateTicketNumber(): string {
   const year = new Date().getFullYear();
   return `TK-${year}-${String(randomInt(0, 1_000_000)).padStart(6, '0')}`;
+}
+
+/** True when the newest message (any) was authored by the requester (buyer). */
+function latestFromCustomer(
+  messages: Pick<DbTicketMessage, 'authorId' | 'createdAt'>[] | undefined,
+  requesterId: string,
+): boolean {
+  if (!messages || messages.length === 0) return false;
+  const latest = messages.reduce((a, b) => (a.createdAt >= b.createdAt ? a : b));
+  return latest.authorId === requesterId;
 }
 
 /**
@@ -51,6 +64,7 @@ export class AdminTicketsService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly audit: AuditService,
+    private readonly notifications: NotificationsService,
   ) {}
 
   async list(
@@ -172,6 +186,17 @@ export class AdminTicketsService {
       entityId: id,
       diff: { internal: isInternal },
     });
+
+    // A public staff reply notifies the buyer (in-app + email); internal notes
+    // stay invisible. Best-effort — emit never throws (see NotificationsService).
+    if (!isInternal) {
+      await this.notifications.emit(
+        ticket.requesterId,
+        'ticketReply',
+        { number: ticket.number },
+        { ticketId: ticket.id, ticketNumber: ticket.number },
+      );
+    }
     return this.get(id);
   }
 
@@ -219,6 +244,12 @@ export class AdminTicketsService {
       assignee: { select: { id: true, email: true } },
       order: { select: { id: true, number: true } },
       _count: { select: { messages: true } },
+      // Latest message only, to flag whether the buyer is the one waiting.
+      messages: {
+        orderBy: { createdAt: 'desc' },
+        take: 1,
+        select: { authorId: true, createdAt: true },
+      },
     } satisfies Prisma.TicketInclude;
   }
 
@@ -254,6 +285,7 @@ export class AdminTicketsService {
       orderId: row.orderId,
       orderNumber: row.order?.number ?? null,
       messageCount: row._count.messages,
+      lastMessageFromCustomer: latestFromCustomer(row.messages, row.requester.id),
       lastReplyAt: row.lastReplyAt.toISOString(),
       createdAt: row.createdAt.toISOString(),
     };

@@ -7,6 +7,8 @@ import { PrismaModule } from './prisma/prisma.module';
 import { RedisModule } from './redis/redis.module';
 import { HealthModule } from './health/health.module';
 import { MailerModule } from './mailer/mailer.module';
+import { NotificationsModule } from './notifications/notifications.module';
+import { TicketsModule } from './tickets/tickets.module';
 import { AdminModule } from './admin/admin.module';
 import { AuthModule } from './auth/auth.module';
 import { CartModule } from './cart/cart.module';
@@ -28,6 +30,7 @@ import { WarmingModule } from './warming/warming.module';
     CryptoModule,
     AuditModule,
     MailerModule,
+    NotificationsModule,
     AuthModule,
     UsersModule,
     CatalogModule,
@@ -36,6 +39,7 @@ import { WarmingModule } from './warming/warming.module';
     InventoryModule,
     WarmingModule,
     OrdersModule,
+    TicketsModule,
     AdminModule,
     HealthModule,
   ],

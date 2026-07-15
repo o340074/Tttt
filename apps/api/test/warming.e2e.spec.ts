@@ -235,6 +235,15 @@ describe('Warming pipeline smoke (e2e)', () => {
       .expect(200);
     expect(delivered.body.status).toBe('delivered');
     expect(prisma.bundle.rows).toHaveLength(1);
+
+    // E9: delivery to the Vault notifies the buyer ("your account is ready").
+    const notifs = await buyer(request(http).get('/api/v1/notifications')).expect(200);
+    expect(
+      notifs.body.data.some(
+        (n: { type: string; data: { orderId?: string } }) =>
+          n.type === 'warming_ready' && n.data.orderId === orderId,
+      ),
+    ).toBe(true);
   });
 
   it('shows the buyer the delivered warm order and the bundle in the Vault', async () => {

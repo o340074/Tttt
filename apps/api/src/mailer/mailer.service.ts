@@ -28,4 +28,13 @@ export class MailerService {
       `[stub] password reset email to ${email}: ${this.webUrl}/auth/reset?token=${token}`,
     );
   }
+
+  /**
+   * A transactional notification email (E9): rendered subject/body already
+   * localized by the notifications sender. Stub logs the subject only — bodies
+   * may quote user content, so they are not logged.
+   */
+  sendNotification(email: string, subject: string, _body: string): void {
+    this.logger.log(`[stub] notification email to ${email}: ${subject}`);
+  }
 }

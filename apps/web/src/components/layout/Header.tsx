@@ -5,6 +5,7 @@ import { Icon } from '../ui/Icon';
 import { supportedLocales } from '../../i18n';
 import { useAuth } from '../../features/auth/useAuth';
 import { useCartCount } from '../../features/cart/api';
+import { NotificationBell } from '../../features/notifications/NotificationBell';
 
 function CartButton() {
   const { t } = useTranslation();
@@ -78,6 +79,18 @@ export function Header() {
               {t('nav.wallet')}
             </NavLink>
           )}
+          {user && (
+            <NavLink
+              to="/support"
+              className={({ isActive }) =>
+                `rounded-md px-3 py-2 text-sm font-medium transition-colors duration-[140ms] ${
+                  isActive ? 'bg-surface-2 text-text-hi' : 'text-text-lo hover:text-text-hi'
+                }`
+              }
+            >
+              {t('nav.support')}
+            </NavLink>
+          )}
           {user && isStaffRole(user.role) && (
             <NavLink
               to="/admin"
@@ -115,6 +128,7 @@ export function Header() {
             ))}
           </div>
 
+          {!booting && user && <NotificationBell />}
           {!booting && user && <CartButton />}
 
           {!booting &&

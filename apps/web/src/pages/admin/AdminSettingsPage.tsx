@@ -145,43 +145,59 @@ function SettingsForm({ data }: { data: ShopSettings }) {
         <h2 className="mb-4 text-sm font-semibold uppercase tracking-wide text-text-dim">
           {t('admin.settings.notifications')}
         </h2>
+        <p className="mb-3 text-xs text-text-lo">{t('admin.settings.templatesHint')}</p>
         <div className="space-y-4">
           {TEMPLATE_KEYS.map((key) => (
             <div key={key} className="rounded-lg border border-border bg-surface-2 p-3">
               <div className="mb-2 text-xs font-semibold text-text-hi">
                 {t(`admin.settings.templates.${key}`)}
               </div>
-              <input
-                className="mb-2 h-10 w-full rounded-md border border-border bg-surface px-3 text-sm text-text-hi outline-none focus:border-volt"
-                value={form.notifications[key].subject}
-                aria-label={t('admin.settings.subject')}
-                placeholder={t('admin.settings.subject')}
-                onChange={(e) =>
-                  setForm({
-                    ...form,
-                    notifications: {
-                      ...form.notifications,
-                      [key]: { ...form.notifications[key], subject: e.target.value },
-                    },
-                  })
-                }
-              />
-              <textarea
-                className="w-full rounded-md border border-border bg-surface px-3 py-2 text-sm text-text-hi outline-none focus:border-volt"
-                rows={2}
-                value={form.notifications[key].body}
-                aria-label={t('admin.settings.body')}
-                placeholder={t('admin.settings.body')}
-                onChange={(e) =>
-                  setForm({
-                    ...form,
-                    notifications: {
-                      ...form.notifications,
-                      [key]: { ...form.notifications[key], body: e.target.value },
-                    },
-                  })
-                }
-              />
+              <div className="space-y-3">
+                {form.enabledLocales.map((loc) => (
+                  <div key={loc} className="rounded-md border border-border/60 p-2.5">
+                    <div className="mb-1.5 text-[10px] font-bold uppercase tracking-wide text-text-dim">
+                      {loc}
+                    </div>
+                    <input
+                      className="mb-2 h-10 w-full rounded-md border border-border bg-surface px-3 text-sm text-text-hi outline-none focus:border-volt"
+                      value={form.notifications[key][loc].subject}
+                      aria-label={`${t('admin.settings.subject')} (${loc})`}
+                      placeholder={t('admin.settings.subject')}
+                      onChange={(e) =>
+                        setForm({
+                          ...form,
+                          notifications: {
+                            ...form.notifications,
+                            [key]: {
+                              ...form.notifications[key],
+                              [loc]: { ...form.notifications[key][loc], subject: e.target.value },
+                            },
+                          },
+                        })
+                      }
+                    />
+                    <textarea
+                      className="w-full rounded-md border border-border bg-surface px-3 py-2 text-sm text-text-hi outline-none focus:border-volt"
+                      rows={2}
+                      value={form.notifications[key][loc].body}
+                      aria-label={`${t('admin.settings.body')} (${loc})`}
+                      placeholder={t('admin.settings.body')}
+                      onChange={(e) =>
+                        setForm({
+                          ...form,
+                          notifications: {
+                            ...form.notifications,
+                            [key]: {
+                              ...form.notifications[key],
+                              [loc]: { ...form.notifications[key][loc], body: e.target.value },
+                            },
+                          },
+                        })
+                      }
+                    />
+                  </div>
+                ))}
+              </div>
             </div>
           ))}
         </div>

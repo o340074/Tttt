@@ -11,6 +11,7 @@ import { WarmingService } from '../warming/warming.service';
 import {
   makeCategoryRow,
   makeFakeConfigService,
+  makeFakeNotificationsService,
   makeFakePrismaService,
   makeFakeRedisService,
   makeProductRow,
@@ -134,8 +135,10 @@ describe('OrdersService.checkout (E5 stock delivery)', () => {
         crypto,
         new AuditService(prisma as unknown as PrismaService),
         ledger,
+        makeFakeNotificationsService(prisma),
         config,
       ),
+      makeFakeNotificationsService(prisma),
     );
     const user = await prisma.user.create({
       data: { email: 'buyer@advault.dev', passwordHash: 'x' },

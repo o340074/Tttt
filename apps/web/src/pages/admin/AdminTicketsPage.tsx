@@ -137,6 +137,15 @@ export function AdminTicketsPage() {
                       </Link>
                     </td>
                     <td className="max-w-[280px] truncate px-4 py-3 text-text-hi" title={tk.subject}>
+                      {tk.lastMessageFromCustomer && (
+                        <span
+                          className="mr-1.5 inline-flex h-4 items-center gap-1 rounded-pill bg-[rgba(124,125,250,0.16)] px-1.5 align-middle text-[10px] font-bold uppercase tracking-wide text-volt-400"
+                          title={t('admin.tickets.newReply')}
+                        >
+                          <span aria-hidden className="h-1.5 w-1.5 rounded-full bg-volt" />
+                          {t('admin.tickets.newReply')}
+                        </span>
+                      )}
                       {tk.subject}
                       <span className="ml-2 text-xs text-text-dim">· {tk.requester.email}</span>
                     </td>

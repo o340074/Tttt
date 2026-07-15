@@ -7,15 +7,17 @@
 
 ## 📍 Текущий статус
 
-- **Фаза:** разработка. E0…E7 готовы и проверены end-to-end. **E8 (админка/операторка)
-  — ЗАВЕРШЕНА**: Orders + Warming-workspace + Inventory-UI (часть 1); Finance (ручной
-  refund + ручная выдача + сверка ledger) + Users + Promo CRUD (часть 2); Catalog &
-  Bundles CRUD + Warming plans CRUD с версионированием (часть 3); **Dashboard/Reports +
-  Tickets + Staff&roles UI + Settings (часть 4 — финал E8)**. Долг: inline-edit промо.
-- **Следующий шаг:** **E9 — Поддержка и уведомления** (клиентский портал тикетов поверх
-  Ticket/TicketMessage, mailer/in-app уведомления по шаблонам из Settings, вебхуки/очередь).
-- **Ветка:** актуальная база — `claude/advault-e8-admin-completion-c5l1u4` (E0…E7 +
-  E8 части 1–4). Отходит от `…e8-catalog-warming-4uvpad`. В main код ещё не влит.
+- **Фаза:** разработка. E0…E8 готовы. **E9 (Поддержка и уведомления) — ЗАВЕРШЕНА**:
+  клиентский портал тикетов (`/tickets*` под RequireAuth, строго scoped на владельца,
+  internal-заметки скрыты), in-app уведомления (модель `Notification` + бейдж с поллингом)
+  и транзакционные email по событиям `order.paid`/`warming.ready`/`ticket.reply` на
+  per-locale шаблонах из Settings (EN/RU, подстановка `{{number}}`); админ-индикатор
+  «новый ответ покупателя» + авто-переход `pending→open`. Проверено вживую на реальном
+  Postgres+Redis (curl полного цикла) и e2e. Долг E8: inline-edit промо.
+- **Следующий шаг:** **E10 — Гарантии, замены, возвраты** (v1.1). Далее E11 (полировка/
+  безопасность/запуск). См. `docs/16` §E10.
+- **Ветка:** актуальная база — `claude/advault-e9-support-notifications-grpdmg` (E0…E8 +
+  E9). Отходит от `…e8-admin-completion-c5l1u4`. В main код ещё не влит.
 - **Прогресс по эпикам (из `docs/16`):**
 
 | Эпик | Название | Статус |
@@ -30,7 +32,7 @@
 | E6 | Прогрев: модель и очередь | ✅ готово |
 | E7 | Инвентарь: прокси и Octo-профили | ✅ готово |
 | E8 | Полная админка / операторка | ✅ готово (Orders+Warming+Inventory · Finance/Users/Promo · Catalog/Bundles+Warming-plans · Dashboard/Reports+Tickets+Staff+Settings) |
-| E9 | Поддержка и уведомления | ⬜ |
+| E9 | Поддержка и уведомления | ✅ готово (клиентский портал тикетов · in-app Notification+бейдж · email+in-app по order.paid/warming.ready/ticket.reply на per-locale шаблонах Settings) |
 | E10 | Гарантии, замены, возвраты | ⬜ |
 | E11 | Полировка, безопасность, запуск | ⬜ |
 
@@ -39,6 +41,47 @@
 ---
 
 ## Записи
+
+### Сессия — Поддержка и уведомления (эпик E9 — ЗАВЕРШЁН)
+- **Развилки (asking):** заданы через AskUserQuestion, все по рекомендациям —
+  объём **полный срез** (портал + email + in-app); модель **отдельная таблица
+  `Notification`**; движок доставки **синхронно через mailer** (BullMQ-воркеров в коде
+  ещё нет — очередь в долг E11); realtime бейджа **поллинг** (без WebSocket).
+- **Контракты вперёд:** `@advault/types` — client-ticket типы (`TicketSummary`,
+  `TicketMessageView` с `authorRole`, `TicketDetailView`, `CreateMyTicket*`),
+  `Notification*` (`NotificationView`/`NotificationType`/`UnreadCountResponse`);
+  `NotificationTemplate` стал **per-locale** (`LocalizedNotificationTemplate`),
+  `ShopSettings.notifications` и `UpdateSettingsRequest` обновлены; `AdminTicketListItem`
+  получил `lastMessageFromCustomer`. `docs/backend/{prisma-schema,openapi}.md` обновлены
+  (модель `Notification`+enum, пути `/tickets*` и `/notifications*`, схемы).
+- **Модель/миграция (`20260715120000_notifications`):** `Notification`
+  (userId, type enum, title/body, data JsonB для диплинка, readAt, индексы
+  `[userId,readAt]`/`[userId,createdAt]`, FK cascade). Применена вживую (10 миграций,
+  `migrate status` — up to date). `FakeNotificationStore` + `findFirst` у `FakeTicketStore`.
+- **Backend:** `NotificationsModule` (@Global) — `NotificationsService.emit()` рендерит
+  шаблон Settings в локали получателя (`renderTemplate`+`{{var}}`), пишет in-app строку и
+  шлёт email через `MailerService.sendNotification` (заглушка; тело письма не логируем);
+  `emit` best-effort (никогда не роняет бизнес-транзакцию). Client-`TicketsModule`
+  (`/tickets*` под RequireAuth) строго scoped на `requesterId`, internal-заметки вырезаны,
+  `authorRole` вместо личности стаффа, `pending/resolved→open` на ответ покупателя,
+  closed→409. Эмиссии: `order.paid` (orders.service после checkout), `warming.ready`
+  (warming.service на `deliver`), `ticket.reply` (admin-tickets на публичный ответ).
+  `AdminTicketsService` — индикатор `lastMessageFromCustomer` (последнее сообщение).
+- **Web:** `features/notifications` (хуки + `NotificationBell` — колокол с бейджем,
+  поллинг unread каждые 30с, панель со списком/mark-all/диплинк), `features/tickets`
+  (хуки + `TicketStatusPill`); страницы `SupportPage` (список + композер), `TicketPage`
+  (тред + reply, closed-состояние); нав «Поддержка» + бейдж в шапке; админ-плашка
+  «новый ответ» в очереди тикетов; `AdminSettingsPage` — редактор шаблонов **по локалям**;
+  иконки `bell`/`ticket`; i18n EN/RU (`notifications.*`, `support.*`, `admin.tickets.newReply`,
+  `admin.settings.templatesHint`), locales.spec зелёный.
+- **Проверка (DoD):** lint/typecheck/build зелёные; API 288 тестов (17 новых:
+  notifications.logic/service, tickets.service, e2e support-notifications + assert
+  order_paid/warming_ready в orders/warming e2e); web locales.spec. **Live-verify** на
+  реальном Postgres+Redis: register→ticket→scoping 404→staff reply+internal note→
+  internal скрыт+role=staff→ticket_reply notification→buyer reply reopen→admin флаг→
+  **RU-шаблон** с подстановкой номера→mark-read/all→closed 409→строки в БД.
+- **Долг/следующее:** E10 (гарантии/замены/возвраты). В долг: вынос доставки уведомлений
+  в BullMQ-очередь + ретраи (E11), WebSocket для realtime, вложения/макросы тикетов.
 
 ### Сессия — Админка: Dashboard/Reports + Tickets + Staff&roles + Settings (эпик E8, часть 4 — ФИНАЛ E8)
 - **Развилки (asking):** попытки задать через AskUserQuestion дважды упали с инфра-ошибкой

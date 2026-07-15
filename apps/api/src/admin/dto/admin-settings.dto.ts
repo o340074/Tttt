@@ -24,21 +24,34 @@ class NotificationTemplateDto implements NotificationTemplate {
   body!: string;
 }
 
+/** A template patch per locale (E9): any subset of enabled locales. */
+class LocalizedTemplateDto {
+  @IsOptional()
+  @ValidateNested()
+  @Type(() => NotificationTemplateDto)
+  en?: NotificationTemplateDto;
+
+  @IsOptional()
+  @ValidateNested()
+  @Type(() => NotificationTemplateDto)
+  ru?: NotificationTemplateDto;
+}
+
 class NotificationsDto {
   @IsOptional()
   @ValidateNested()
-  @Type(() => NotificationTemplateDto)
-  orderPaid?: NotificationTemplateDto;
+  @Type(() => LocalizedTemplateDto)
+  orderPaid?: LocalizedTemplateDto;
 
   @IsOptional()
   @ValidateNested()
-  @Type(() => NotificationTemplateDto)
-  warmingReady?: NotificationTemplateDto;
+  @Type(() => LocalizedTemplateDto)
+  warmingReady?: LocalizedTemplateDto;
 
   @IsOptional()
   @ValidateNested()
-  @Type(() => NotificationTemplateDto)
-  ticketReply?: NotificationTemplateDto;
+  @Type(() => LocalizedTemplateDto)
+  ticketReply?: LocalizedTemplateDto;
 }
 
 export class UpdateSettingsDto {

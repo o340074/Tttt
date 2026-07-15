@@ -31,6 +31,8 @@ import { NotFoundPage } from './pages/NotFoundPage';
 import { OrderPage } from './pages/OrderPage';
 import { OrdersPage } from './pages/OrdersPage';
 import { ProductPage } from './pages/ProductPage';
+import { SupportPage } from './pages/SupportPage';
+import { TicketPage } from './pages/TicketPage';
 import { WalletPage } from './pages/WalletPage';
 import { AuthPage } from './pages/auth/AuthPage';
 import { ForgotPasswordPage } from './pages/auth/ForgotPasswordPage';
@@ -50,6 +52,8 @@ export function App() {
           <Route path="checkout" element={<CheckoutPage />} />
           <Route path="orders" element={<OrdersPage />} />
           <Route path="orders/:id" element={<OrderPage />} />
+          <Route path="support" element={<SupportPage />} />
+          <Route path="support/:id" element={<TicketPage />} />
         </Route>
         <Route path="*" element={<NotFoundPage />} />
       </Route>

@@ -7,11 +7,54 @@
     "home": "Home",
     "catalog": "Catalog",
     "wallet": "Wallet",
+    "support": "Support",
     "language": "Language",
     "account": "Account",
     "signIn": "Sign in",
     "cart": "Cart",
     "admin": "Admin"
+  },
+  "notifications": {
+    "title": "Notifications",
+    "ariaWithCount": "Notifications ({{count}} unread)",
+    "empty": "No notifications yet.",
+    "loading": "Loading…",
+    "markAllRead": "Mark all read"
+  },
+  "support": {
+    "title": "Support",
+    "subtitle": "Open a ticket and track our replies.",
+    "new": "New ticket",
+    "subject": "Subject",
+    "message": "How can we help?",
+    "submit": "Create ticket",
+    "sending": "Sending…",
+    "cancel": "Cancel",
+    "validation": "Please add a subject and a message.",
+    "createError": "Could not create the ticket.",
+    "error": "Could not load your tickets.",
+    "retry": "Try again",
+    "empty": "You have no tickets yet.",
+    "messages_one": "{{count}} message",
+    "messages_other": "{{count}} messages",
+    "back": "Back to support",
+    "notFound": "Ticket not found.",
+    "reply": "Your reply",
+    "replyPlaceholder": "Type your message…",
+    "send": "Send reply",
+    "replyError": "Could not send your reply.",
+    "closedNote": "This ticket is closed. Open a new one if you still need help.",
+    "statuses": {
+      "open": "Open",
+      "pending": "Awaiting you",
+      "resolved": "Resolved",
+      "closed": "Closed"
+    },
+    "authors": {
+      "customer": "You",
+      "staff": "Support",
+      "system": "System"
+    }
   },
   "auth": {
     "switchLabel": "Choose form",
@@ -871,6 +914,7 @@
       "colAssignee": "Assignee",
       "colUpdated": "Updated",
       "unassigned": "Unassigned",
+      "newReply": "New reply",
       "empty": "No tickets match your filters.",
       "error": "Could not load tickets.",
       "back": "Back to tickets",
@@ -951,6 +995,7 @@
       "languages": "Languages",
       "defaultLocale": "Default",
       "notifications": "Notification templates",
+      "templatesHint": "Placeholders (for example the order or ticket number) are filled in when the message is sent. Edit each enabled language.",
       "subject": "Subject",
       "body": "Body",
       "templates": {

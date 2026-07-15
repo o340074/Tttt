@@ -2,7 +2,7 @@ import { randomUUID } from 'node:crypto';
 import { Prisma } from '@prisma/client';
 import { beforeEach, describe, expect, it } from 'vitest';
 import { AuditService } from '../audit/audit.service';
-import { makeFakePrismaService } from '../testing/fakes';
+import { makeFakeNotificationsService, makeFakePrismaService } from '../testing/fakes';
 import { AdminTicketsService } from './admin-tickets.service';
 import type { Role } from '@advault/types';
 
@@ -37,7 +37,11 @@ describe('AdminTicketsService (E8 tickets)', () => {
 
   beforeEach(() => {
     prisma = makeFakePrismaService();
-    tickets = new AdminTicketsService(prisma, new AuditService(prisma));
+    tickets = new AdminTicketsService(
+      prisma,
+      new AuditService(prisma),
+      makeFakeNotificationsService(prisma),
+    );
     prisma.user.rows.push({
       id: supportId,
       email: 'support@example.com',

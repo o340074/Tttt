@@ -31,7 +31,9 @@ export type IconName =
   | 'plus'
   | 'minus'
   | 'vault'
-  | 'download';
+  | 'download'
+  | 'bell'
+  | 'ticket';
 
 interface IconProps {
   name: IconName;

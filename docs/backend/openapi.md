@@ -1054,6 +1054,7 @@ components:
         orderId: { type: string, format: uuid, nullable: true }
         orderNumber: { type: string, nullable: true }
         messageCount: { type: integer }
+        lastMessageFromCustomer: { type: boolean, description: 'E9: последнее сообщение — от покупателя (индикатор в очереди)' }
         lastReplyAt: { type: string, format: date-time }
         createdAt: { type: string, format: date-time }
     AdminTicketMessage:
@@ -1163,6 +1164,12 @@ components:
     NotificationTemplate:
       type: object
       properties: { subject: { type: string }, body: { type: string } }
+    LocalizedNotificationTemplate:
+      type: object
+      description: 'E9: шаблон по локалям; локаль получателя (User.locale) выбирается при отправке.'
+      properties:
+        en: { $ref: '#/components/schemas/NotificationTemplate' }
+        ru: { $ref: '#/components/schemas/NotificationTemplate' }
     ShopSettings:
       type: object
       description: 'Интеграционные флаги — только «configured», без секретов.'
@@ -1174,9 +1181,9 @@ components:
         notifications:
           type: object
           properties:
-            orderPaid: { $ref: '#/components/schemas/NotificationTemplate' }
-            warmingReady: { $ref: '#/components/schemas/NotificationTemplate' }
-            ticketReply: { $ref: '#/components/schemas/NotificationTemplate' }
+            orderPaid: { $ref: '#/components/schemas/LocalizedNotificationTemplate' }
+            warmingReady: { $ref: '#/components/schemas/LocalizedNotificationTemplate' }
+            ticketReply: { $ref: '#/components/schemas/LocalizedNotificationTemplate' }
         integrations:
           type: object
           properties:
@@ -1192,10 +1199,75 @@ components:
         enabledLocales: { type: array, items: { type: string, enum: [en, ru] } }
         notifications:
           type: object
+          description: 'E9: частичный патч по событию и по локали.'
           properties:
-            orderPaid: { $ref: '#/components/schemas/NotificationTemplate' }
-            warmingReady: { $ref: '#/components/schemas/NotificationTemplate' }
-            ticketReply: { $ref: '#/components/schemas/NotificationTemplate' }
+            orderPaid: { $ref: '#/components/schemas/LocalizedNotificationTemplate' }
+            warmingReady: { $ref: '#/components/schemas/LocalizedNotificationTemplate' }
+            ticketReply: { $ref: '#/components/schemas/LocalizedNotificationTemplate' }
+
+    # ---- E9: Buyer support portal + notifications ----
+    TicketSummary:
+      type: object
+      properties:
+        id: { type: string, format: uuid }
+        number: { type: string }
+        subject: { type: string }
+        status: { $ref: '#/components/schemas/TicketStatus' }
+        orderId: { type: string, format: uuid, nullable: true }
+        orderNumber: { type: string, nullable: true }
+        messageCount: { type: integer, description: 'только публичные сообщения' }
+        lastReplyAt: { type: string, format: date-time }
+        createdAt: { type: string, format: date-time }
+    TicketMessageView:
+      type: object
+      description: 'Публичное сообщение покупательской ветки; internal-заметки исключены; личность стаффа скрыта.'
+      properties:
+        id: { type: string, format: uuid }
+        authorRole: { type: string, enum: [customer, staff, system] }
+        body: { type: string }
+        createdAt: { type: string, format: date-time }
+    TicketDetailView:
+      allOf:
+        - $ref: '#/components/schemas/TicketSummary'
+        - type: object
+          properties:
+            closedAt: { type: string, format: date-time, nullable: true }
+            messages: { type: array, items: { $ref: '#/components/schemas/TicketMessageView' } }
+    CreateMyTicketRequest:
+      type: object
+      required: [subject, body]
+      properties:
+        subject: { type: string, minLength: 3, maxLength: 160 }
+        body: { type: string, minLength: 1, maxLength: 4000 }
+        orderId: { type: string, format: uuid, nullable: true, description: 'должен принадлежать покупателю' }
+    CreateMyTicketMessageRequest:
+      type: object
+      required: [body]
+      properties:
+        body: { type: string, minLength: 1, maxLength: 4000 }
+    NotificationType:
+      type: string
+      enum: [order_paid, warming_ready, ticket_reply]
+    NotificationView:
+      type: object
+      properties:
+        id: { type: string, format: uuid }
+        type: { $ref: '#/components/schemas/NotificationType' }
+        title: { type: string }
+        body: { type: string }
+        data:
+          type: object
+          description: 'несекретный контекст для диплинка'
+          properties:
+            orderId: { type: string }
+            orderNumber: { type: string }
+            ticketId: { type: string }
+            ticketNumber: { type: string }
+        readAt: { type: string, format: date-time, nullable: true }
+        createdAt: { type: string, format: date-time }
+    UnreadCountResponse:
+      type: object
+      properties: { unread: { type: integer } }
 
   responses:
     BadRequest:
@@ -2333,6 +2405,82 @@ paths:
         '403': { $ref: '#/components/responses/Forbidden' }
         '404': { $ref: '#/components/responses/NotFound' }
         '409': { $ref: '#/components/responses/Conflict' }
+
+  # ---- E9: Buyer support portal (RequireAuth; strictly owner-scoped) ----
+  /tickets:
+    get:
+      tags: [Support]
+      summary: Мои тикеты (только владелец; internal-сообщения скрыты)
+      parameters:
+        - $ref: '#/components/parameters/Page'
+        - $ref: '#/components/parameters/Limit'
+        - { name: status, in: query, schema: { type: string, enum: [open, pending, resolved, closed] } }
+      responses:
+        '200': { description: OK, content: { application/json: { schema: { type: object, properties: { data: { type: array, items: { $ref: '#/components/schemas/TicketSummary' } }, meta: { $ref: '#/components/schemas/PageMeta' } } } } } }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+    post:
+      tags: [Support]
+      summary: Открыть тикет из ЛК (опц. привязка к своему заказу)
+      requestBody: { required: true, content: { application/json: { schema: { $ref: '#/components/schemas/CreateMyTicketRequest' } } } }
+      responses:
+        '201': { description: Created, content: { application/json: { schema: { $ref: '#/components/schemas/TicketDetailView' } } } }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+  /tickets/{id}:
+    get:
+      tags: [Support]
+      summary: Мой тикет с публичной перепиской (чужой/неизвестный → 404)
+      parameters: [{ name: id, in: path, required: true, schema: { type: string, format: uuid } }]
+      responses:
+        '200': { description: OK, content: { application/json: { schema: { $ref: '#/components/schemas/TicketDetailView' } } } }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '404': { $ref: '#/components/responses/NotFound' }
+  /tickets/{id}/messages:
+    post:
+      tags: [Support]
+      summary: Ответ покупателя (никогда не internal); закрытый → 409; pending/resolved → open
+      parameters: [{ name: id, in: path, required: true, schema: { type: string, format: uuid } }]
+      requestBody: { required: true, content: { application/json: { schema: { $ref: '#/components/schemas/CreateMyTicketMessageRequest' } } } }
+      responses:
+        '201': { description: Created, content: { application/json: { schema: { $ref: '#/components/schemas/TicketDetailView' } } } }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409': { $ref: '#/components/responses/Conflict' }
+
+  # ---- E9: In-app notifications (RequireAuth; owner-scoped) ----
+  /notifications:
+    get:
+      tags: [Notifications]
+      summary: Мои уведомления (лента, новейшие сверху; ?unread=true — только непрочитанные)
+      parameters:
+        - $ref: '#/components/parameters/Page'
+        - $ref: '#/components/parameters/Limit'
+        - { name: unread, in: query, schema: { type: boolean } }
+      responses:
+        '200': { description: OK, content: { application/json: { schema: { type: object, properties: { data: { type: array, items: { $ref: '#/components/schemas/NotificationView' } }, meta: { $ref: '#/components/schemas/PageMeta' } } } } } }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+  /notifications/unread-count:
+    get:
+      tags: [Notifications]
+      summary: Счётчик непрочитанного для бейджа (поллинг)
+      responses:
+        '200': { description: OK, content: { application/json: { schema: { $ref: '#/components/schemas/UnreadCountResponse' } } } }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+  /notifications/read-all:
+    post:
+      tags: [Notifications]
+      summary: Отметить все мои уведомления прочитанными
+      responses:
+        '200': { description: OK, content: { application/json: { schema: { $ref: '#/components/schemas/UnreadCountResponse' } } } }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+  /notifications/{id}/read:
+    post:
+      tags: [Notifications]
+      summary: Отметить одно уведомление прочитанным (скоуп владельца; чужое — no-op)
+      parameters: [{ name: id, in: path, required: true, schema: { type: string, format: uuid } }]
+      responses:
+        '200': { description: OK, content: { application/json: { schema: { $ref: '#/components/schemas/UnreadCountResponse' } } } }
+        '401': { $ref: '#/components/responses/Unauthorized' }
 
   # ---- E8: Staff & reports (RBAC manager/admin; staff list = any staff) ----
   /admin/staff:

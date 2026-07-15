@@ -326,6 +326,7 @@ model User {
   ticketsRequested TicketMessage[] @relation("TicketMessageAuthor")
   ticketsAssigned  Ticket[]        @relation("TicketAssignee")
   ticketsRaised    Ticket[]        @relation("TicketRequester")
+  notifications    Notification[]  @relation("UserNotifications")
 
   @@index([status])
   @@index([role])
@@ -811,4 +812,35 @@ model Setting {
   updatedBy String?  @db.Uuid
 
   @@map("settings")
+}
+
+// ---------- Notifications (E9) ----------
+
+enum NotificationType {
+  order_paid
+  warming_ready
+  ticket_reply
+}
+
+/**
+ * In-app notification for a buyer (E9). Rendered from a Settings template in the
+ * recipient's locale at send time; email is delivered in parallel via the mailer.
+ * `data` carries only non-secret deep-link context (order/ticket id + number).
+ * `readAt` is null until acknowledged.
+ */
+model Notification {
+  id        String           @id @default(uuid()) @db.Uuid
+  userId    String           @db.Uuid
+  type      NotificationType
+  title     String
+  body      String           @db.Text
+  data      Json             @default("{}") @db.JsonB
+  readAt    DateTime?
+  createdAt DateTime         @default(now())
+
+  user User @relation("UserNotifications", fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, readAt])
+  @@index([userId, createdAt])
+  @@map("notifications")
 }

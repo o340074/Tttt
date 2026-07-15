@@ -1131,6 +1131,9 @@ export interface AdminTicketListItem {
   orderId: string | null;
   orderNumber: string | null;
   messageCount: number;
+  /** True when the most recent message was written by the buyer — the queue
+   *  flags these so staff can spot new customer replies awaiting a response (E9). */
+  lastMessageFromCustomer: boolean;
   lastReplyAt: string;
   createdAt: string;
 }
@@ -1274,11 +1277,22 @@ export interface OperatorLoadReport {
 // Settings / Integrations (docs/13 §17) — E8
 // ============================================================
 
-/** A notification template (email/in-app), per channel. */
+/** A notification template (email/in-app) for one locale. `{{var}}` placeholders
+ *  (e.g. `{{number}}`) are substituted at send time (docs/backend/openapi.md). */
 export interface NotificationTemplate {
   subject: string;
   body: string;
 }
+
+/**
+ * A notification template localized per enabled locale (E9). The buyer's stored
+ * `User.locale` selects the variant at send time; a missing locale falls back to
+ * the default locale, then EN.
+ */
+export type LocalizedNotificationTemplate = Record<Locale, NotificationTemplate>;
+
+/** The three transactional events that carry a template (E9). */
+export type NotificationEventKey = 'orderPaid' | 'warmingReady' | 'ticketReply';
 
 /**
  * Typed view over the key-value Setting store. Only non-secret operational
@@ -1291,10 +1305,11 @@ export interface ShopSettings {
   defaultLocale: Locale;
   /** Locales offered in the storefront switcher. */
   enabledLocales: Locale[];
+  /** Per-event templates, each localized by enabled locale (E9). */
   notifications: {
-    orderPaid: NotificationTemplate;
-    warmingReady: NotificationTemplate;
-    ticketReply: NotificationTemplate;
+    orderPaid: LocalizedNotificationTemplate;
+    warmingReady: LocalizedNotificationTemplate;
+    ticketReply: LocalizedNotificationTemplate;
   };
   /** Read-only integration status flags — never the secrets themselves. */
   integrations: {
@@ -1304,9 +1319,106 @@ export interface ShopSettings {
   };
 }
 
-/** PUT /admin/settings — partial update of the typed settings. */
+/** PUT /admin/settings — partial update of the typed settings. Notification
+ *  templates may be patched per event and per locale (E9). */
 export type UpdateSettingsRequest = Partial<
   Pick<ShopSettings, 'storeName' | 'supportEmail' | 'defaultLocale' | 'enabledLocales'> & {
-    notifications: Partial<ShopSettings['notifications']>;
+    notifications: Partial<
+      Record<NotificationEventKey, Partial<Record<Locale, NotificationTemplate>>>
+    >;
   }
 >;
+
+// ============================================================
+// Support tickets — buyer portal (docs/13 §13) — E9
+// ============================================================
+
+/** Who authored a ticket message, as the buyer sees it (no staff identity leak,
+ *  no internal notes). `system` marks status/lifecycle events. */
+export type TicketAuthorRole = 'customer' | 'staff' | 'system';
+
+/** GET /tickets — one of the buyer's own tickets. */
+export interface TicketSummary {
+  id: string;
+  number: string;
+  subject: string;
+  status: TicketStatus;
+  orderId: string | null;
+  orderNumber: string | null;
+  /** Public (non-internal) messages only. */
+  messageCount: number;
+  lastReplyAt: string;
+  createdAt: string;
+}
+
+/** One message in the buyer-facing thread — internal notes are never included. */
+export interface TicketMessageView {
+  id: string;
+  authorRole: TicketAuthorRole;
+  body: string;
+  createdAt: string;
+}
+
+/** GET /tickets/:id — the buyer's ticket with its public thread. */
+export interface TicketDetailView extends TicketSummary {
+  closedAt: string | null;
+  messages: TicketMessageView[];
+}
+
+/** POST /tickets — open a ticket from the buyer's account. */
+export interface CreateMyTicketRequest {
+  subject: string;
+  body: string;
+  /** Optional link to one of the buyer's own orders. */
+  orderId?: string | null;
+}
+
+/** POST /tickets/:id/messages — the buyer replies (never internal). */
+export interface CreateMyTicketMessageRequest {
+  body: string;
+}
+
+export interface MyTicketsQuery {
+  page?: number;
+  limit?: number;
+  status?: TicketStatus;
+}
+
+// ============================================================
+// In-app notifications (docs/13 §13) — E9
+// ============================================================
+
+/** In-app notification kinds — one per transactional event. */
+export type NotificationType = 'order_paid' | 'warming_ready' | 'ticket_reply';
+
+/**
+ * A stored in-app notification for the current user. `data` carries non-secret
+ * context for deep-linking (order/ticket id + human number). `readAt` is null
+ * until the user opens/acknowledges it.
+ */
+export interface NotificationView {
+  id: string;
+  type: NotificationType;
+  title: string;
+  body: string;
+  data: {
+    orderId?: string;
+    orderNumber?: string;
+    ticketId?: string;
+    ticketNumber?: string;
+  };
+  readAt: string | null;
+  createdAt: string;
+}
+
+/** GET /notifications/unread-count — badge source (polled). */
+export interface UnreadCountResponse {
+  unread: number;
+}
+
+export interface NotificationsQuery {
+  page?: number;
+  limit?: number;
+  /** When true, only unread notifications are returned. */
+  unread?: boolean;
+}

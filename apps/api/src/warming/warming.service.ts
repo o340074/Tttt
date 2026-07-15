@@ -5,6 +5,7 @@ import { ApiException } from '../common/api-exception';
 import { WARMING_STAFF } from '../auth/roles';
 import { AuditService } from '../audit/audit.service';
 import { PayloadCryptoService } from '../crypto/payload-crypto.service';
+import { NotificationsService } from '../notifications/notifications.service';
 import { PrismaService } from '../prisma/prisma.service';
 import { LedgerService } from '../wallet/ledger.service';
 import {
@@ -83,6 +84,7 @@ export class WarmingService {
     private readonly crypto: PayloadCryptoService,
     private readonly audit: AuditService,
     private readonly ledger: LedgerService,
+    private readonly notifications: NotificationsService,
     config: ConfigService<Env, true>,
   ) {
     this.holdBufferMinutes = config.get('WARMING_HOLD_BUFFER_MINUTES', { infer: true });
@@ -303,6 +305,16 @@ export class WarmingService {
       entityId: id,
       diff: { from: job.status, to: target, ...(note ? { note } : {}) },
     });
+
+    // Delivery to the buyer's Vault → "your account is ready" (in-app + email).
+    if (action === 'deliver') {
+      await this.notifications.emit(
+        job.orderItem.order.userId,
+        'warmingReady',
+        { number: job.orderItem.order.number },
+        { orderId: job.orderItem.order.id, orderNumber: job.orderItem.order.number },
+      );
+    }
     return this.getJob(id, locale);
   }
 

@@ -9,7 +9,8 @@ describe('settings.logic', () => {
     expect(s.storeName).toBe('AdVault');
     expect(s.defaultLocale).toBe('en');
     expect(s.enabledLocales).toEqual(['en', 'ru']);
-    expect(s.notifications.orderPaid.subject).toContain('confirmed');
+    expect(s.notifications.orderPaid.en.subject).toContain('confirmed');
+    expect(s.notifications.orderPaid.ru.subject).toContain('подтверждён');
     expect(s.integrations).toEqual(FLAGS);
   });
 
@@ -42,13 +43,17 @@ describe('settings.logic', () => {
     expect(error).toContain('defaultLocale');
   });
 
-  it('merges a single notification template field without wiping the rest', () => {
+  it('merges a single notification template field per locale without wiping the rest', () => {
     const { notifications } = applyUpdate(
       {},
-      { notifications: { orderPaid: { subject: 'New subject', body: '' } } },
+      { notifications: { orderPaid: { en: { subject: 'New subject', body: '' } } } },
     );
-    expect(notifications.orderPaid.subject).toBe('New subject');
-    // Untouched templates keep their defaults.
-    expect(notifications.warmingReady.subject).toContain('ready');
+    expect(notifications.orderPaid.en.subject).toBe('New subject');
+    // A blank body falls back to the default (never ships empty).
+    expect(notifications.orderPaid.en.body).toContain('{{number}}');
+    // The other locale of the same event is untouched.
+    expect(notifications.orderPaid.ru.subject).toContain('подтверждён');
+    // Untouched events keep their defaults.
+    expect(notifications.warmingReady.en.subject).toContain('ready');
   });
 });

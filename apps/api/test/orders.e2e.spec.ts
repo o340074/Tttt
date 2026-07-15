@@ -264,6 +264,15 @@ describe('Cart & checkout smoke (e2e)', () => {
 
     const cart = await authed(request(http).get('/api/v1/cart')).expect(200);
     expect(cart.body.items).toEqual([]);
+
+    // E9: a paid order lands an in-app notification for the buyer.
+    const notifs = await authed(request(http).get('/api/v1/notifications')).expect(200);
+    const paid = notifs.body.data.find(
+      (n: { type: string; data: { orderId?: string } }) =>
+        n.type === 'order_paid' && n.data.orderId === orderId,
+    );
+    expect(paid).toBeTruthy();
+    expect(paid.data.orderNumber).toBe(orderNumber);
   });
 
   it('reveals the decrypted delivery to the owner and audits the access', async () => {

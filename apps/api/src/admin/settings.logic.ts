@@ -1,5 +1,7 @@
 import type {
+  LocalizedNotificationTemplate,
   Locale,
+  NotificationEventKey,
   NotificationTemplate,
   ShopSettings,
   UpdateSettingsRequest,
@@ -22,6 +24,13 @@ interface StoreSection {
 }
 type NotificationsSection = ShopSettings['notifications'];
 
+/** The transactional events that carry a localized template (E9). */
+export const NOTIFICATION_EVENTS: NotificationEventKey[] = [
+  'orderPaid',
+  'warmingReady',
+  'ticketReply',
+];
+
 const DEFAULT_STORE: StoreSection = {
   storeName: 'AdVault',
   supportEmail: 'support@advault.example',
@@ -31,27 +40,52 @@ const DEFAULT_STORE: StoreSection = {
 
 const tpl = (subject: string, body: string): NotificationTemplate => ({ subject, body });
 
+/** Localized default templates (EN + RU). `{{number}}` is substituted at send. */
 const DEFAULT_NOTIFICATIONS: NotificationsSection = {
-  orderPaid: tpl('Your AdVault order is confirmed', 'Order {{number}} is paid. Thank you!'),
-  warmingReady: tpl('Your account is ready', 'Order {{number}} has been delivered to your Vault.'),
-  ticketReply: tpl('Support replied to your ticket', 'Ticket {{number}} has a new reply.'),
+  orderPaid: {
+    en: tpl('Your AdVault order is confirmed', 'Order {{number}} is paid. Thank you!'),
+    ru: tpl('Ваш заказ AdVault подтверждён', 'Заказ {{number}} оплачен. Спасибо!'),
+  },
+  warmingReady: {
+    en: tpl('Your account is ready', 'Order {{number}} has been delivered to your Vault.'),
+    ru: tpl('Ваш аккаунт готов', 'Заказ {{number}} доставлен в ваш Vault.'),
+  },
+  ticketReply: {
+    en: tpl('Support replied to your ticket', 'Ticket {{number}} has a new reply.'),
+    ru: tpl('Поддержка ответила на ваш тикет', 'В тикете {{number}} новый ответ.'),
+  },
 };
 
 function isLocale(value: unknown): value is Locale {
   return typeof value === 'string' && (SUPPORTED_LOCALES as string[]).includes(value);
 }
 
-function mergeTemplate(base: NotificationTemplate, raw: unknown): NotificationTemplate {
+function mergeOne(base: NotificationTemplate, raw: unknown): NotificationTemplate {
   if (!raw || typeof raw !== 'object') return base;
   const r = raw as Partial<NotificationTemplate>;
   return {
-    subject: typeof r.subject === 'string' ? r.subject : base.subject,
-    body: typeof r.body === 'string' ? r.body : base.body,
+    // An empty string means "clear back to default" so a blank field never ships.
+    subject: typeof r.subject === 'string' && r.subject.trim() ? r.subject : base.subject,
+    body: typeof r.body === 'string' && r.body.trim() ? r.body : base.body,
   };
 }
 
+/** Merge a per-locale template patch onto a localized base (unknown locales dropped). */
+function mergeTemplate(
+  base: LocalizedNotificationTemplate,
+  raw: unknown,
+): LocalizedNotificationTemplate {
+  if (!raw || typeof raw !== 'object') return { ...base };
+  const r = raw as Record<string, unknown>;
+  const out = { ...base } as LocalizedNotificationTemplate;
+  for (const locale of SUPPORTED_LOCALES) {
+    out[locale] = mergeOne(base[locale], r[locale]);
+  }
+  return out;
+}
+
 /** Coerce a raw stored `store` value onto typed defaults (unknown keys dropped). */
-function readStore(raw: unknown): StoreSection {
+export function readStore(raw: unknown): StoreSection {
   const r = (raw && typeof raw === 'object' ? raw : {}) as Record<string, unknown>;
   const enabled = Array.isArray(r.enabledLocales) ? r.enabledLocales.filter(isLocale) : null;
   return {
@@ -62,7 +96,9 @@ function readStore(raw: unknown): StoreSection {
   };
 }
 
-function readNotifications(raw: unknown): NotificationsSection {
+/** Localized notification templates from a raw stored `notifications` value,
+ *  overlaid on the built-in defaults (E9; reused by the notifications sender). */
+export function readNotifications(raw: unknown): NotificationsSection {
   const r = (raw && typeof raw === 'object' ? raw : {}) as Record<string, unknown>;
   return {
     orderPaid: mergeTemplate(DEFAULT_NOTIFICATIONS.orderPaid, r.orderPaid),

@@ -11,6 +11,7 @@ import { LedgerService } from '../wallet/ledger.service';
 import {
   makeCategoryRow,
   makeFakeConfigService,
+  makeFakeNotificationsService,
   makeFakePrismaService,
   makeFakeRedisService,
   makeProductRow,
@@ -115,7 +116,15 @@ describe('WarmingService (E6 made-to-order)', () => {
     ledger = new LedgerService();
     crypto = new PayloadCryptoService(config);
     const audit = new AuditService(prisma as unknown as PrismaService);
-    warming = new WarmingService(prisma as unknown as PrismaService, crypto, audit, ledger, config);
+    const notifications = makeFakeNotificationsService(prisma);
+    warming = new WarmingService(
+      prisma as unknown as PrismaService,
+      crypto,
+      audit,
+      ledger,
+      notifications,
+      config,
+    );
     inventory = new InventoryService(prisma as unknown as PrismaService, crypto, audit);
     const stock = new StockService(
       prisma as unknown as PrismaService,
@@ -132,6 +141,7 @@ describe('WarmingService (E6 made-to-order)', () => {
       crypto,
       audit,
       warming,
+      notifications,
     );
     const buyer = await prisma.user.create({
       data: { email: 'buyer@advault.dev', passwordHash: 'x' },

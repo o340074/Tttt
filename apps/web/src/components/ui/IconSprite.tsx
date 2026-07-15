@@ -303,6 +303,30 @@ export function IconSprite() {
         <circle cx="9.5" cy="20" r="1.5" fill="currentColor" />
         <circle cx="18" cy="20" r="1.5" fill="currentColor" />
       </symbol>
+      <symbol id="ic-bell" viewBox="0 0 24 24">
+        <g
+          fill="none"
+          stroke="currentColor"
+          strokeWidth="2"
+          strokeLinecap="round"
+          strokeLinejoin="round"
+        >
+          <path d="M6 9a6 6 0 0 1 12 0c0 4 1 5.5 2 6.5H4c1-1 2-2.5 2-6.5Z" />
+          <path d="M9.5 19a2.5 2.5 0 0 0 5 0" />
+        </g>
+      </symbol>
+      <symbol id="ic-ticket" viewBox="0 0 24 24">
+        <g
+          fill="none"
+          stroke="currentColor"
+          strokeWidth="2"
+          strokeLinecap="round"
+          strokeLinejoin="round"
+        >
+          <path d="M3 8.5A1.5 1.5 0 0 1 4.5 7h15A1.5 1.5 0 0 1 21 8.5v2a2 2 0 0 0 0 4v2A1.5 1.5 0 0 1 19.5 18h-15A1.5 1.5 0 0 1 3 16.5v-2a2 2 0 0 0 0-4v-2Z" />
+          <path d="M13 7v11" strokeDasharray="2 2.5" />
+        </g>
+      </symbol>
       <symbol id="ic-tag" viewBox="0 0 24 24">
         <g fill="none" stroke="currentColor" strokeWidth="2" strokeLinejoin="round">
           <path d="M3 12.5V5a2 2 0 0 1 2-2h7.5L21 11.5a2 2 0 0 1 0 2.8l-6.7 6.7a2 2 0 0 1-2.8 0L3 12.5Z" />

@@ -7,6 +7,7 @@ import { lineName } from '../cart/cart.service';
 import { normalizePromoCode, PromoService } from '../cart/promo.service';
 import { SUPPORTED_LOCALES } from '../catalog/locale';
 import { PayloadCryptoService } from '../crypto/payload-crypto.service';
+import { NotificationsService } from '../notifications/notifications.service';
 import { PrismaService } from '../prisma/prisma.service';
 import { StockService } from '../stock/stock.service';
 import { IdempotencyService } from '../wallet/idempotency.service';
@@ -93,6 +94,7 @@ export class OrdersService {
     private readonly crypto: PayloadCryptoService,
     private readonly audit: AuditService,
     private readonly warming: WarmingService,
+    private readonly notifications: NotificationsService,
   ) {}
 
   async checkout(
@@ -109,6 +111,13 @@ export class OrdersService {
       const order = await this.performCheckout(userId, dto);
       const response = this.toOrderResponse(order, locale);
       await this.idempotency.saveResponse(idempotencyKey, CHECKOUT_ENDPOINT, 201, response);
+      // Order confirmed → notify the buyer (in-app + email). Best-effort.
+      await this.notifications.emit(
+        userId,
+        'orderPaid',
+        { number: response.number },
+        { orderId: response.id, orderNumber: response.number },
+      );
       return response;
     } catch (error) {
       // Free the key so the client may retry after fixing the cause

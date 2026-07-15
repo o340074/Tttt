@@ -12,6 +12,7 @@ import type {
   Delivery as DbDelivery,
   IdempotencyKey as DbIdempotencyKey,
   LedgerEntry as DbLedgerEntry,
+  Notification as DbNotification,
   OctoProfile as DbOctoProfile,
   Order as DbOrder,
   OrderItem as DbOrderItem,
@@ -31,6 +32,8 @@ import type {
   WarmingStageTemplate as DbWarmingStageTemplate,
   WarmingTask as DbWarmingTask,
 } from '@prisma/client';
+import { MailerService } from '../mailer/mailer.service';
+import { NotificationsService } from '../notifications/notifications.service';
 import type { PrismaService } from '../prisma/prisma.service';
 import type { RedisService } from '../redis/redis.service';
 import type { Env } from '../config/env';
@@ -2334,13 +2337,30 @@ export class FakeTicketStore {
     orderBy?: unknown;
     skip?: number;
     take?: number;
-    include?: unknown;
+    include?: { messages?: unknown };
   }): Promise<Record<string, unknown>[]> {
     let rows = this.rows.filter((r) => matchesTicket(r, args.where));
     rows = [...rows].sort((a, b) => b.lastReplyAt.getTime() - a.lastReplyAt.getTime());
     const skip = args.skip ?? 0;
     rows = rows.slice(skip, args.take !== undefined ? skip + args.take : undefined);
-    return Promise.resolve(rows.map((r) => this.decorate(r)));
+    return Promise.resolve(rows.map((r) => this.decorate(r, args.include)));
+  }
+
+  /** Owner-scoped single lookup (buyer portal): where { id, requesterId }. */
+  findFirst({
+    where,
+    include,
+  }: {
+    where: { id?: string; requesterId?: string; status?: DbTicket['status'] };
+    include?: { messages?: unknown };
+  }): Promise<Record<string, unknown> | null> {
+    const row = this.rows.find(
+      (r) =>
+        (where.id === undefined || r.id === where.id) &&
+        (where.requesterId === undefined || r.requesterId === where.requesterId) &&
+        (where.status === undefined || r.status === where.status),
+    );
+    return Promise.resolve(row ? this.decorate(row, include) : null);
   }
 
   count({ where }: { where?: TicketWhere } = {}): Promise<number> {
@@ -2481,6 +2501,82 @@ export class FakeSettingStore {
   }
 }
 
+// ---------- Notifications fakes (E9) ----------
+
+interface NotificationWhere {
+  userId?: string;
+  id?: string;
+  readAt?: null;
+}
+
+function matchesNotification(row: DbNotification, where: NotificationWhere = {}): boolean {
+  if (where.userId !== undefined && row.userId !== where.userId) return false;
+  if (where.id !== undefined && row.id !== where.id) return false;
+  if (where.readAt === null && row.readAt !== null) return false;
+  return true;
+}
+
+export class FakeNotificationStore {
+  readonly rows: DbNotification[] = [];
+
+  create({
+    data,
+  }: {
+    data: {
+      userId: string;
+      type: DbNotification['type'];
+      title: string;
+      body: string;
+      data?: Prisma.InputJsonValue;
+    };
+  }): Promise<DbNotification> {
+    const row: DbNotification = {
+      id: randomUUID(),
+      userId: data.userId,
+      type: data.type,
+      title: data.title,
+      body: data.body,
+      data: (data.data ?? {}) as Prisma.JsonValue,
+      readAt: null,
+      createdAt: new Date(),
+    };
+    this.rows.push(row);
+    return Promise.resolve(row);
+  }
+
+  findMany(args: {
+    where?: NotificationWhere;
+    orderBy?: unknown;
+    skip?: number;
+    take?: number;
+  }): Promise<DbNotification[]> {
+    let rows = this.rows.filter((r) => matchesNotification(r, args.where));
+    rows = [...rows].sort((a, b) => b.createdAt.getTime() - a.createdAt.getTime());
+    const skip = args.skip ?? 0;
+    rows = rows.slice(skip, args.take !== undefined ? skip + args.take : undefined);
+    return Promise.resolve(rows);
+  }
+
+  count({ where }: { where?: NotificationWhere } = {}): Promise<number> {
+    return Promise.resolve(this.rows.filter((r) => matchesNotification(r, where)).length);
+  }
+
+  updateMany({
+    where,
+    data,
+  }: {
+    where?: NotificationWhere;
+    data: { readAt?: Date };
+  }): Promise<{ count: number }> {
+    let count = 0;
+    for (const row of this.rows.filter((r) => matchesNotification(r, where))) {
+      if (data.readAt !== undefined) row.readAt = data.readAt;
+      count += 1;
+    }
+    return Promise.resolve({ count });
+  }
+}
+
 export interface FakePrismaStores {
   user: FakeUserStore;
   category: FakeCategoryStore;
@@ -2511,6 +2607,7 @@ export interface FakePrismaStores {
   ticket: FakeTicketStore;
   ticketMessage: FakeTicketMessageStore;
   setting: FakeSettingStore;
+  notification: FakeNotificationStore;
 }
 
 interface StoreSnapshot {
@@ -2618,6 +2715,7 @@ export function makeFakePrismaService(): PrismaService & FakePrismaStores {
     ticket,
     ticketMessage,
     setting: new FakeSettingStore(),
+    notification: new FakeNotificationStore(),
   };
   return {
     ...stores,
@@ -2659,4 +2757,15 @@ export function makeFakeConfigService(overrides: Partial<Env> = {}): ConfigServi
   return {
     get: (key: keyof Env) => env[key],
   } as unknown as ConfigService<Env, true>;
+}
+
+/**
+ * A real NotificationsService over the fakes + a stub mailer (E9). Services that
+ * emit notifications (orders/warming/admin tickets) take one in their ctor; unit
+ * tests wire this so the in-app rows are actually written to the fake store.
+ */
+export function makeFakeNotificationsService(
+  prisma: PrismaService & FakePrismaStores,
+): NotificationsService {
+  return new NotificationsService(prisma, new MailerService(makeFakeConfigService()));
 }
