@@ -6,6 +6,8 @@ import type {
   ProductStatus,
   ProxyStatus,
   Role,
+  TicketPriority,
+  TicketStatus,
   UserStatus,
   WarmingJobStatus,
 } from '@advault/types';
@@ -134,6 +136,36 @@ export function ProductStatusBadge({ status }: { status: ProductStatus }) {
   return (
     <span className={`${PILL} ${PRODUCT_STATUS[status]}`}>
       {t(`admin.productStatuses.${status}`)}
+    </span>
+  );
+}
+
+const TICKET_STATUS: Record<TicketStatus, string> = {
+  open: 'bg-[rgba(124,125,250,0.16)] text-volt-400',
+  pending: 'bg-[rgba(245,183,64,0.14)] text-warning',
+  resolved: 'bg-[rgba(34,211,238,0.14)] text-beam',
+  closed: 'bg-[rgba(43,217,166,0.14)] text-success',
+};
+
+export function TicketStatusBadge({ status }: { status: TicketStatus }) {
+  const { t } = useTranslation();
+  return (
+    <span className={`${PILL} ${TICKET_STATUS[status]}`}>{t(`admin.ticketStatuses.${status}`)}</span>
+  );
+}
+
+const TICKET_PRIORITY: Record<TicketPriority, string> = {
+  low: 'bg-surface-2 text-text-lo',
+  normal: 'bg-[rgba(34,211,238,0.14)] text-beam',
+  high: 'bg-[rgba(245,183,64,0.14)] text-warning',
+  urgent: 'bg-[rgba(255,77,109,0.14)] text-danger',
+};
+
+export function TicketPriorityBadge({ priority }: { priority: TicketPriority }) {
+  const { t } = useTranslation();
+  return (
+    <span className={`${PILL} ${TICKET_PRIORITY[priority]}`}>
+      {t(`admin.ticketPriorities.${priority}`)}
     </span>
   );
 }

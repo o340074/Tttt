@@ -18,9 +18,15 @@ interface NavItem {
 
 /** Catalog & warming plans are merchandising — managers/admins only (docs/13). */
 const ELEVATED: Role[] = ['manager', 'admin'];
+/** Tickets are support work (operators excluded). */
+const SUPPORT: Role[] = ['support', 'manager', 'admin'];
+/** Owner-level surfaces: staff & roles, settings/integrations. */
+const ADMIN: Role[] = ['admin'];
 
 const NAV: NavItem[] = [
+  { to: '/admin/dashboard', labelKey: 'admin.nav.dashboard', icon: 'bolt', roles: ELEVATED },
   { to: '/admin/orders', labelKey: 'admin.nav.orders', icon: 'box' },
+  { to: '/admin/tickets', labelKey: 'admin.nav.tickets', icon: 'mail', roles: SUPPORT },
   { to: '/admin/warming', labelKey: 'admin.nav.warming', icon: 'spark' },
   { to: '/admin/catalog', labelKey: 'admin.nav.catalog', icon: 'ads', roles: ELEVATED },
   { to: '/admin/plans', labelKey: 'admin.nav.plans', icon: 'clock', roles: ELEVATED },
@@ -29,6 +35,8 @@ const NAV: NavItem[] = [
   { to: '/admin/users', labelKey: 'admin.nav.users', icon: 'user' },
   { to: '/admin/finance', labelKey: 'admin.nav.finance', icon: 'wallet' },
   { to: '/admin/promo', labelKey: 'admin.nav.promo', icon: 'tag' },
+  { to: '/admin/staff', labelKey: 'admin.nav.staff', icon: 'lock', roles: ADMIN },
+  { to: '/admin/settings', labelKey: 'admin.nav.settings', icon: 'globe', roles: ADMIN },
 ];
 
 /** Operator/admin shell (docs/13): fixed sidebar + content outlet, own chrome. */

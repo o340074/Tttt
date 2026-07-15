@@ -25,6 +25,19 @@ import type {
   UpdateWarmingPlanRequest,
   AdminUserDetail,
   AdminUserListItem,
+  AdminTicketDetail,
+  AdminTicketListItem,
+  AdminStaffMember,
+  CreateTicketRequest,
+  CreateTicketMessageRequest,
+  UpdateTicketRequest,
+  TicketStatus,
+  DashboardSummary,
+  SalesReport,
+  FulfillmentReport,
+  OperatorLoadReport,
+  ShopSettings,
+  UpdateSettingsRequest,
   BindOctoProfileRequest,
   BindProxyRequest,
   CreateOctoProfileRequest,
@@ -170,6 +183,7 @@ function useUserInvalidation(id: string) {
   return () => {
     void queryClient.invalidateQueries({ queryKey: ['admin', 'user', id] });
     void queryClient.invalidateQueries({ queryKey: ['admin', 'users'] });
+    void queryClient.invalidateQueries({ queryKey: ['admin', 'staff'] });
   };
 }
 
@@ -610,5 +624,129 @@ export function useUpdatePlan(id: string) {
     mutationFn: (body: UpdateWarmingPlanRequest) =>
       apiFetch<AdminWarmingPlanDetail>(`/admin/warming-plans/${id}`, { method: 'PATCH', body }),
     onSuccess: invalidate,
+  });
+}
+
+// ---------- Tickets (support+) ----------
+
+export interface AdminTicketFilters {
+  page: number;
+  limit: number;
+  status?: TicketStatus;
+  assigneeId?: string;
+  q?: string;
+}
+
+export function useAdminTickets(filters: AdminTicketFilters) {
+  return useQuery({
+    queryKey: ['admin', 'tickets', filters],
+    queryFn: () =>
+      apiFetch<Paginated<AdminTicketListItem>>(`/admin/tickets${qs({ ...filters })}`),
+  });
+}
+
+export function useAdminTicket(id: string | undefined) {
+  return useQuery({
+    queryKey: ['admin', 'ticket', id],
+    queryFn: () => apiFetch<AdminTicketDetail>(`/admin/tickets/${id}`),
+    enabled: Boolean(id),
+  });
+}
+
+function useTicketInvalidation(id?: string) {
+  const queryClient = useQueryClient();
+  return () => {
+    void queryClient.invalidateQueries({ queryKey: ['admin', 'tickets'] });
+    if (id) void queryClient.invalidateQueries({ queryKey: ['admin', 'ticket', id] });
+  };
+}
+
+export function useCreateTicket() {
+  const invalidate = useTicketInvalidation();
+  return useMutation({
+    mutationFn: (body: CreateTicketRequest) =>
+      apiFetch<AdminTicketDetail>('/admin/tickets', { method: 'POST', body }),
+    onSuccess: invalidate,
+  });
+}
+
+export function useAddTicketMessage(id: string) {
+  const invalidate = useTicketInvalidation(id);
+  return useMutation({
+    mutationFn: (body: CreateTicketMessageRequest) =>
+      apiFetch<AdminTicketDetail>(`/admin/tickets/${id}/messages`, { method: 'POST', body }),
+    onSuccess: invalidate,
+  });
+}
+
+export function useUpdateTicket(id: string) {
+  const invalidate = useTicketInvalidation(id);
+  return useMutation({
+    mutationFn: (body: UpdateTicketRequest) =>
+      apiFetch<AdminTicketDetail>(`/admin/tickets/${id}`, { method: 'PATCH', body }),
+    onSuccess: invalidate,
+  });
+}
+
+// ---------- Staff & roles (any staff read; role change admin-only via users) ----------
+
+export function useAdminStaff() {
+  return useQuery({
+    queryKey: ['admin', 'staff'],
+    queryFn: () => apiFetch<AdminStaffMember[]>('/admin/staff'),
+  });
+}
+
+// ---------- Reports / analytics (manager+) ----------
+
+export interface ReportPeriod {
+  from?: string;
+  to?: string;
+}
+
+export function useDashboard(period: ReportPeriod) {
+  return useQuery({
+    queryKey: ['admin', 'reports', 'dashboard', period],
+    queryFn: () => apiFetch<DashboardSummary>(`/admin/reports/dashboard${qs({ ...period })}`),
+  });
+}
+
+export function useSalesReport(period: ReportPeriod) {
+  const locale = useContentLocale();
+  return useQuery({
+    queryKey: ['admin', 'reports', 'sales', period, locale],
+    queryFn: () => apiFetch<SalesReport>(`/admin/reports/sales${qs({ ...period, locale })}`),
+  });
+}
+
+export function useFulfillmentReport(period: ReportPeriod) {
+  return useQuery({
+    queryKey: ['admin', 'reports', 'fulfillment', period],
+    queryFn: () => apiFetch<FulfillmentReport>(`/admin/reports/fulfillment${qs({ ...period })}`),
+  });
+}
+
+export function useOperatorLoad(period: ReportPeriod) {
+  return useQuery({
+    queryKey: ['admin', 'reports', 'operators', period],
+    queryFn: () => apiFetch<OperatorLoadReport>(`/admin/reports/operators${qs({ ...period })}`),
+  });
+}
+
+// ---------- Settings (admin-only) ----------
+
+export function useSettings() {
+  return useQuery({
+    queryKey: ['admin', 'settings'],
+    queryFn: () => apiFetch<ShopSettings>('/admin/settings'),
+  });
+}
+
+export function useUpdateSettings() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (body: UpdateSettingsRequest) =>
+      apiFetch<ShopSettings>('/admin/settings', { method: 'PUT', body }),
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: ['admin', 'settings'] }),
   });
 }

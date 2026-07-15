@@ -5,7 +5,12 @@ import { AuthLayout } from './features/auth/AuthLayout';
 import { RequireStaff } from './features/admin/RequireStaff';
 import { RedirectIfAuthed, RequireAuth } from './features/auth/guards';
 import { AdminCatalogPage } from './pages/admin/AdminCatalogPage';
+import { AdminDashboardPage } from './pages/admin/AdminDashboardPage';
 import { AdminFinancePage } from './pages/admin/AdminFinancePage';
+import { AdminSettingsPage } from './pages/admin/AdminSettingsPage';
+import { AdminStaffPage } from './pages/admin/AdminStaffPage';
+import { AdminTicketDetailPage } from './pages/admin/AdminTicketDetailPage';
+import { AdminTicketsPage } from './pages/admin/AdminTicketsPage';
 import { AdminOrderDetailPage } from './pages/admin/AdminOrderDetailPage';
 import { AdminOrdersPage } from './pages/admin/AdminOrdersPage';
 import { AdminPlanDetailPage } from './pages/admin/AdminPlanDetailPage';
@@ -67,6 +72,11 @@ export function App() {
           <Route path="users/:id" element={<AdminUserDetailPage />} />
           <Route path="finance" element={<AdminFinancePage />} />
           <Route path="promo" element={<AdminPromoPage />} />
+          <Route path="tickets" element={<AdminTicketsPage />} />
+          <Route path="tickets/:id" element={<AdminTicketDetailPage />} />
+          <Route path="dashboard" element={<AdminDashboardPage />} />
+          <Route path="staff" element={<AdminStaffPage />} />
+          <Route path="settings" element={<AdminSettingsPage />} />
         </Route>
       </Route>
 
