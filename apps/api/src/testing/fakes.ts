@@ -20,7 +20,10 @@ import type {
   ProductTranslation,
   ProductVariant as DbVariant,
   PromoCode as DbPromoCode,
+  Setting as DbSetting,
   StockItem as DbStockItem,
+  Ticket as DbTicket,
+  TicketMessage as DbTicketMessage,
   TopUp as DbTopUp,
   User as DbUser,
   WarmingJob as DbWarmingJob,
@@ -166,13 +169,17 @@ export class FakeUserStore {
     row: DbUser,
     where?: {
       status?: DbUser['status'];
-      role?: DbUser['role'];
+      role?: DbUser['role'] | { in: DbUser['role'][] };
       email?: { contains: string; mode?: string };
     },
   ): boolean {
     if (!where) return true;
     if (where.status !== undefined && row.status !== where.status) return false;
-    if (where.role !== undefined && row.role !== where.role) return false;
+    if (where.role !== undefined) {
+      if (typeof where.role === 'object') {
+        if (!where.role.in.includes(row.role)) return false;
+      } else if (row.role !== where.role) return false;
+    }
     if (where.email && !row.email.toLowerCase().includes(where.email.contains.toLowerCase())) {
       return false;
     }
@@ -180,14 +187,22 @@ export class FakeUserStore {
   }
 
   findMany(args: {
-    where?: { status?: DbUser['status']; role?: DbUser['role']; email?: { contains: string } };
-    orderBy?: { createdAt: 'asc' | 'desc' };
+    where?: {
+      status?: DbUser['status'];
+      role?: DbUser['role'] | { in: DbUser['role'][] };
+      email?: { contains: string };
+    };
+    orderBy?: { createdAt: 'asc' | 'desc' } | { role?: 'asc' | 'desc'; email?: 'asc' | 'desc' }[];
     skip?: number;
     take?: number;
     include?: { _count?: unknown };
+    select?: unknown;
   }): Promise<(DbUser & { _count?: { orders: number } })[]> {
     let rows = this.rows.filter((r) => this.matches(r, args.where));
-    if (args.orderBy?.createdAt === 'desc') {
+    if (Array.isArray(args.orderBy)) {
+      // Staff list: order by role, then email.
+      rows = [...rows].sort((a, b) => a.role.localeCompare(b.role) || a.email.localeCompare(b.email));
+    } else if (args.orderBy?.createdAt === 'desc') {
       rows = [...rows].sort((a, b) => b.createdAt.getTime() - a.createdAt.getTime());
     }
     const skip = args.skip ?? 0;
@@ -1282,6 +1297,21 @@ export class FakeOrderStore {
     return Promise.resolve(this.rows.filter((r) => this.matches(r, where)).length);
   }
 
+  /** Reports dashboard: SUM(total) + COUNT over status-in filtered orders. */
+  aggregate(args: {
+    where?: { status?: { in: DbOrder['status'][] } };
+    _sum?: { total: true };
+    _count?: { _all: true };
+  }): Promise<{ _sum: { total: Prisma.Decimal | null }; _count: { _all: number } }> {
+    const statusIn = args.where?.status?.in;
+    const rows = this.rows.filter((r) => !statusIn || statusIn.includes(r.status));
+    const sum = rows.reduce((acc, r) => acc.plus(r.total), new Prisma.Decimal(0));
+    return Promise.resolve({
+      _sum: { total: rows.length ? sum : null },
+      _count: { _all: rows.length },
+    });
+  }
+
   findFirst({
     where,
   }: {
@@ -1550,6 +1580,30 @@ function matchesJob(row: DbWarmingJob, where: WarmingJobWhere): boolean {
   return true;
 }
 
+type RichStatus = DbWarmingJob['status'] | { in: DbWarmingJob['status'][] };
+interface RichJobWhere {
+  status?: RichStatus;
+  assignedTo?: string | { not: null };
+  etaAt?: { lt: Date };
+  deliveredAt?: { gte?: Date; lt?: Date } | Date;
+}
+
+/** Reports/staff matcher: supports {in}/{not:null}/{lt} where clauses. */
+function matchesRichJob(row: DbWarmingJob, where: RichJobWhere = {}): boolean {
+  if (where.status !== undefined) {
+    if (typeof where.status === 'object') {
+      if (!where.status.in.includes(row.status)) return false;
+    } else if (row.status !== where.status) return false;
+  }
+  if (where.assignedTo !== undefined) {
+    if (typeof where.assignedTo === 'object') {
+      if (row.assignedTo === null) return false;
+    } else if (row.assignedTo !== where.assignedTo) return false;
+  }
+  if (where.etaAt?.lt && (row.etaAt === null || row.etaAt >= where.etaAt.lt)) return false;
+  return true;
+}
+
 type JobWithRels = DbWarmingJob & {
   orderItem: DbOrderItem & {
     order: { id: string; number: string; userId: string };
@@ -1655,8 +1709,25 @@ export class FakeWarmingJobStore {
     return Promise.resolve(rows.map((r) => this.withRels(r)));
   }
 
-  count({ where }: { where?: WarmingJobWhere } = {}): Promise<number> {
-    return Promise.resolve(this.rows.filter((r) => matchesJob(r, where ?? {})).length);
+  count({ where }: { where?: RichJobWhere } = {}): Promise<number> {
+    return Promise.resolve(this.rows.filter((r) => matchesRichJob(r, where)).length);
+  }
+
+  /** Reports/staff: group counts by status or by assignedTo. */
+  groupBy(args: {
+    by: ['status'] | ['assignedTo'];
+    where?: RichJobWhere;
+    _count: { _all: true };
+  }): Promise<Record<string, unknown>[]> {
+    const field = args.by[0];
+    const counts = new Map<string | null, number>();
+    for (const row of this.rows.filter((r) => matchesRichJob(r, args.where))) {
+      const key = field === 'status' ? row.status : row.assignedTo;
+      counts.set(key, (counts.get(key) ?? 0) + 1);
+    }
+    return Promise.resolve(
+      [...counts.entries()].map(([key, n]) => ({ [field]: key, _count: { _all: n } })),
+    );
   }
 
   async update({
@@ -2197,6 +2268,219 @@ export class FakeAuditStore {
   }
 }
 
+// ---------- Tickets fakes (E8) ----------
+
+interface TicketWhere {
+  status?: DbTicket['status'] | { in: DbTicket['status'][] };
+  assigneeId?: string | { not: null };
+  OR?: { number?: { contains: string }; subject?: { contains: string } }[];
+}
+
+function matchesTicket(row: DbTicket, where: TicketWhere = {}): boolean {
+  if (where.status) {
+    if (typeof where.status === 'object') {
+      if (!where.status.in.includes(row.status)) return false;
+    } else if (row.status !== where.status) return false;
+  }
+  if (where.assigneeId !== undefined) {
+    if (typeof where.assigneeId === 'object') {
+      if (row.assigneeId === null) return false;
+    } else if (row.assigneeId !== where.assigneeId) return false;
+  }
+  if (where.OR) {
+    const q = (where.OR[0]?.number?.contains ?? where.OR[1]?.subject?.contains ?? '').toLowerCase();
+    const hit = row.number.toLowerCase().includes(q) || row.subject.toLowerCase().includes(q);
+    if (!hit) return false;
+  }
+  return true;
+}
+
+export class FakeTicketStore {
+  readonly rows: DbTicket[] = [];
+
+  constructor(
+    private readonly users: () => FakeUserStore,
+    private readonly orders: () => FakeOrderStore,
+    private readonly messages: () => FakeTicketMessageStore,
+  ) {}
+
+  private decorate(row: DbTicket, include?: { messages?: unknown }): Record<string, unknown> {
+    const requester = this.users().rows.find((u) => u.id === row.requesterId);
+    const assignee = row.assigneeId
+      ? this.users().rows.find((u) => u.id === row.assigneeId)
+      : null;
+    const order = row.orderId ? this.orders().rows.find((o) => o.id === row.orderId) : null;
+    const msgs = this.messages().rows.filter((m) => m.ticketId === row.id);
+    const decorated: Record<string, unknown> = {
+      ...row,
+      requester: requester ? { id: requester.id, email: requester.email } : { id: '', email: '' },
+      assignee: assignee ? { id: assignee.id, email: assignee.email } : null,
+      order: order ? { id: order.id, number: order.number } : null,
+      _count: { messages: msgs.length },
+    };
+    if (include?.messages) {
+      decorated.messages = [...msgs]
+        .sort((a, b) => a.createdAt.getTime() - b.createdAt.getTime())
+        .map((m) => {
+          const author = m.authorId ? this.users().rows.find((u) => u.id === m.authorId) : null;
+          return { ...m, author: author ? { id: author.id, email: author.email } : null };
+        });
+    }
+    return decorated;
+  }
+
+  findMany(args: {
+    where?: TicketWhere;
+    orderBy?: unknown;
+    skip?: number;
+    take?: number;
+    include?: unknown;
+  }): Promise<Record<string, unknown>[]> {
+    let rows = this.rows.filter((r) => matchesTicket(r, args.where));
+    rows = [...rows].sort((a, b) => b.lastReplyAt.getTime() - a.lastReplyAt.getTime());
+    const skip = args.skip ?? 0;
+    rows = rows.slice(skip, args.take !== undefined ? skip + args.take : undefined);
+    return Promise.resolve(rows.map((r) => this.decorate(r)));
+  }
+
+  count({ where }: { where?: TicketWhere } = {}): Promise<number> {
+    return Promise.resolve(this.rows.filter((r) => matchesTicket(r, where)).length);
+  }
+
+  findUnique({
+    where,
+    include,
+  }: {
+    where: { id: string };
+    include?: { messages?: unknown };
+  }): Promise<Record<string, unknown> | null> {
+    const row = this.rows.find((r) => r.id === where.id) ?? null;
+    return Promise.resolve(row ? this.decorate(row, include) : null);
+  }
+
+  create({
+    data,
+  }: {
+    data: {
+      number: string;
+      subject: string;
+      priority?: DbTicket['priority'];
+      requesterId: string;
+      orderId?: string | null;
+      messages?: { create: { authorId?: string | null; body: string; isInternal?: boolean } };
+    };
+  }): Promise<DbTicket> {
+    const now = new Date();
+    const row: DbTicket = {
+      id: randomUUID(),
+      number: data.number,
+      subject: data.subject,
+      status: 'open',
+      priority: data.priority ?? 'normal',
+      requesterId: data.requesterId,
+      assigneeId: null,
+      orderId: data.orderId ?? null,
+      lastReplyAt: now,
+      closedAt: null,
+      createdAt: now,
+      updatedAt: now,
+    };
+    this.rows.push(row);
+    if (data.messages?.create) {
+      void this.messages().create({ data: { ticketId: row.id, ...data.messages.create } });
+    }
+    return Promise.resolve(row);
+  }
+
+  async update({
+    where,
+    data,
+  }: {
+    where: { id: string };
+    data: Record<string, unknown> & {
+      assignee?: { connect?: { id: string }; disconnect?: boolean };
+    };
+  }): Promise<DbTicket> {
+    const row = this.rows.find((r) => r.id === where.id);
+    if (!row) throw new Error('Record not found');
+    const { assignee, ...rest } = data;
+    Object.assign(row, rest, { updatedAt: new Date() });
+    if (assignee?.connect) row.assigneeId = assignee.connect.id;
+    if (assignee?.disconnect) row.assigneeId = null;
+    return row;
+  }
+
+  groupBy(args: {
+    by: ['assigneeId'];
+    where?: TicketWhere;
+  }): Promise<{ assigneeId: string | null; _count: { _all: number } }[]> {
+    const counts = new Map<string | null, number>();
+    for (const row of this.rows.filter((r) => matchesTicket(r, args.where))) {
+      counts.set(row.assigneeId, (counts.get(row.assigneeId) ?? 0) + 1);
+    }
+    return Promise.resolve(
+      [...counts.entries()].map(([assigneeId, n]) => ({ assigneeId, _count: { _all: n } })),
+    );
+  }
+}
+
+export class FakeTicketMessageStore {
+  readonly rows: DbTicketMessage[] = [];
+
+  create({
+    data,
+  }: {
+    data: { ticketId: string; authorId?: string | null; body: string; isInternal?: boolean };
+  }): Promise<DbTicketMessage> {
+    const row: DbTicketMessage = {
+      id: randomUUID(),
+      ticketId: data.ticketId,
+      authorId: data.authorId ?? null,
+      body: data.body,
+      isInternal: data.isInternal ?? false,
+      createdAt: new Date(),
+    };
+    this.rows.push(row);
+    return Promise.resolve(row);
+  }
+}
+
+// ---------- Settings fakes (E8) ----------
+
+export class FakeSettingStore {
+  readonly rows: DbSetting[] = [];
+
+  findMany(): Promise<DbSetting[]> {
+    return Promise.resolve([...this.rows]);
+  }
+
+  upsert({
+    where,
+    create,
+    update,
+  }: {
+    where: { key: string };
+    create: { key: string; value: unknown; updatedBy?: string | null };
+    update: { value: unknown; updatedBy?: string | null };
+  }): Promise<DbSetting> {
+    const existing = this.rows.find((r) => r.key === where.key);
+    if (existing) {
+      existing.value = update.value as Prisma.JsonValue;
+      existing.updatedBy = update.updatedBy ?? null;
+      existing.updatedAt = new Date();
+      return Promise.resolve(existing);
+    }
+    const row: DbSetting = {
+      key: create.key,
+      value: create.value as Prisma.JsonValue,
+      updatedBy: create.updatedBy ?? null,
+      updatedAt: new Date(),
+    };
+    this.rows.push(row);
+    return Promise.resolve(row);
+  }
+}
+
 export interface FakePrismaStores {
   user: FakeUserStore;
   category: FakeCategoryStore;
@@ -2224,6 +2508,9 @@ export interface FakePrismaStores {
   bundleComponent: FakeBundleComponentStore;
   proxyItem: FakeProxyItemStore;
   octoProfile: FakeOctoProfileStore;
+  ticket: FakeTicketStore;
+  ticketMessage: FakeTicketMessageStore;
+  setting: FakeSettingStore;
 }
 
 interface StoreSnapshot {
@@ -2295,6 +2582,12 @@ export function makeFakePrismaService(): PrismaService & FakePrismaStores {
   );
   warmingHolder.warmingJob = warmingJob;
   const warmingStageTemplate = new FakeWarmingStageStore();
+  const ticketMessage = new FakeTicketMessageStore();
+  const ticket = new FakeTicketStore(
+    () => userStore,
+    () => order,
+    () => ticketMessage,
+  );
   const stores: FakePrismaStores = {
     user: userStore,
     category: new FakeCategoryStore(),
@@ -2322,6 +2615,9 @@ export function makeFakePrismaService(): PrismaService & FakePrismaStores {
     bundleComponent: new FakeBundleComponentStore(),
     proxyItem: new FakeProxyItemStore(),
     octoProfile: new FakeOctoProfileStore(),
+    ticket,
+    ticketMessage,
+    setting: new FakeSettingStore(),
   };
   return {
     ...stores,

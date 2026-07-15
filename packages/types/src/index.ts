@@ -1108,3 +1108,205 @@ export interface UpdateWarmingPlanRequest {
   /** When present, replaces the stage list and bumps the plan version. */
   stages?: WarmingStageInput[];
 }
+
+// ============================================================
+// Tickets — support (docs/13 §13) — E8
+// ============================================================
+
+export type TicketStatus = 'open' | 'pending' | 'resolved' | 'closed';
+export type TicketPriority = 'low' | 'normal' | 'high' | 'urgent';
+
+/** Statuses considered "active" (shown in the default queue view). */
+export const OPEN_TICKET_STATUSES: readonly TicketStatus[] = ['open', 'pending'];
+
+/** GET /admin/tickets — one row in the queue. */
+export interface AdminTicketListItem {
+  id: string;
+  number: string;
+  subject: string;
+  status: TicketStatus;
+  priority: TicketPriority;
+  requester: { id: string; email: string };
+  assignee: { id: string; email: string } | null;
+  orderId: string | null;
+  orderNumber: string | null;
+  messageCount: number;
+  lastReplyAt: string;
+  createdAt: string;
+}
+
+/** One message in a ticket thread. Internal notes carry `isInternal = true`. */
+export interface AdminTicketMessage {
+  id: string;
+  authorId: string | null;
+  authorEmail: string | null;
+  body: string;
+  isInternal: boolean;
+  createdAt: string;
+}
+
+/** GET /admin/tickets/:id — the ticket with its full thread. */
+export interface AdminTicketDetail extends AdminTicketListItem {
+  closedAt: string | null;
+  updatedAt: string;
+  messages: AdminTicketMessage[];
+}
+
+/** POST /admin/tickets. `requesterEmail` resolves an existing customer. */
+export interface CreateTicketRequest {
+  subject: string;
+  body: string;
+  requesterEmail: string;
+  orderId?: string | null;
+  priority?: TicketPriority;
+}
+
+/** POST /admin/tickets/:id/messages — a reply or an internal note. */
+export interface CreateTicketMessageRequest {
+  body: string;
+  isInternal?: boolean;
+}
+
+/** PATCH /admin/tickets/:id — status/priority/assignment changes. */
+export interface UpdateTicketRequest {
+  status?: TicketStatus;
+  priority?: TicketPriority;
+  /** Reassign; null unassigns. Omit to leave unchanged. */
+  assigneeId?: string | null;
+}
+
+export interface AdminTicketQuery {
+  page?: number;
+  limit?: number;
+  status?: TicketStatus;
+  assigneeId?: string;
+  q?: string;
+}
+
+// ============================================================
+// Staff & roles (docs/13 §15) — E8
+// ============================================================
+
+/** GET /admin/staff — a staff member (non-customer role). */
+export interface AdminStaffMember {
+  id: string;
+  email: string;
+  role: Role;
+  status: UserStatus;
+  /** Open tickets currently assigned to this member. */
+  assignedOpenTickets: number;
+  /** Active warming jobs currently assigned (operators). */
+  activeWarmingJobs: number;
+  createdAt: string;
+}
+
+// ============================================================
+// Reports / Analytics (docs/13 §1, §14) — E8
+// ============================================================
+
+/** Period filter for reports, ISO dates (inclusive from, exclusive to). */
+export interface ReportPeriodQuery {
+  from?: string;
+  to?: string;
+}
+
+/** GET /admin/reports/dashboard — top-line KPIs + operational snapshot. */
+export interface DashboardSummary {
+  /** Money is a fixed-2 decimal string in `currency`; never a float. */
+  currency: string;
+  revenue: string;
+  orders: number;
+  avgOrder: string;
+  refunds: string;
+  /** Operational counters (live, not period-bound). */
+  ops: {
+    warmingQueued: number;
+    warmingInProgress: number;
+    warmingQc: number;
+    warmingReady: number;
+    warmingOverdue: number;
+    openTickets: number;
+  };
+}
+
+export interface SalesByDimensionRow {
+  key: string;
+  label: string;
+  orders: number;
+  revenue: string;
+}
+
+/** GET /admin/reports/sales — revenue split by category and by goal. */
+export interface SalesReport {
+  currency: string;
+  byCategory: SalesByDimensionRow[];
+  byGoal: SalesByDimensionRow[];
+  topProducts: SalesByDimensionRow[];
+}
+
+/** GET /admin/reports/fulfillment — plan-vs-actual delivery time + SLA. */
+export interface FulfillmentReport {
+  /** Delivered warming jobs in the period. */
+  deliveredJobs: number;
+  /** Average estimated (plan) minutes across delivered jobs. */
+  avgPlanMinutes: number;
+  /** Average actual minutes from job creation to delivery. */
+  avgActualMinutes: number;
+  /** Jobs delivered within their ETA / total delivered, as a percentage 0..100. */
+  slaMetPercent: number;
+  /** Refunded + replaced items over all delivered/terminal items, 0..100. */
+  refundReplaceRate: number;
+}
+
+export interface OperatorLoadRow {
+  operatorId: string;
+  email: string;
+  active: number;
+  delivered: number;
+}
+
+/** GET /admin/reports/operators — per-operator warming load. */
+export interface OperatorLoadReport {
+  operators: OperatorLoadRow[];
+}
+
+// ============================================================
+// Settings / Integrations (docs/13 §17) — E8
+// ============================================================
+
+/** A notification template (email/in-app), per channel. */
+export interface NotificationTemplate {
+  subject: string;
+  body: string;
+}
+
+/**
+ * Typed view over the key-value Setting store. Only non-secret operational
+ * settings live here; crypto/KMS/Octo credentials stay placeholders (booleans
+ * describing whether an integration is "configured", never the secret itself).
+ */
+export interface ShopSettings {
+  storeName: string;
+  supportEmail: string;
+  defaultLocale: Locale;
+  /** Locales offered in the storefront switcher. */
+  enabledLocales: Locale[];
+  notifications: {
+    orderPaid: NotificationTemplate;
+    warmingReady: NotificationTemplate;
+    ticketReply: NotificationTemplate;
+  };
+  /** Read-only integration status flags — never the secrets themselves. */
+  integrations: {
+    cryptoAcquiringConfigured: boolean;
+    octoApiConfigured: boolean;
+    kmsConfigured: boolean;
+  };
+}
+
+/** PUT /admin/settings — partial update of the typed settings. */
+export type UpdateSettingsRequest = Partial<
+  Pick<ShopSettings, 'storeName' | 'supportEmail' | 'defaultLocale' | 'enabledLocales'> & {
+    notifications: Partial<ShopSettings['notifications']>;
+  }
+>;

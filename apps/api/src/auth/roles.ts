@@ -33,6 +33,19 @@ export const FINANCE_STAFF: Role[] = ['manager', 'admin'];
 export const CATALOG_STAFF: Role[] = ['manager', 'admin'];
 
 /**
+ * Support surface — tickets (docs/13 §13). Support owns the queue; managers and
+ * admins oversee. Operators run warming and are intentionally left out: customer
+ * correspondence is not their job.
+ */
+export const SUPPORT_STAFF: Role[] = ['support', 'manager', 'admin'];
+
+/**
+ * Reports / analytics / dashboard (docs/13 §1, §14): revenue, SLA, operator load
+ * and refund shares are oversight data — managers/admins only.
+ */
+export const REPORTS_STAFF: Role[] = ['manager', 'admin'];
+
+/**
  * Owner-level only: staff management and role changes (a manager must not be
  * able to escalate anyone — including themselves — to admin). See docs/13.
  */

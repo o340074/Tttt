@@ -14,8 +14,16 @@ import { AdminPlansController } from './admin-plans.controller';
 import { AdminPlansService } from './admin-plans.service';
 import { AdminPromoController } from './admin-promo.controller';
 import { AdminPromoService } from './admin-promo.service';
+import { AdminReportsController } from './admin-reports.controller';
+import { AdminReportsService } from './admin-reports.service';
+import { AdminSettingsController } from './admin-settings.controller';
+import { AdminSettingsService } from './admin-settings.service';
+import { AdminStaffController } from './admin-staff.controller';
+import { AdminStaffService } from './admin-staff.service';
 import { AdminStockController } from './admin-stock.controller';
 import { AdminStockService } from './admin-stock.service';
+import { AdminTicketsController } from './admin-tickets.controller';
+import { AdminTicketsService } from './admin-tickets.service';
 import { AdminUsersController } from './admin-users.controller';
 import { AdminUsersService } from './admin-users.service';
 import { AdminService } from './admin.service';
@@ -39,6 +47,10 @@ import { AdminService } from './admin.service';
     AdminPromoController,
     AdminCatalogController,
     AdminPlansController,
+    AdminTicketsController,
+    AdminReportsController,
+    AdminStaffController,
+    AdminSettingsController,
   ],
   providers: [
     AdminService,
@@ -49,6 +61,10 @@ import { AdminService } from './admin.service';
     AdminPromoService,
     AdminCatalogService,
     AdminPlansService,
+    AdminTicketsService,
+    AdminReportsService,
+    AdminStaffService,
+    AdminSettingsService,
   ],
 })
 export class AdminModule {}

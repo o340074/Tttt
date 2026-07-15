@@ -323,6 +323,10 @@ model User {
   deliveries    Delivery[]    @relation("DeliveredBy")
   warmingJobs   WarmingJob[]  @relation("WarmingAssignee")
 
+  ticketsRequested TicketMessage[] @relation("TicketMessageAuthor")
+  ticketsAssigned  Ticket[]        @relation("TicketAssignee")
+  ticketsRaised    Ticket[]        @relation("TicketRequester")
+
   @@index([status])
   @@index([role])
   @@map("users")
@@ -378,6 +382,7 @@ model Order {
   user      User        @relation(fields: [userId], references: [id], onDelete: Restrict)
   promoCode PromoCode?  @relation(fields: [promoCodeId], references: [id], onDelete: SetNull)
   items     OrderItem[]
+  tickets   Ticket[]
 
   @@index([userId, createdAt])
   @@index([status])
@@ -727,4 +732,83 @@ model IdempotencyKey {
   @@unique([key, endpoint])
   @@index([createdAt])
   @@map("idempotency_keys")
+}
+
+// --- E8: Tickets (поддержка, docs/13 §13) ---
+
+enum TicketStatus {
+  open
+  pending
+  resolved
+  closed
+}
+
+enum TicketPriority {
+  low
+  normal
+  high
+  urgent
+}
+
+/**
+ * Support ticket (docs/13 §13). Raised by (or on behalf of) a customer, may
+ * link to an order, is assigned to a support/manager and tracked through a
+ * small status machine. The conversation lives in TicketMessage rows; internal
+ * notes are ordinary messages with `isInternal = true` (never shown to buyers).
+ */
+model Ticket {
+  id          String         @id @default(uuid()) @db.Uuid
+  number      String         @unique // человекочитаемый, напр. TK-2026-000042
+  subject     String
+  status      TicketStatus   @default(open)
+  priority    TicketPriority @default(normal)
+  requesterId String         @db.Uuid // покупатель, от лица которого тикет
+  assigneeId  String?        @db.Uuid // сотрудник (support/manager/admin)
+  orderId     String?        @db.Uuid // опц. привязка к заказу
+  lastReplyAt DateTime       @default(now()) // для сортировки очереди
+  closedAt    DateTime?
+  createdAt   DateTime       @default(now())
+  updatedAt   DateTime       @updatedAt
+
+  requester User            @relation("TicketRequester", fields: [requesterId], references: [id], onDelete: Restrict)
+  assignee  User?           @relation("TicketAssignee", fields: [assigneeId], references: [id], onDelete: SetNull)
+  order     Order?          @relation(fields: [orderId], references: [id], onDelete: SetNull)
+  messages  TicketMessage[]
+
+  @@index([status, lastReplyAt])
+  @@index([assigneeId])
+  @@index([requesterId])
+  @@map("tickets")
+}
+
+model TicketMessage {
+  id         String   @id @default(uuid()) @db.Uuid
+  ticketId   String   @db.Uuid
+  authorId   String?  @db.Uuid // сотрудник или покупатель; null — системное событие
+  body       String   @db.Text
+  isInternal Boolean  @default(false) // внутренняя заметка — не видна покупателю
+  createdAt  DateTime @default(now())
+
+  ticket Ticket @relation(fields: [ticketId], references: [id], onDelete: Cascade)
+  author User?  @relation("TicketMessageAuthor", fields: [authorId], references: [id], onDelete: SetNull)
+
+  @@index([ticketId, createdAt])
+  @@map("ticket_messages")
+}
+
+// --- E8: Settings / Integrations (docs/13 §17) ---
+
+/**
+ * Key-value store for shop settings (docs/13 §17). A typed layer in code maps
+ * known keys to typed sections (store name, languages, notification templates,
+ * integration placeholders). Secrets are NOT stored here in plaintext — crypto/
+ * KMS/Octo credentials remain placeholders until the real integrations land.
+ */
+model Setting {
+  key       String   @id
+  value     Json     @default("{}") @db.JsonB
+  updatedAt DateTime @updatedAt
+  updatedBy String?  @db.Uuid
+
+  @@map("settings")
 }
