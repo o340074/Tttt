@@ -1038,6 +1038,165 @@ components:
         sold: { type: integer }
         total: { type: integer }
 
+    # ---- E8: Tickets ----
+    TicketStatus: { type: string, enum: [open, pending, resolved, closed] }
+    TicketPriority: { type: string, enum: [low, normal, high, urgent] }
+    AdminTicketListItem:
+      type: object
+      properties:
+        id: { type: string, format: uuid }
+        number: { type: string }
+        subject: { type: string }
+        status: { $ref: '#/components/schemas/TicketStatus' }
+        priority: { $ref: '#/components/schemas/TicketPriority' }
+        requester: { type: object, properties: { id: { type: string }, email: { type: string } } }
+        assignee: { type: object, nullable: true, properties: { id: { type: string }, email: { type: string } } }
+        orderId: { type: string, format: uuid, nullable: true }
+        orderNumber: { type: string, nullable: true }
+        messageCount: { type: integer }
+        lastReplyAt: { type: string, format: date-time }
+        createdAt: { type: string, format: date-time }
+    AdminTicketMessage:
+      type: object
+      properties:
+        id: { type: string, format: uuid }
+        authorId: { type: string, format: uuid, nullable: true }
+        authorEmail: { type: string, nullable: true }
+        body: { type: string }
+        isInternal: { type: boolean }
+        createdAt: { type: string, format: date-time }
+    AdminTicketDetail:
+      allOf:
+        - $ref: '#/components/schemas/AdminTicketListItem'
+        - type: object
+          properties:
+            closedAt: { type: string, format: date-time, nullable: true }
+            updatedAt: { type: string, format: date-time }
+            messages: { type: array, items: { $ref: '#/components/schemas/AdminTicketMessage' } }
+    CreateTicketRequest:
+      type: object
+      required: [subject, body, requesterEmail]
+      properties:
+        subject: { type: string }
+        body: { type: string }
+        requesterEmail: { type: string, format: email }
+        orderId: { type: string, format: uuid, nullable: true }
+        priority: { $ref: '#/components/schemas/TicketPriority' }
+    CreateTicketMessageRequest:
+      type: object
+      required: [body]
+      properties:
+        body: { type: string }
+        isInternal: { type: boolean }
+    UpdateTicketRequest:
+      type: object
+      properties:
+        status: { $ref: '#/components/schemas/TicketStatus' }
+        priority: { $ref: '#/components/schemas/TicketPriority' }
+        assigneeId: { type: string, format: uuid, nullable: true, description: 'null — снять назначение' }
+
+    # ---- E8: Staff & reports ----
+    AdminStaffMember:
+      type: object
+      properties:
+        id: { type: string, format: uuid }
+        email: { type: string }
+        role: { type: string, enum: [user, support, operator, manager, admin] }
+        status: { type: string, enum: [active, blocked] }
+        assignedOpenTickets: { type: integer }
+        activeWarmingJobs: { type: integer }
+        createdAt: { type: string, format: date-time }
+    DashboardSummary:
+      type: object
+      description: 'Деньги — строки fixed-2 (никогда float).'
+      properties:
+        currency: { type: string }
+        revenue: { type: string }
+        orders: { type: integer }
+        avgOrder: { type: string }
+        refunds: { type: string }
+        ops:
+          type: object
+          properties:
+            warmingQueued: { type: integer }
+            warmingInProgress: { type: integer }
+            warmingQc: { type: integer }
+            warmingReady: { type: integer }
+            warmingOverdue: { type: integer }
+            openTickets: { type: integer }
+    SalesByDimensionRow:
+      type: object
+      properties:
+        key: { type: string }
+        label: { type: string }
+        orders: { type: integer }
+        revenue: { type: string }
+    SalesReport:
+      type: object
+      properties:
+        currency: { type: string }
+        byCategory: { type: array, items: { $ref: '#/components/schemas/SalesByDimensionRow' } }
+        byGoal: { type: array, items: { $ref: '#/components/schemas/SalesByDimensionRow' } }
+        topProducts: { type: array, items: { $ref: '#/components/schemas/SalesByDimensionRow' } }
+    FulfillmentReport:
+      type: object
+      properties:
+        deliveredJobs: { type: integer }
+        avgPlanMinutes: { type: integer }
+        avgActualMinutes: { type: integer }
+        slaMetPercent: { type: number }
+        refundReplaceRate: { type: number }
+    OperatorLoadReport:
+      type: object
+      properties:
+        operators:
+          type: array
+          items:
+            type: object
+            properties:
+              operatorId: { type: string, format: uuid }
+              email: { type: string }
+              active: { type: integer }
+              delivered: { type: integer }
+
+    # ---- E8: Settings ----
+    NotificationTemplate:
+      type: object
+      properties: { subject: { type: string }, body: { type: string } }
+    ShopSettings:
+      type: object
+      description: 'Интеграционные флаги — только «configured», без секретов.'
+      properties:
+        storeName: { type: string }
+        supportEmail: { type: string }
+        defaultLocale: { type: string, enum: [en, ru] }
+        enabledLocales: { type: array, items: { type: string, enum: [en, ru] } }
+        notifications:
+          type: object
+          properties:
+            orderPaid: { $ref: '#/components/schemas/NotificationTemplate' }
+            warmingReady: { $ref: '#/components/schemas/NotificationTemplate' }
+            ticketReply: { $ref: '#/components/schemas/NotificationTemplate' }
+        integrations:
+          type: object
+          properties:
+            cryptoAcquiringConfigured: { type: boolean }
+            octoApiConfigured: { type: boolean }
+            kmsConfigured: { type: boolean }
+    UpdateSettingsRequest:
+      type: object
+      properties:
+        storeName: { type: string }
+        supportEmail: { type: string, format: email }
+        defaultLocale: { type: string, enum: [en, ru] }
+        enabledLocales: { type: array, items: { type: string, enum: [en, ru] } }
+        notifications:
+          type: object
+          properties:
+            orderPaid: { $ref: '#/components/schemas/NotificationTemplate' }
+            warmingReady: { $ref: '#/components/schemas/NotificationTemplate' }
+            ticketReply: { $ref: '#/components/schemas/NotificationTemplate' }
+
   responses:
     BadRequest:
       description: Ошибка валидации.
@@ -2120,6 +2279,127 @@ paths:
         '400': { $ref: '#/components/responses/BadRequest' }
         '403': { $ref: '#/components/responses/Forbidden' }
         '404': { $ref: '#/components/responses/NotFound' }
+
+  # ---- E8: Tickets (RBAC support/manager/admin) ----
+  /admin/tickets:
+    get:
+      tags: [Admin]
+      summary: Очередь тикетов (фильтры status/assigneeId/q) — RBAC support+
+      parameters:
+        - $ref: '#/components/parameters/Page'
+        - $ref: '#/components/parameters/Limit'
+        - { name: status, in: query, schema: { type: string, enum: [open, pending, resolved, closed] } }
+        - { name: assigneeId, in: query, schema: { type: string, format: uuid } }
+        - { name: q, in: query, schema: { type: string } }
+      responses:
+        '200': { description: OK, content: { application/json: { schema: { type: object, properties: { data: { type: array, items: { $ref: '#/components/schemas/AdminTicketListItem' } }, meta: { $ref: '#/components/schemas/PageMeta' } } } } } }
+        '403': { $ref: '#/components/responses/Forbidden' }
+    post:
+      tags: [Admin]
+      summary: Создать тикет от лица покупателя (requesterEmail) — RBAC support+
+      requestBody: { required: true, content: { application/json: { schema: { $ref: '#/components/schemas/CreateTicketRequest' } } } }
+      responses:
+        '201': { description: Created, content: { application/json: { schema: { $ref: '#/components/schemas/AdminTicketDetail' } } } }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+  /admin/tickets/{id}:
+    get:
+      tags: [Admin]
+      summary: Тикет с полной перепиской (внутренние заметки помечены isInternal) — RBAC support+
+      parameters: [{ name: id, in: path, required: true, schema: { type: string, format: uuid } }]
+      responses:
+        '200': { description: OK, content: { application/json: { schema: { $ref: '#/components/schemas/AdminTicketDetail' } } } }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+    patch:
+      tags: [Admin]
+      summary: Статус/приоритет/назначение (assigneeId null — снять) — RBAC support+
+      parameters: [{ name: id, in: path, required: true, schema: { type: string, format: uuid } }]
+      requestBody: { required: true, content: { application/json: { schema: { $ref: '#/components/schemas/UpdateTicketRequest' } } } }
+      responses:
+        '200': { description: OK, content: { application/json: { schema: { $ref: '#/components/schemas/AdminTicketDetail' } } } }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+  /admin/tickets/{id}/messages:
+    post:
+      tags: [Admin]
+      summary: Ответ или внутренняя заметка (isInternal); закрытый тикет → 409 — RBAC support+
+      parameters: [{ name: id, in: path, required: true, schema: { type: string, format: uuid } }]
+      requestBody: { required: true, content: { application/json: { schema: { $ref: '#/components/schemas/CreateTicketMessageRequest' } } } }
+      responses:
+        '201': { description: Created, content: { application/json: { schema: { $ref: '#/components/schemas/AdminTicketDetail' } } } }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409': { $ref: '#/components/responses/Conflict' }
+
+  # ---- E8: Staff & reports (RBAC manager/admin; staff list = any staff) ----
+  /admin/staff:
+    get:
+      tags: [Admin]
+      summary: Список сотрудников с текущей загрузкой (тикеты/задачи) — RBAC any staff
+      responses:
+        '200': { description: OK, content: { application/json: { schema: { type: array, items: { $ref: '#/components/schemas/AdminStaffMember' } } } } }
+        '403': { $ref: '#/components/responses/Forbidden' }
+  /admin/reports/dashboard:
+    get:
+      tags: [Admin]
+      summary: KPI + операционный снимок (revenue/orders/refunds/ops) — RBAC manager+
+      parameters:
+        - { name: from, in: query, schema: { type: string, format: date-time } }
+        - { name: to, in: query, schema: { type: string, format: date-time } }
+      responses:
+        '200': { description: OK, content: { application/json: { schema: { $ref: '#/components/schemas/DashboardSummary' } } } }
+        '403': { $ref: '#/components/responses/Forbidden' }
+  /admin/reports/sales:
+    get:
+      tags: [Admin]
+      summary: Продажи по категориям/goal + топ-товары (revenue desc) — RBAC manager+
+      parameters:
+        - { name: from, in: query, schema: { type: string, format: date-time } }
+        - { name: to, in: query, schema: { type: string, format: date-time } }
+        - { name: locale, in: query, schema: { type: string, enum: [en, ru] } }
+      responses:
+        '200': { description: OK, content: { application/json: { schema: { $ref: '#/components/schemas/SalesReport' } } } }
+        '403': { $ref: '#/components/responses/Forbidden' }
+  /admin/reports/fulfillment:
+    get:
+      tags: [Admin]
+      summary: План vs факт выдачи, SLA-соблюдение, доля возвратов/замен — RBAC manager+
+      parameters:
+        - { name: from, in: query, schema: { type: string, format: date-time } }
+        - { name: to, in: query, schema: { type: string, format: date-time } }
+      responses:
+        '200': { description: OK, content: { application/json: { schema: { $ref: '#/components/schemas/FulfillmentReport' } } } }
+        '403': { $ref: '#/components/responses/Forbidden' }
+  /admin/reports/operators:
+    get:
+      tags: [Admin]
+      summary: Загрузка операторов (активные/выданные задачи) — RBAC manager+
+      parameters:
+        - { name: from, in: query, schema: { type: string, format: date-time } }
+        - { name: to, in: query, schema: { type: string, format: date-time } }
+      responses:
+        '200': { description: OK, content: { application/json: { schema: { $ref: '#/components/schemas/OperatorLoadReport' } } } }
+        '403': { $ref: '#/components/responses/Forbidden' }
+
+  # ---- E8: Settings (RBAC admin-only) ----
+  /admin/settings:
+    get:
+      tags: [Admin]
+      summary: Настройки магазина + read-only флаги интеграций (без секретов) — RBAC admin
+      responses:
+        '200': { description: OK, content: { application/json: { schema: { $ref: '#/components/schemas/ShopSettings' } } } }
+        '403': { $ref: '#/components/responses/Forbidden' }
+    put:
+      tags: [Admin]
+      summary: Частичное обновление настроек (store/языки/шаблоны) — RBAC admin
+      requestBody: { required: true, content: { application/json: { schema: { $ref: '#/components/schemas/UpdateSettingsRequest' } } } }
+      responses:
+        '200': { description: OK, content: { application/json: { schema: { $ref: '#/components/schemas/ShopSettings' } } } }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '403': { $ref: '#/components/responses/Forbidden' }
 
   /admin/warming/jobs:
     get:

@@ -749,41 +749,66 @@ model PromoCode {
 }
 
 // ============================================================
-// Support
+// Support (E8, migration 20260715000000_tickets_settings)
 // ============================================================
 
+// TicketStatus: open → pending → resolved → closed (см. openapi.md)
+// TicketPriority: low | normal | high | urgent
+
 model Ticket {
-  id        String         @id @default(uuid()) @db.Uuid
-  userId    String         @db.Uuid
-  orderId   String?        @db.Uuid
-  subject   String
-  status    TicketStatus   @default(open)
-  priority  TicketPriority @default(normal)
-  createdAt DateTime       @default(now())
-  updatedAt DateTime       @updatedAt
+  id          String         @id @default(uuid()) @db.Uuid
+  number      String         @unique // TK-2026-000042
+  subject     String
+  status      TicketStatus   @default(open)
+  priority    TicketPriority @default(normal)
+  requesterId String         @db.Uuid // покупатель, от лица которого тикет
+  assigneeId  String?        @db.Uuid // сотрудник (support/manager/admin)
+  orderId     String?        @db.Uuid // опц. привязка к заказу
+  lastReplyAt DateTime       @default(now()) // сортировка очереди
+  closedAt    DateTime?
+  createdAt   DateTime       @default(now())
+  updatedAt   DateTime       @updatedAt
 
-  user     User            @relation(fields: [userId], references: [id], onDelete: Cascade)
-  order    Order?          @relation(fields: [orderId], references: [id], onDelete: SetNull)
-  messages TicketMessage[]
+  requester User            @relation("TicketRequester", fields: [requesterId], references: [id], onDelete: Restrict)
+  assignee  User?           @relation("TicketAssignee", fields: [assigneeId], references: [id], onDelete: SetNull)
+  order     Order?          @relation(fields: [orderId], references: [id], onDelete: SetNull)
+  messages  TicketMessage[]
 
-  @@index([userId])
-  @@index([status, priority])
+  @@index([status, lastReplyAt])
+  @@index([assigneeId])
+  @@index([requesterId])
   @@map("tickets")
 }
 
 model TicketMessage {
-  id          String   @id @default(uuid()) @db.Uuid
-  ticketId    String   @db.Uuid
-  authorId    String   @db.Uuid
-  body        String   @db.Text
-  attachments Json     @default("[]") @db.JsonB
-  createdAt   DateTime @default(now())
+  id         String   @id @default(uuid()) @db.Uuid
+  ticketId   String   @db.Uuid
+  authorId   String?  @db.Uuid // сотрудник/покупатель; null — системное событие
+  body       String   @db.Text
+  isInternal Boolean  @default(false) // внутренняя заметка — не видна покупателю
+  createdAt  DateTime @default(now())
 
   ticket Ticket @relation(fields: [ticketId], references: [id], onDelete: Cascade)
-  author User   @relation(fields: [authorId], references: [id], onDelete: Restrict)
+  author User?  @relation("TicketMessageAuthor", fields: [authorId], references: [id], onDelete: SetNull)
 
   @@index([ticketId, createdAt])
   @@map("ticket_messages")
+}
+
+// ============================================================
+// Settings / Integrations (E8, docs/13 §17)
+// ============================================================
+
+// Key-value стор настроек магазина. Типизированный слой в коде маппит известные
+// ключи (`store`, `notifications`) на секции ShopSettings; интеграционные флаги
+// (crypto/KMS/Octo) выводятся из env read-only. Секреты здесь НЕ хранятся.
+model Setting {
+  key       String   @id
+  value     Json     @default("{}") @db.JsonB
+  updatedAt DateTime @updatedAt
+  updatedBy String?  @db.Uuid
+
+  @@map("settings")
 }
 
 // ============================================================

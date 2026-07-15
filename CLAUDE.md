@@ -71,9 +71,14 @@
   Vault (вместо заглушек E6); `GET /admin/warming/jobs/:id/inventory`; RBAC admin/support;
   сидер прокси/Octo. Ресурс выделенный (после выдачи — покупателя). Актуальная база кода —
   ветка `claude/advault-e7-proxy-octo-inventory-vsnw75`.
-- 🔜 **Следующий шаг — эпик E8 (полная админка / операторка: Orders, Warming-workspace,
-  инвентарь-UI, Stock/Catalog/Promo/Users)**. Далее строго по порядку эпиков/вех из
-  `docs/16-development-plan.md`.
+- ✅ **E8 — полная админка/операторка готова**: RBAC operator/manager/admin; Orders +
+  Warming Kanban/operator-workspace + Inventory-UI + Stock read (ч.1); Finance (refund+
+  ручная выдача+сверка) + Users + Promo (ч.2); Catalog & Bundles CRUD + Warming plans
+  CRUD с версионированием (ч.3); **Dashboard/Reports + Tickets (Ticket/TicketMessage) +
+  Staff&roles UI + Settings (key-value)** (ч.4). Всё под RBAC/аудитом, проверено вживую.
+- 🔜 **Следующий шаг — эпик E9 (Поддержка и уведомления: клиентский портал тикетов,
+  mailer/in-app уведомления по шаблонам из Settings)**. Далее строго по порядку эпиков/вех
+  из `docs/16-development-plan.md`.
 - Живой статус и «что дальше» — всегда в `docs/SESSION-LOG.md`.
 
 ## Где что лежит

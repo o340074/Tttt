@@ -8,14 +8,14 @@
 ## 📍 Текущий статус
 
 - **Фаза:** разработка. E0…E7 готовы и проверены end-to-end. **E8 (админка/операторка)
-  — в работе**: Orders + Warming-workspace + Inventory-UI (часть 1); Finance (ручной
-  refund + ручная выдача + сверка ledger) + Users + Promo CRUD (часть 2); **Catalog &
-  Bundles CRUD + Warming plans CRUD с версионированием (часть 3)**. Осталось для E8:
-  Tickets, Reports/Dashboard, Staff&roles UI, Settings, inline-edit промо.
-- **Следующий шаг:** **E8-cont3** — Dashboard/Reports + Tickets + Staff&roles UI +
-  Settings (добить админку), затем **E9 — Поддержка и уведомления**.
-- **Ветка:** актуальная база — `claude/advault-e8-catalog-warming-4uvpad` (E0…E7 +
-  E8 части 1–3; отходит от `…e8-admin-continuation-flz7jy`). В main код ещё не влит.
+  — ЗАВЕРШЕНА**: Orders + Warming-workspace + Inventory-UI (часть 1); Finance (ручной
+  refund + ручная выдача + сверка ledger) + Users + Promo CRUD (часть 2); Catalog &
+  Bundles CRUD + Warming plans CRUD с версионированием (часть 3); **Dashboard/Reports +
+  Tickets + Staff&roles UI + Settings (часть 4 — финал E8)**. Долг: inline-edit промо.
+- **Следующий шаг:** **E9 — Поддержка и уведомления** (клиентский портал тикетов поверх
+  Ticket/TicketMessage, mailer/in-app уведомления по шаблонам из Settings, вебхуки/очередь).
+- **Ветка:** актуальная база — `claude/advault-e8-admin-completion-c5l1u4` (E0…E7 +
+  E8 части 1–4). Отходит от `…e8-catalog-warming-4uvpad`. В main код ещё не влит.
 - **Прогресс по эпикам (из `docs/16`):**
 
 | Эпик | Название | Статус |
@@ -29,7 +29,7 @@
 | E5 | Выдача из стока (READY_STOCK) | ✅ готово |
 | E6 | Прогрев: модель и очередь | ✅ готово |
 | E7 | Инвентарь: прокси и Octo-профили | ✅ готово |
-| E8 | Полная админка / операторка | 🟡 в работе (Orders+Warming+Inventory + Finance/Users/Promo + Catalog/Bundles+Warming-plans) |
+| E8 | Полная админка / операторка | ✅ готово (Orders+Warming+Inventory · Finance/Users/Promo · Catalog/Bundles+Warming-plans · Dashboard/Reports+Tickets+Staff+Settings) |
 | E9 | Поддержка и уведомления | ⬜ |
 | E10 | Гарантии, замены, возвраты | ⬜ |
 | E11 | Полировка, безопасность, запуск | ⬜ |
@@ -39,6 +39,79 @@
 ---
 
 ## Записи
+
+### Сессия — Админка: Dashboard/Reports + Tickets + Staff&roles + Settings (эпик E8, часть 4 — ФИНАЛ E8)
+- **Развилки (asking):** попытки задать через AskUserQuestion дважды упали с инфра-ошибкой
+  (permission-stream abort, не отказ пользователя) → пошли по рекомендациям из промта:
+  объём — **все 4 модуля**; Tickets — **минимальная** модель (Ticket+TicketMessage,
+  internal-заметки флагом `isInternal`, без макросов/скиллов); Reports — **готовые метрики**
+  (фикс-эндпоинты §14, агрегация в SQL/Decimal, без float); Settings — **key-value стор**
+  (`Setting(key,value json)` + типизированный слой в коде).
+- **Модели/миграция (`20260715000000_tickets_settings`):** `Ticket` (number `TK-YYYY-NNNNNN`,
+  status open→pending→resolved→closed, priority, requesterId/assigneeId/orderId, lastReplyAt,
+  closedAt), `TicketMessage` (authorId nullable, `isInternal`), `Setting` (key PK, value JsonB,
+  updatedBy). Enums `TicketStatus`/`TicketPriority`. User-связи Ticket*. `migrate deploy` — 9
+  миграций (новая 1). Контракты вперёд: `docs/backend/{prisma-schema,openapi}.md` обновлены
+  (пути `/admin/tickets*`, `/admin/staff`, `/admin/reports/*`, `/admin/settings` + схемы),
+  типы отзеркалены в `@advault/types`.
+- **RBAC (`auth/roles.ts`):** новые группы `SUPPORT_STAFF=[support,manager,admin]` (тикеты —
+  операторы исключены: переписка с клиентом не их работа) и `REPORTS_STAFF=[manager,admin]`
+  (revenue/SLA/загрузка — надзорные данные). Settings — `ADMIN_ONLY`. Staff-list — любой staff
+  (для dropdown назначения); смена роли — существующий admin-only `PATCH /admin/users/:id/role`.
+  Каждая мутация тикета/настроек → `AuditLog` (ticket.create/update/reply/note, settings.update),
+  без секретов. Reports read-only — без аудита.
+- **API (модуль `admin/`):** `AdminTicketsService` (очередь+фильтры, create от лица покупателя
+  по email, reply/note с bump lastReplyAt и open→pending на публичный ответ, assign/status/priority,
+  closed→409 на ответ, assignee обязан быть staff→400); `AdminReportsService` (dashboard —
+  `order.aggregate` _sum/_count + `ledger.aggregate` refunds + `warmingJob.groupBy`/count ops +
+  открытые тикеты; sales — fold order_items по variant→category/goal с Decimal; fulfillment —
+  план vs факт/SLA/refund-rate из warmingJob+order_items; operators — groupBy assignedTo) +
+  чистая `reports.logic.ts` (foldSales, computeFulfillment); `AdminStaffService` (staff + живая
+  загрузка: открытые тикеты + активные warm-задачи через groupBy); `AdminSettingsService` +
+  `settings.logic.ts` (buildSettings/applyUpdate поверх key-value, дефолты, валидация
+  defaultLocale∈enabledLocales, интеграционные флаги из env read-only — секреты не хранятся).
+- **Web:** хуки в `features/admin/api.ts` (tickets/staff/reports/settings + инвалидация);
+  страницы **Tickets** (очередь+фильтры+форма нового тикета), **TicketDetail** (тред с internal-
+  подсветкой, reply/note, assign/status/priority), **Dashboard** (KPI+ops-плитки+период 7/30/90д +
+  секции sales/fulfillment/operators), **Staff** (список+загрузка, смена роли admin-only с
+  danger-confirm), **Settings** (магазин/языки/шаблоны уведомлений + read-only флаги интеграций).
+  Ticket-бейджи (status/priority), роуты в App.tsx, нав в AdminLayout (Dashboard/Tickets/Staff/
+  Settings под ролями). i18n EN/RU (`admin.{tickets,dashboard,reports,staff,settings,ticketStatuses,
+  ticketPriorities}` + nav; синхронно — locales.spec зелёный).
+- **Тесты (+27, api 271 / web 2):** unit `reports.logic` (5 — fold Decimal-суммы по
+  категориям/goal/продуктам, distinct-orders, пропуск исчезнувшего варианта; fulfillment
+  план/факт/SLA/refund-rate, пустой безопасен); unit `settings.logic` (6 — дефолты, страйп
+  unknown-ключей, trim, пустой enabledLocales→err, defaultLocale∉enabled→err, merge одного
+  шаблона без затирания); service `AdminTicketsService` (7 — create+opening-msg, unknown
+  requester→404, чужой заказ→400, полный цикл assign→reply(pending)→note→resolve→close,
+  reply в closed→409, assign не-staff→400, фильтры); service `AdminSettingsService` (4 — дефолты,
+  persist+audit+roundtrip, невалидный locale→400, секрет не попадает в стор); e2e `admin-support`
+  (5 — RBAC-матрица tickets/reports/staff/settings + тикет end-to-end по HTTP). Фейки расширены:
+  FakeTicket/TicketMessage/Setting стора, `order.aggregate`, `warmingJob.groupBy`+rich-count,
+  `ticket.groupBy`, `user.findMany` role:{in}.
+- **Проверено вживую (Postgres 16 + Redis + собранный API):** `migrate deploy` (9 миграций) +
+  сидер; curl под ролями. **RBAC-матрица** ровно как задумано (tickets buyer/operator→403,
+  support→200; reports support→403, manager→200; settings manager→403, admin→200; staff
+  buyer→403, support→200). **Тикет end-to-end:** create (TK-2026-…, open, 1 msg, priority high) →
+  assign support → публичный reply (open→**pending**, 2 msg) → internal note (state не меняется,
+  isInternal=true) → close (closedAt проставлен) → reply в closed→**409**; AuditLog:
+  create/update/reply/note/update. **Dashboard** после реального заказа: revenue 50.00, orders 1,
+  avgOrder 50.00, openTickets 1. **Sales**: 1 категория «Google Ads» rev 50.00 + топ-товар.
+  **Staff**: у support 1 открытый назначенный тикет. **Settings**: GET дефолты + флаги
+  (crypto=true/octo=false/kms=true из env), PUT roundtrip (storeName+шаблон orderPaid, warmingReady
+  сохранён — частичный merge), невалидный defaultLocale→400, стор-ключи `store`/`notifications`,
+  audit settings.update, **секретов в сторе нет**. lint/format/typecheck/тесты(271+2)/build — зелёные.
+- **Решения:** тикеты — минимальная модель, internal-заметки флагом (не отдельная сущность);
+  публичный ответ open→pending (ждём клиента), заметка state не трогает; reports — SQL-агрегация
+  денег через `aggregate/groupBy` (Decimal), реляционные группировки (по категории/goal) —
+  fold order_items в памяти с Decimal (без float; raw-SQL-джойн отложен); минуты/проценты —
+  обычные числа (правило «no float» — только про деньги); settings — key-value + типизированный
+  слой (гибко, без миграций под каждую секцию), интеграционные секреты только как флаги из env.
+- **Проблемы/долги:** inline-edit промокода (форма правки) по-прежнему нет; reports-джойны в
+  памяти (для больших объёмов заменить на raw-SQL/материализацию); attachments у тикетов и
+  макросы/скиллы операторов — отложены; долги E7 (expired-прокси по TTL, политика ресурсов на
+  reassign) открыты; браузерный скрин админки не снимался (проверено curl полного цикла + build).
+- **Дальше:** **E9 — Поддержка и уведомления** (промт в `docs/NEXT-SESSION-PROMPT.md`).
 
 ### Сессия — Админка: Catalog & Bundles CRUD + Warming plans CRUD (эпик E8, часть 3)
 - **Развилки (asking, все по рекомендации):** объём — **только ядро** (Catalog/Bundles +

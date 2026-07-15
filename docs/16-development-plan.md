@@ -117,7 +117,7 @@
 - **Приёмка**: оператор привязывает прокси и профиль к warm-заказу; попадают в Bundle.
 - **Зависимости**: E6.
 
-### E8. Полная админка / операторка (MVP-core) — ~16–22 dd — 🟡 в работе
+### E8. Полная админка / операторка (MVP-core) — ~16–22 dd — ✅ готово
 > **Сделано (часть 1):** RBAC-роли operator/manager (аддитивно на User.role), admin
 > Orders (таблица+деталь), Warming Kanban + operator workspace (assign/переходы/чек-лист/
 > захват аккаунта/resolve + bind прокси/Octo из E7), Inventory-UI (прокси/Octo:
@@ -134,7 +134,16 @@
 > ETA связанных вариантов; идущие WarmingJob сохраняют snapshot). RBAC `CATALOG_STAFF`
 > (manager+), AuditLog на каждую мутацию. Проверено вживую (Postgres+Redis): цикл
 > план→товар→вариант→публикация→витрина + версионирование с пересчётом ETA.
-> **Осталось:** Tickets, Reports/Dashboard, Staff&roles UI, Settings, inline-edit промо, real-time очередей.
+> **Сделано (часть 4 — финал E8):** Dashboard + Reports/Analytics (read-only агрегаты
+> §1/§14 — revenue/orders/refunds, продажи по категориям/goal, план vs факт+SLA,
+> загрузка операторов, топ-товары; SQL/Decimal, без float, RBAC manager+); Tickets
+> (модели Ticket/TicketMessage + миграция; очередь/деталь/create-от-лица-покупателя/
+> reply+internal-note/assign/status; RBAC support+; аудит); Staff&roles UI (список
+> сотрудников с живой загрузкой, смена роли admin-only); Settings (key-value стор,
+> магазин/языки/шаблоны уведомлений; интеграции — read-only флаги из env, без секретов;
+> RBAC admin). Проверено вживую (Postgres+Redis) под ролями end-to-end.
+> **Долг (в E9+):** inline-edit промо, attachments/макросы тикетов, real-time очередей,
+> reports-джойны в памяти → raw-SQL при росте объёмов.
 - RBAC (Owner/Admin/Manager/Operator/Support), StaffUser, гварды, аудит-лог.
 - Модули (см. [13](./13-admin-panel-spec.md)): Dashboard, Orders, **Warming Kanban**,
   **Operator workspace** (чек-листы этапов, привязка ресурсов, сборка Bundle),
