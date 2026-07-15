@@ -13,6 +13,7 @@ import { StockService } from '../stock/stock.service';
 import { IdempotencyService } from '../wallet/idempotency.service';
 import { LedgerService } from '../wallet/ledger.service';
 import { WarmingService } from '../warming/warming.service';
+import { computeWindow, isClaimEligible } from '../warranty/warranty.logic';
 import type {
   DeliveryPayload,
   Locale,
@@ -20,6 +21,9 @@ import type {
   OrderItem,
   OrderStatus,
   Paginated,
+  WarrantyClaimStatus,
+  WarrantyClaimType,
+  WarrantyInfo,
 } from '@advault/types';
 import type {
   Order as DbOrder,
@@ -37,15 +41,40 @@ const NUMBER_ATTEMPTS = 3;
 
 type DbOrderItemWithWarming = DbOrderItem & {
   warmingJob: (DbWarmingJob & { tasks: DbWarmingTask[] }) | null;
+  variant: { warrantyHours: number | null };
+  deliveries: { id: string; deliveredAt: Date | null; createdAt: Date }[];
+  warrantyClaims: {
+    id: string;
+    number: string;
+    type: WarrantyClaimType;
+    status: WarrantyClaimStatus;
+  }[];
 };
 type OrderWithItems = DbOrder & {
   items: DbOrderItemWithWarming[];
   promoCode: DbPromoCode | null;
 };
 
-/** Load the warming job + its tasks alongside each item, for buyer progress. */
+/**
+ * Load the warming job + tasks (buyer progress), the variant warranty window,
+ * the deliveries (window start) and any warranty claims (E10) alongside each
+ * item so the order view can drive replace/refund eligibility.
+ */
 const ORDER_INCLUDE = {
-  items: { include: { warmingJob: { include: { tasks: { orderBy: { order: 'asc' } } } } } },
+  items: {
+    include: {
+      warmingJob: { include: { tasks: { orderBy: { order: 'asc' } } } },
+      variant: { select: { warrantyHours: true } },
+      deliveries: {
+        select: { id: true, deliveredAt: true, createdAt: true },
+        orderBy: { createdAt: 'asc' },
+      },
+      warrantyClaims: {
+        select: { id: true, number: true, type: true, status: true },
+        orderBy: { createdAt: 'desc' },
+      },
+    },
+  },
   promoCode: true,
 } satisfies Prisma.OrderInclude;
 
@@ -409,6 +438,40 @@ export class OrdersService {
       deliveryType: item.deliveryType,
       deliveryStatus: item.deliveryStatus,
       warming: this.warming.buildProgress(item.warmingJob),
+      warranty: this.buildWarrantyInfo(item),
+    };
+  }
+
+  /**
+   * Warranty window + claim eligibility for a delivered line (E10). Null when
+   * the line was never delivered or its variant carries no warranty, so the UI
+   * simply shows nothing. `activeClaim` surfaces an open request so the buyer
+   * sees its status instead of a second "open a claim" button.
+   */
+  private buildWarrantyInfo(item: DbOrderItemWithWarming): WarrantyInfo | null {
+    const warrantyHours = item.variant?.warrantyHours ?? null;
+    const deliveries = item.deliveries ?? [];
+    const claims = item.warrantyClaims ?? [];
+    const latest = deliveries.at(-1) ?? null;
+    const deliveredAt = latest ? (latest.deliveredAt ?? latest.createdAt) : null;
+    if (deliveredAt === null || warrantyHours == null) return null;
+
+    const window = computeWindow(deliveredAt, warrantyHours);
+    const statuses: WarrantyClaimStatus[] = claims.map((c) => c.status);
+    const open = claims.find((c) => c.status === 'requested' || c.status === 'approved');
+    return {
+      warrantyHours,
+      deliveredAt: deliveredAt.toISOString(),
+      expiresAt: window.expiresAt?.toISOString() ?? null,
+      eligible: isClaimEligible({
+        deliveryStatus: item.deliveryStatus,
+        deliveredAt,
+        warrantyHours,
+        existingClaimStatuses: statuses,
+      }),
+      activeClaim: open
+        ? { id: open.id, number: open.number, type: open.type, status: open.status }
+        : null,
     };
   }
 }

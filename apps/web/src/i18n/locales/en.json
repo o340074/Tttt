@@ -141,7 +141,9 @@
     "languageHint": "Saved to your profile and used for emails.",
     "logout": "Log out",
     "orders": "My orders",
-    "ordersHint": "Purchase history and delivery status"
+    "ordersHint": "Purchase history and delivery status",
+    "warranty": "Warranties",
+    "warrantyHint": "Replacements & refunds"
   },
   "errors": {
     "GENERIC": "Something went wrong. Please try again.",
@@ -488,7 +490,8 @@
       "dashboard": "Dashboard",
       "tickets": "Tickets",
       "staff": "Staff & roles",
-      "settings": "Settings"
+      "settings": "Settings",
+      "warranty": "Warranties"
     },
     "fulfillmentTypes": {
       "READY_STOCK": "Ready stock",
@@ -1013,6 +1016,71 @@
       "save": "Save changes",
       "saved": "Settings saved.",
       "saveError": "Could not save settings."
+    },
+    "warranty": {
+      "title": "Warranty claims",
+      "subtitle": "Triage replacement and refund requests, then fulfill them.",
+      "all": "All",
+      "error": "Could not load warranty claims.",
+      "empty": "No warranty claims match this filter.",
+      "colNumber": "Claim",
+      "colItem": "Item",
+      "colType": "Type",
+      "colStatus": "Status",
+      "colBuyer": "Buyer",
+      "colCreated": "Created",
+      "notFound": "Claim not found.",
+      "back": "Back to claims",
+      "sku": "SKU",
+      "order": "Order",
+      "amount": "Amount",
+      "window": "Warranty until",
+      "reason": "Buyer's reason",
+      "resolutionNote": "Resolution note",
+      "replacementIssued": "A replacement asset has been issued.",
+      "actions": "Actions",
+      "noteLabel": "Note (optional)",
+      "notePlaceholder": "Visible to the buyer on the resolution…",
+      "approve": "Approve",
+      "reject": "Reject",
+      "fulfillRefund": "Fulfill refund",
+      "fulfillReplace": "Fulfill replacement",
+      "confirmRefund": "Credit {{amount}} {{currency}} back to the buyer's balance? This cannot be undone.",
+      "confirmReplace": "Issue a fresh asset to the buyer for this line? This cannot be undone.",
+      "confirmYes": "Yes, proceed",
+      "needFinance": "Fulfillment requires a finance (manager/admin) role.",
+      "actionError": "The action could not be completed."
+    }
+  },
+  "warranty": {
+    "title": "Warranties",
+    "subtitle": "Replacement and refund requests on your delivered items.",
+    "error": "Could not load your warranty claims.",
+    "retry": "Retry",
+    "empty": "You have no warranty claims yet.",
+    "toOrders": "Go to orders",
+    "cancel": "Cancel",
+    "submit": "Submit request",
+    "covered": "Covered by warranty",
+    "until": "until {{date}}",
+    "expired": "The warranty window has closed for this item.",
+    "claimOpen": "Claim {{number}}",
+    "viewClaims": "View claims",
+    "requestReplace": "Request replacement",
+    "requestRefund": "Request refund",
+    "replaceReasonLabel": "What went wrong? We'll issue a fresh account.",
+    "refundReasonLabel": "What went wrong? We'll refund your balance.",
+    "reasonPlaceholder": "Describe the issue (no passwords or secrets)…",
+    "statuses": {
+      "requested": "Requested",
+      "approved": "Approved",
+      "rejected": "Rejected",
+      "replaced": "Replaced",
+      "refunded": "Refunded"
+    },
+    "types": {
+      "replace": "Replacement",
+      "refund": "Refund"
     }
   }
 }

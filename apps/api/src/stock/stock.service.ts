@@ -141,6 +141,34 @@ export class StockService implements OnModuleInit, OnModuleDestroy {
     });
   }
 
+  /**
+   * Issue a warranty replacement (E10): convert one already-reserved unit → sold,
+   * bind it to the same order item and write a `replacement` Delivery, returning
+   * its id. Unlike `sellReserved` it never touches the line's deliveryStatus —
+   * the warranty service sets `replaced` after the claim transition. Runs inside
+   * the caller's transaction; a lost reservation rolls it back.
+   */
+  async deliverReplacement(tx: StockTx, stockItemId: string, orderItemId: string): Promise<string> {
+    const claimed = await tx.stockItem.updateMany({
+      where: { id: stockItemId, status: 'reserved' },
+      data: { status: 'sold', orderItemId, reservedUntil: null },
+    });
+    if (claimed.count !== 1) {
+      throw new ApiException('OUT_OF_STOCK', 'Stock reservation was lost', 409);
+    }
+    const unit = await tx.stockItem.findUnique({ where: { id: stockItemId } });
+    const delivery = await tx.delivery.create({
+      data: {
+        orderItemId,
+        stockItemId,
+        payload: unit!.payload, // encrypted snapshot of what was handed over
+        type: 'replacement',
+        deliveredAt: new Date(),
+      },
+    });
+    return delivery.id;
+  }
+
   // ---------- Import (admin) ----------
 
   /**

@@ -10,6 +10,9 @@ export const EVENT_TO_TYPE = {
   orderPaid: 'order_paid',
   warmingReady: 'warming_ready',
   ticketReply: 'ticket_reply',
+  warrantyReplaced: 'warranty_replaced',
+  warrantyRefunded: 'warranty_refunded',
+  warrantyRejected: 'warranty_rejected',
 } as const satisfies Record<string, NotificationType>;
 
 export type NotificationEvent = keyof typeof EVENT_TO_TYPE;

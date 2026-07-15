@@ -7,17 +7,21 @@
 
 ## 📍 Текущий статус
 
-- **Фаза:** разработка. E0…E8 готовы. **E9 (Поддержка и уведомления) — ЗАВЕРШЕНА**:
-  клиентский портал тикетов (`/tickets*` под RequireAuth, строго scoped на владельца,
-  internal-заметки скрыты), in-app уведомления (модель `Notification` + бейдж с поллингом)
-  и транзакционные email по событиям `order.paid`/`warming.ready`/`ticket.reply` на
-  per-locale шаблонах из Settings (EN/RU, подстановка `{{number}}`); админ-индикатор
-  «новый ответ покупателя» + авто-переход `pending→open`. Проверено вживую на реальном
-  Postgres+Redis (curl полного цикла) и e2e. Долг E8: inline-edit промо.
-- **Следующий шаг:** **E10 — Гарантии, замены, возвраты** (v1.1). Далее E11 (полировка/
-  безопасность/запуск). См. `docs/16` §E10.
-- **Ветка:** актуальная база — `claude/advault-e9-support-notifications-grpdmg` (E0…E8 +
-  E9). Отходит от `…e8-admin-completion-c5l1u4`. В main код ещё не влит.
+- **Фаза:** разработка. E0…E9 готовы. **E10 (Гарантии, замены, возвраты) — ЗАВЕРШЕНА**:
+  клиентская заявка `WarrantyClaim` (`/warranty-claims*` scoped на владельца) на замену/
+  возврат по доставленной позиции строго в окне `warrantyHours` от выдачи; статусы
+  requested→approved/rejected→replaced/refunded с аудитом каждого перехода. Замена
+  READY_STOCK — новый StockItem из пула (резерв→продажа, Delivery type=replacement);
+  замена MADE_TO_ORDER — rework warm-задачи. Возврат — кредит в ledger (Decimal,
+  идемпотентно). Админ-очередь `/admin/warranty-claims*`: approve/reject (WARRANTY_STAFF),
+  fulfill (FINANCE_STAFF, danger-confirm, Idempotency-Key). in-app+email по
+  warranty.replaced/refunded/rejected. Проверено вживую (curl полного цикла на реальном
+  Postgres+Redis: replace+refund, scoping 404, RBAC 403, ledger/аудит/уведомления в БД) и
+  e2e. Долг E8: inline-edit промо.
+- **Следующий шаг:** **E11 — Полировка, безопасность, запуск** (MVP→release). См. `docs/16`
+  §E11.
+- **Ветка:** актуальная база — `claude/advault-e10-warranties-o987dr` (E0…E9 + E10).
+  Отходит от `…e9-support-notifications-grpdmg`. В main код ещё не влит.
 - **Прогресс по эпикам (из `docs/16`):**
 
 | Эпик | Название | Статус |
@@ -33,7 +37,7 @@
 | E7 | Инвентарь: прокси и Octo-профили | ✅ готово |
 | E8 | Полная админка / операторка | ✅ готово (Orders+Warming+Inventory · Finance/Users/Promo · Catalog/Bundles+Warming-plans · Dashboard/Reports+Tickets+Staff+Settings) |
 | E9 | Поддержка и уведомления | ✅ готово (клиентский портал тикетов · in-app Notification+бейдж · email+in-app по order.paid/warming.ready/ticket.reply на per-locale шаблонах Settings) |
-| E10 | Гарантии, замены, возвраты | ⬜ |
+| E10 | Гарантии, замены, возвраты | ✅ готово (WarrantyClaim · клиентская заявка в окне warrantyHours · замена стока/rework warm · возврат через ledger · админ-очередь approve/reject/fulfill · RBAC+аудит+уведомления) |
 | E11 | Полировка, безопасность, запуск | ⬜ |
 
 Легенда: ⬜ не начато · 🟡 в работе · ✅ готово
@@ -41,6 +45,60 @@
 ---
 
 ## Записи
+
+### Сессия — Гарантии, замены, возвраты (эпик E10 — ЗАВЕРШЁН)
+- **Развилки (asking):** через AskUserQuestion, все по рекомендациям — модель заявки
+  **отдельная `WarrantyClaim`** (не расширение Order/Delivery); одобрение **всегда вручную
+  (staff)**; окно **жёсткое `warrantyHours`** (без grace); гранулярность **по позиции
+  (partial)** — заявка привязана к OrderItem/Delivery.
+- **Контракты вперёд:** `@advault/types` — `WarrantyClaimType`/`WarrantyClaimStatus`,
+  `WarrantyInfo` (встроено в `OrderItem.warranty`: window+eligible+activeClaim),
+  `CreateWarrantyClaimRequest`, `WarrantyClaimView`, `AdminWarrantyClaimListItem/Detail`,
+  `ResolveWarrantyClaimRequest`, `WarrantyClaimResult`; `NotificationEventKey`/
+  `NotificationType` +warrantyReplaced/refunded/rejected; `ShopSettings.notifications` →
+  `Record<NotificationEventKey,…>`. `docs/backend/{prisma-schema,openapi}.md` обновлены
+  (модель+enum, `NotificationType` +3, пути `/warranty-claims*` и `/admin/warranty-claims*`,
+  схемы, `OrderItem.warranty`).
+- **Модель/миграция (`20260715170000_warranty_claims`):** `WarrantyClaim`
+  (number `WC-YYYY-NNNNNN`, orderItemId/deliveryId/requesterId, type, status, reason,
+  resolutionNote, resolvedById, replacementDeliveryId, warrantyExpiresAt snapshot, индексы
+  `[requesterId,createdAt]`/`[status,createdAt]`/`[orderItemId]`, FK cascade/setnull) +
+  `WarrantyClaimType`/`WarrantyClaimStatus` enums + `NotificationType` +3 значения. Применена
+  вживую (11 миграций, deploy зелёный).
+- **Backend:** клиентский `WarrantyModule` (`/warranty-claims*` под RequireAuth, scoped на
+  `requesterId`): чистая `warranty.logic.ts` (`computeWindow`/`isClaimEligible`/`hasOpenClaim`/
+  `generateClaimNumber`); create мапит провал eligibility в точный 4xx (не доставлена 409 /
+  открытая заявка 409 / нет гарантии 422 / окно истекло 409). Admin `AdminWarrantyService`
+  (`admin/warranty-claims*`): approve/reject (WARRANTY_STAFF=support/manager/admin) →
+  fulfill (FINANCE_STAFF): **replace READY_STOCK** — `stock.reserve`+`deliverReplacement`
+  (тот же двухфазный резерв E5, Delivery type=replacement, line→replaced); **replace
+  MADE_TO_ORDER** — `warming.reworkForReplacement` (job→queued, tasks reset, line→queued);
+  **refund** — `ledger.credit` (Decimal, refType=refund, refId=orderItemId — ledger-unique
+  = защита от двойного возврата), line/job→refunded, order реагрегирован (docs/14). Идемпотентно
+  (Idempotency-Key + статус-гард approved→replaced через updateMany). Аудит каждого перехода
+  (`warranty.claim.{requested,approved,rejected,replaced,refunded}`), уведомления buyer
+  (warrantyReplaced/refunded/rejected, per-locale). `orders.service` — `OrderItem.warranty`
+  через расширенный ORDER_INCLUDE (variant.warrantyHours + deliveries + warrantyClaims;
+  defensive-мэппинг). Роль-группа `WARRANTY_STAFF` в `auth/roles.ts`.
+- **Web:** `features/warranty` (api-хуки клиент+админ, `WarrantyStatusPill`, `WarrantyControl`
+  — панель на позиции заказа: окно/активная заявка/форма replace|refund); страницы
+  `WarrantyPage` (мои заявки), `AdminWarrantyPage` (очередь+фильтры), `AdminWarrantyDetailPage`
+  (approve/reject + fulfill с danger-confirm, gated `useIsElevated`); нав «Гарантии» (admin
+  `refresh`) + карточка в AccountPage; иконки из спрайта (`shield`/`refresh`); i18n EN/RU
+  (`warranty.*`, `admin.warranty.*`, `account.warranty*`, `admin.nav.warranty`), locales.spec
+  зелёный.
+- **Проверка (DoD):** lint/typecheck/build зелёные; API **304 теста** (16 новых:
+  warranty.logic.spec + warranty.e2e — replace/refund end-to-end, scoping 404, RBAC 403,
+  window-expired 409, reject+notify); web locales.spec. Обновлены фейки (`FakeWarrantyClaimStore`
+  + include variant/deliveries/warrantyClaims в order/orderItem). **Live-verify** на реальном
+  Postgres+Redis (curl полного цикла): eligible=true→claim replace→scoping 404→approve→fulfill
+  (Delivery replacement, line replaced, идемпотентный replay)→buyer видит replacement; refund
+  claim→approve→fulfill (ledger credit 42.00 ×1, order/line refunded); в БД — 2 claim
+  (replaced/refunded), 1 refund-credit, 1 replacement-delivery, 6 audit warranty.*, 2
+  notification warranty_*.
+- **Долг/следующее:** E11 (полировка/безопасность/запуск). В долг: частичный возврат discount
+  (аллокация промо на позицию при возврате — сейчас возвращается unitPrice×qty), grace-период
+  окна (по желанию), связывание завершения warm-rework с терминальным статусом claim.
 
 ### Сессия — Поддержка и уведомления (эпик E9 — ЗАВЕРШЁН)
 - **Развилки (asking):** заданы через AskUserQuestion, все по рекомендациям —

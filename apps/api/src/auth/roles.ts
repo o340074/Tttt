@@ -46,6 +46,13 @@ export const SUPPORT_STAFF: Role[] = ['support', 'manager', 'admin'];
 export const REPORTS_STAFF: Role[] = ['manager', 'admin'];
 
 /**
+ * Warranty claim triage (docs/14, E10): reading the queue and approving/
+ * rejecting a claim is a support decision — support, managers and admins.
+ * The money/asset *fulfillment* step is narrowed further to FINANCE_STAFF.
+ */
+export const WARRANTY_STAFF: Role[] = ['support', 'manager', 'admin'];
+
+/**
  * Owner-level only: staff management and role changes (a manager must not be
  * able to escalate anyone — including themselves — to admin). See docs/13.
  */

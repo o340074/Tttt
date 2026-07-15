@@ -164,11 +164,23 @@
 - **Долг (E11):** доставка уведомлений в BullMQ-очередь + ретраи; WebSocket для realtime;
   вложения/макросы тикетов.
 
-### E10. Гарантии, замены, возвраты (v1.1) — ~5–7 dd
-- Запрос замены в гарантийном окне; Rework для warm; возврат на баланс (ledger+audit).
-- Фронт: кнопки в деталях заказа/Vault; админ-обработка.
-- **Приёмка**: замена/возврат проходят с аудитом; статусы корректны.
+### E10. Гарантии, замены, возвраты (v1.1) — ~5–7 dd ✅ ГОТОВО
+- Prisma: **WarrantyClaim** (+enum WarrantyClaimType/Status; NotificationType +3).
+  Клиентская заявка `/warranty-claims*` (scoped на владельца) на replace/refund по
+  доставленной позиции в окне `warrantyHours` от выдачи; статусы requested→approved/
+  rejected→replaced/refunded с аудитом каждого перехода.
+- Замена: READY_STOCK — новый StockItem из пула (резерв→продажа, Delivery type=replacement);
+  MADE_TO_ORDER — rework warm-задачи (job→queued). Возврат — кредит в ledger (Decimal,
+  идемпотентно, ledger-unique). Админ-очередь `/admin/warranty-claims*`: approve/reject
+  (WARRANTY_STAFF) → fulfill (FINANCE_STAFF, Idempotency-Key). in-app+email уведомления.
+- Фронт: `WarrantyControl` на позиции заказа (окно/заявка/форма), `WarrantyPage` (мои
+  заявки), админ-очередь+детали с danger-confirm на fulfill; нав/иконки/i18n EN-RU.
+- **Приёмка**: ✅ замена/возврат проходят end-to-end с аудитом; статусы корректны
+  (проверено live на Postgres+Redis: curl полного цикла + e2e; lint/typecheck/build/тесты
+  зелёные, API 304).
 - **Зависимости**: E5, E6, E8.
+- **Долг (E11):** частичная аллокация discount на позицию при возврате; grace-период окна;
+  связывание завершения warm-rework с терминальным статусом claim.
 
 ### E11. Полировка, безопасность, запуск (MVP→release) — ~8–12 dd
 - Отзывы/рейтинг (базово), заголовки безопасности, финальный rate-limit,

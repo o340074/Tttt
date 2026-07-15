@@ -406,6 +406,11 @@ components:
           oneOf:
             - { $ref: '#/components/schemas/WarmingProgress' }
             - { type: "null" }
+        warranty:
+          description: Окно гарантии + право на замену/возврат (E10); null без гарантии/до выдачи.
+          oneOf:
+            - { $ref: '#/components/schemas/WarrantyInfo' }
+            - { type: "null" }
 
     WarmingProgress:
       type: object
@@ -1268,6 +1273,97 @@ components:
     UnreadCountResponse:
       type: object
       properties: { unread: { type: integer } }
+
+    # ---- E10: Warranty claims ----
+    WarrantyClaimType:
+      type: string
+      enum: [replace, refund]
+    WarrantyClaimStatus:
+      type: string
+      enum: [requested, approved, rejected, replaced, refunded]
+    WarrantyClaimRef:
+      type: object
+      properties:
+        id: { type: string, format: uuid }
+        number: { type: string }
+        type: { $ref: '#/components/schemas/WarrantyClaimType' }
+        status: { $ref: '#/components/schemas/WarrantyClaimStatus' }
+    WarrantyInfo:
+      type: object
+      description: 'Окно гарантии + право на заявку по доставленной позиции (встраивается в OrderItem).'
+      properties:
+        warrantyHours: { type: integer, nullable: true }
+        deliveredAt: { type: string, format: date-time, nullable: true }
+        expiresAt: { type: string, format: date-time, nullable: true }
+        eligible: { type: boolean }
+        activeClaim: { allOf: [{ $ref: '#/components/schemas/WarrantyClaimRef' }], nullable: true }
+    CreateWarrantyClaimRequest:
+      type: object
+      required: [orderItemId, type, reason]
+      properties:
+        orderItemId: { type: string, format: uuid }
+        type: { $ref: '#/components/schemas/WarrantyClaimType' }
+        reason: { type: string, minLength: 3, maxLength: 2000 }
+    WarrantyClaimView:
+      type: object
+      properties:
+        id: { type: string, format: uuid }
+        number: { type: string }
+        orderId: { type: string, format: uuid }
+        orderNumber: { type: string }
+        orderItemId: { type: string, format: uuid }
+        itemName: { type: string }
+        type: { $ref: '#/components/schemas/WarrantyClaimType' }
+        status: { $ref: '#/components/schemas/WarrantyClaimStatus' }
+        reason: { type: string }
+        resolutionNote: { type: string, nullable: true }
+        warrantyExpiresAt: { type: string, format: date-time }
+        createdAt: { type: string, format: date-time }
+        resolvedAt: { type: string, format: date-time, nullable: true }
+    AdminWarrantyClaimListItem:
+      type: object
+      properties:
+        id: { type: string, format: uuid }
+        number: { type: string }
+        status: { $ref: '#/components/schemas/WarrantyClaimStatus' }
+        type: { $ref: '#/components/schemas/WarrantyClaimType' }
+        orderId: { type: string, format: uuid }
+        orderNumber: { type: string }
+        orderItemId: { type: string, format: uuid }
+        itemName: { type: string }
+        sku: { type: string }
+        deliveryType: { type: string, enum: [auto, manual] }
+        buyerEmail: { type: string }
+        reason: { type: string }
+        warrantyExpiresAt: { type: string, format: date-time }
+        createdAt: { type: string, format: date-time }
+        resolvedAt: { type: string, format: date-time, nullable: true }
+    AdminWarrantyClaimDetail:
+      allOf:
+        - $ref: '#/components/schemas/AdminWarrantyClaimListItem'
+        - type: object
+          properties:
+            resolutionNote: { type: string, nullable: true }
+            amount: { type: string, description: 'Money (unitPrice × quantity)' }
+            currency: { type: string }
+            replacementDeliveryId: { type: string, format: uuid, nullable: true }
+    ResolveWarrantyClaimRequest:
+      type: object
+      properties:
+        note: { type: string, maxLength: 2000 }
+    WarrantyClaimResult:
+      type: object
+      properties:
+        id: { type: string, format: uuid }
+        status: { $ref: '#/components/schemas/WarrantyClaimStatus' }
+        orderId: { type: string, format: uuid }
+        orderStatus: { type: string, enum: [pending, paid, partially_delivered, delivered, cancelled, refunded] }
+        orderItemId: { type: string, format: uuid }
+        itemStatus:
+          type: string
+          enum: [pending, awaiting_manual, queued, assigned, in_progress, qc, ready, on_hold, failed, delivered, replaced, refunded]
+        refundedAmount: { type: string, nullable: true }
+        replacementDeliveryId: { type: string, format: uuid, nullable: true }
 
   responses:
     BadRequest:
@@ -2481,6 +2577,98 @@ paths:
       responses:
         '200': { description: OK, content: { application/json: { schema: { $ref: '#/components/schemas/UnreadCountResponse' } } } }
         '401': { $ref: '#/components/responses/Unauthorized' }
+
+  # ---- E10: Warranty claims — клиентский портал (скоуп владельца) ----
+  /warranty-claims:
+    get:
+      tags: [Warranty]
+      summary: Мои гарантийные заявки (новейшие сверху)
+      parameters:
+        - $ref: '#/components/parameters/Page'
+        - $ref: '#/components/parameters/Limit'
+      responses:
+        '200': { description: OK, content: { application/json: { schema: { type: object, properties: { data: { type: array, items: { $ref: '#/components/schemas/WarrantyClaimView' } }, meta: { $ref: '#/components/schemas/PageMeta' } } } } } }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+    post:
+      tags: [Warranty]
+      summary: >-
+        Открыть заявку на замену/возврат по доставленной позиции в окне гарантии
+        (warrantyHours от момента выдачи). Только позиция владельца.
+      requestBody: { required: true, content: { application/json: { schema: { $ref: '#/components/schemas/CreateWarrantyClaimRequest' } } } }
+      responses:
+        '201': { description: Created, content: { application/json: { schema: { $ref: '#/components/schemas/WarrantyClaimView' } } } }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '404': { description: Позиция не найдена (чужая/несуществующая — существование не раскрывается) }
+        '409': { description: Не доставлена / окно истекло / уже есть открытая заявка }
+        '422': { description: У позиции нет гарантии }
+  /warranty-claims/{id}:
+    get:
+      tags: [Warranty]
+      summary: Одна моя заявка (скоуп владельца; чужая — 404)
+      parameters: [{ name: id, in: path, required: true, schema: { type: string, format: uuid } }]
+      responses:
+        '200': { description: OK, content: { application/json: { schema: { $ref: '#/components/schemas/WarrantyClaimView' } } } }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '404': { $ref: '#/components/responses/NotFound' }
+
+  # ---- E10: Warranty очередь и выполнение (RBAC) ----
+  # Чтение/approve/reject — WARRANTY_STAFF (support/manager/admin).
+  # fulfill — FINANCE_STAFF (manager/admin): деньги/актив, идемпотентно.
+  /admin/warranty-claims:
+    get:
+      tags: [Admin]
+      summary: Очередь гарантийных заявок с фильтром по статусу — RBAC support/manager/admin
+      parameters:
+        - $ref: '#/components/parameters/Page'
+        - $ref: '#/components/parameters/Limit'
+        - { name: status, in: query, schema: { $ref: '#/components/schemas/WarrantyClaimStatus' } }
+      responses:
+        '200': { description: OK, content: { application/json: { schema: { type: object, properties: { data: { type: array, items: { $ref: '#/components/schemas/AdminWarrantyClaimListItem' } }, meta: { $ref: '#/components/schemas/PageMeta' } } } } } }
+        '403': { $ref: '#/components/responses/Forbidden' }
+  /admin/warranty-claims/{id}:
+    get:
+      tags: [Admin]
+      summary: Полная заявка с суммой возврата и следом решения — RBAC support/manager/admin
+      parameters: [{ name: id, in: path, required: true, schema: { type: string, format: uuid } }]
+      responses:
+        '200': { description: OK, content: { application/json: { schema: { $ref: '#/components/schemas/AdminWarrantyClaimDetail' } } } }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+  /admin/warranty-claims/{id}/approve:
+    post:
+      tags: [Admin]
+      summary: requested → approved (решение поддержки; денег/актива ещё нет)
+      parameters: [{ name: id, in: path, required: true, schema: { type: string, format: uuid } }]
+      requestBody: { content: { application/json: { schema: { $ref: '#/components/schemas/ResolveWarrantyClaimRequest' } } } }
+      responses:
+        '200': { description: OK, content: { application/json: { schema: { $ref: '#/components/schemas/WarrantyClaimResult' } } } }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '409': { description: Только заявку в статусе requested можно одобрить }
+  /admin/warranty-claims/{id}/reject:
+    post:
+      tags: [Admin]
+      summary: requested/approved → rejected (терминально; покупатель уведомлён)
+      parameters: [{ name: id, in: path, required: true, schema: { type: string, format: uuid } }]
+      requestBody: { content: { application/json: { schema: { $ref: '#/components/schemas/ResolveWarrantyClaimRequest' } } } }
+      responses:
+        '200': { description: OK, content: { application/json: { schema: { $ref: '#/components/schemas/WarrantyClaimResult' } } } }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '409': { description: Заявку в этом статусе нельзя отклонить }
+  /admin/warranty-claims/{id}/fulfill:
+    post:
+      tags: [Admin]
+      summary: >-
+        approved → replaced | refunded. Замена READY_STOCK выдаёт новый StockItem
+        (резерв→продажа, Delivery type=replacement); замена MADE_TO_ORDER — rework
+        warm-задачи; возврат — кредит в ledger (Decimal). RBAC FINANCE_STAFF,
+        идемпотентно (Idempotency-Key + ledger-unique/статус-гард).
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: string, format: uuid } }
+        - { name: Idempotency-Key, in: header, required: true, schema: { type: string } }
+      responses:
+        '200': { description: OK, content: { application/json: { schema: { $ref: '#/components/schemas/WarrantyClaimResult' } } } }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '409': { description: Только одобренную заявку можно выполнить / гонка выполнения }
 
   # ---- E8: Staff & reports (RBAC manager/admin; staff list = any staff) ----
   /admin/staff:

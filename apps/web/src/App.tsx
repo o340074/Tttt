@@ -20,6 +20,8 @@ import { AdminPromoPage } from './pages/admin/AdminPromoPage';
 import { AdminStockPage } from './pages/admin/AdminStockPage';
 import { AdminUserDetailPage } from './pages/admin/AdminUserDetailPage';
 import { AdminUsersPage } from './pages/admin/AdminUsersPage';
+import { AdminWarrantyDetailPage } from './pages/admin/AdminWarrantyDetailPage';
+import { AdminWarrantyPage } from './pages/admin/AdminWarrantyPage';
 import { InventoryPage } from './pages/admin/InventoryPage';
 import { WarmingBoardPage } from './pages/admin/WarmingBoardPage';
 import { WarmingJobPage } from './pages/admin/WarmingJobPage';
@@ -30,6 +32,7 @@ import { HomePage } from './pages/HomePage';
 import { NotFoundPage } from './pages/NotFoundPage';
 import { OrderPage } from './pages/OrderPage';
 import { OrdersPage } from './pages/OrdersPage';
+import { WarrantyPage } from './pages/WarrantyPage';
 import { ProductPage } from './pages/ProductPage';
 import { SupportPage } from './pages/SupportPage';
 import { TicketPage } from './pages/TicketPage';
@@ -54,6 +57,7 @@ export function App() {
           <Route path="orders/:id" element={<OrderPage />} />
           <Route path="support" element={<SupportPage />} />
           <Route path="support/:id" element={<TicketPage />} />
+          <Route path="warranty" element={<WarrantyPage />} />
         </Route>
         <Route path="*" element={<NotFoundPage />} />
       </Route>
@@ -78,6 +82,8 @@ export function App() {
           <Route path="promo" element={<AdminPromoPage />} />
           <Route path="tickets" element={<AdminTicketsPage />} />
           <Route path="tickets/:id" element={<AdminTicketDetailPage />} />
+          <Route path="warranty" element={<AdminWarrantyPage />} />
+          <Route path="warranty/:id" element={<AdminWarrantyDetailPage />} />
           <Route path="dashboard" element={<AdminDashboardPage />} />
           <Route path="staff" element={<AdminStaffPage />} />
           <Route path="settings" element={<AdminSettingsPage />} />

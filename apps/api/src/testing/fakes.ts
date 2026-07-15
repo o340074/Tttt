@@ -31,6 +31,7 @@ import type {
   WarmingPlan as DbWarmingPlan,
   WarmingStageTemplate as DbWarmingStageTemplate,
   WarmingTask as DbWarmingTask,
+  WarrantyClaim as DbWarrantyClaim,
 } from '@prisma/client';
 import { MailerService } from '../mailer/mailer.service';
 import { NotificationsService } from '../notifications/notifications.service';
@@ -204,7 +205,9 @@ export class FakeUserStore {
     let rows = this.rows.filter((r) => this.matches(r, args.where));
     if (Array.isArray(args.orderBy)) {
       // Staff list: order by role, then email.
-      rows = [...rows].sort((a, b) => a.role.localeCompare(b.role) || a.email.localeCompare(b.email));
+      rows = [...rows].sort(
+        (a, b) => a.role.localeCompare(b.role) || a.email.localeCompare(b.email),
+      );
     } else if (args.orderBy?.createdAt === 'desc') {
       rows = [...rows].sort((a, b) => b.createdAt.getTime() - a.createdAt.getTime());
     }
@@ -1170,6 +1173,14 @@ export class FakePromoStore {
 
 type FakeOrderItemWithWarming = DbOrderItem & {
   warmingJob: (DbWarmingJob & { tasks: DbWarmingTask[] }) | null;
+  variant?: { warrantyHours: number | null };
+  deliveries?: DbDelivery[];
+  warrantyClaims?: {
+    id: string;
+    number: string;
+    type: DbWarrantyClaim['type'];
+    status: DbWarrantyClaim['status'];
+  }[];
 };
 type FakeOrderWithRels = DbOrder & {
   items: FakeOrderItemWithWarming[];
@@ -1195,6 +1206,9 @@ export class FakeOrderStore {
     private readonly promos: FakePromoStore,
     private readonly warming: () => FakeWarmingJobStore,
     private readonly users: () => FakeUserStore = () => new FakeUserStore(),
+    private readonly variants: () => FakeVariantStore | undefined = () => undefined,
+    private readonly deliveries: () => FakeDeliveryStore | undefined = () => undefined,
+    private readonly claims: () => FakeWarrantyClaimStore | undefined = () => undefined,
   ) {}
 
   private withRels(row: DbOrder): FakeOrderWithRels {
@@ -1204,7 +1218,20 @@ export class FakeOrderStore {
       ...row,
       items: this.items.rows
         .filter((i) => i.orderId === row.id)
-        .map((i) => ({ ...i, warmingJob: this.warming().forOrderItem(i.id) })),
+        .map((i) => ({
+          ...i,
+          warmingJob: this.warming().forOrderItem(i.id),
+          // E10: warranty window + claims so the buyer order view can offer
+          // replace/refund. Stores are optional so legacy fixtures still build.
+          variant: {
+            warrantyHours:
+              this.variants()?.rows.find((v) => v.id === i.variantId)?.warrantyHours ?? null,
+          },
+          deliveries: this.deliveries()?.forOrderItem(i.id) ?? [],
+          warrantyClaims: (this.claims()?.rows ?? [])
+            .filter((c) => c.orderItemId === i.id)
+            .map((c) => ({ id: c.id, number: c.number, type: c.type, status: c.status })),
+        })),
       promoCode: this.promos.rows.find((p) => p.id === row.promoCodeId) ?? null,
     };
   }
@@ -1349,15 +1376,27 @@ export class FakeOrderItemStore {
     private readonly orders: () => FakeOrderStore,
     private readonly deliveries: () => FakeDeliveryStore,
     private readonly warming: () => FakeWarmingJobStore | undefined = () => undefined,
+    private readonly variants: () => FakeVariantStore | undefined = () => undefined,
+    private readonly claims: () => FakeWarrantyClaimStore | undefined = () => undefined,
   ) {}
 
-  /** getDelivery: item by id scoped to its order's owner, with deliveries. */
+  /**
+   * Item by id scoped to its order's owner. Supports the delivery/warming
+   * includes (getDelivery, E5) and the warranty includes (E10): order snapshot,
+   * variant warranty window, deliveries and existing claims.
+   */
   findFirst({
     where,
     include,
   }: {
     where: { id: string; orderId?: string; order?: { userId: string } };
-    include?: { deliveries?: unknown; warmingJob?: unknown };
+    include?: {
+      deliveries?: unknown;
+      warmingJob?: unknown;
+      variant?: unknown;
+      warrantyClaims?: unknown;
+      order?: unknown;
+    };
   }): Promise<FakeOrderItemWithDeliveries | DbOrderItem | null> {
     const row = this.rows.find(
       (r) => r.id === where.id && (where.orderId === undefined || r.orderId === where.orderId),
@@ -1367,10 +1406,23 @@ export class FakeOrderItemStore {
       const order = this.orders().rows.find((o) => o.id === row.orderId);
       if (!order || order.userId !== where.order.userId) return Promise.resolve(null);
     }
-    if (!include?.deliveries && !include?.warmingJob) return Promise.resolve(row);
+    if (!include) return Promise.resolve(row);
     const decorated: Record<string, unknown> = { ...row };
-    if (include?.deliveries) decorated.deliveries = this.deliveries().forOrderItem(row.id);
-    if (include?.warmingJob) decorated.warmingJob = this.warming()?.forOrderItem(row.id) ?? null;
+    if (include.deliveries) decorated.deliveries = this.deliveries().forOrderItem(row.id);
+    if (include.warmingJob) decorated.warmingJob = this.warming()?.forOrderItem(row.id) ?? null;
+    if (include.variant) {
+      const v = this.variants()?.rows.find((x) => x.id === row.variantId);
+      decorated.variant = { warrantyHours: v?.warrantyHours ?? null };
+    }
+    if (include.warrantyClaims) {
+      decorated.warrantyClaims = (this.claims()?.rows ?? [])
+        .filter((c) => c.orderItemId === row.id)
+        .map((c) => ({ id: c.id, number: c.number, type: c.type, status: c.status }));
+    }
+    if (include.order) {
+      const order = this.orders().rows.find((o) => o.id === row.orderId) ?? null;
+      decorated.order = order ? { id: order.id, number: order.number } : null;
+    }
     return Promise.resolve(decorated as FakeOrderItemWithDeliveries);
   }
 
@@ -1394,6 +1446,157 @@ export class FakeOrderItemStore {
     if (!row) throw new Error('Record not found');
     Object.assign(row, data);
     return row;
+  }
+}
+
+// ---------- Warranty claim fake (E10) ----------
+
+interface ClaimWhere {
+  id?: string;
+  status?: DbWarrantyClaim['status'];
+  requesterId?: string;
+}
+
+/**
+ * Warranty claims (E10). Decorate mirrors the admin/client includes: the
+ * claimed order item (with its order snapshot, variant fulfillment/warranty and
+ * warming job) plus the requester's email — enough for both surfaces.
+ */
+export class FakeWarrantyClaimStore {
+  readonly rows: DbWarrantyClaim[] = [];
+
+  constructor(
+    private readonly orderItems: () => FakeOrderItemStore,
+    private readonly orders: () => FakeOrderStore,
+    private readonly variants: () => FakeVariantStore,
+    private readonly users: () => FakeUserStore,
+    private readonly warming: () => FakeWarmingJobStore,
+  ) {}
+
+  private decorate(row: DbWarrantyClaim): Record<string, unknown> {
+    const item = this.orderItems().rows.find((i) => i.id === row.orderItemId);
+    const order = item ? this.orders().rows.find((o) => o.id === item.orderId) : undefined;
+    const variant = item ? this.variants().rows.find((v) => v.id === item.variantId) : undefined;
+    const job = item ? this.warming().forOrderItem(item.id) : null;
+    const requester = this.users().rows.find((u) => u.id === row.requesterId);
+    return {
+      ...row,
+      orderItem: item
+        ? {
+            id: item.id,
+            sku: item.sku,
+            nameSnapshot: item.nameSnapshot,
+            unitPrice: item.unitPrice,
+            quantity: item.quantity,
+            deliveryType: item.deliveryType,
+            deliveryStatus: item.deliveryStatus,
+            variantId: item.variantId,
+            variant: { fulfillmentType: variant?.fulfillmentType ?? 'READY_STOCK' },
+            order: order
+              ? {
+                  id: order.id,
+                  number: order.number,
+                  currency: order.currency,
+                  userId: order.userId,
+                }
+              : null,
+            warmingJob: job ? { id: job.id, status: job.status } : null,
+          }
+        : null,
+      requester: { email: requester?.email ?? '' },
+    };
+  }
+
+  private match(row: DbWarrantyClaim, where: ClaimWhere = {}): boolean {
+    if (where.id !== undefined && row.id !== where.id) return false;
+    if (where.status !== undefined && row.status !== where.status) return false;
+    if (where.requesterId !== undefined && row.requesterId !== where.requesterId) return false;
+    return true;
+  }
+
+  create({
+    data,
+  }: {
+    data: Omit<DbWarrantyClaim, 'createdAt' | 'updatedAt'> & { id?: string };
+  }): Promise<DbWarrantyClaim> {
+    if (this.rows.some((r) => r.number === data.number)) {
+      return Promise.reject(uniqueViolation('warranty_claims_number_key'));
+    }
+    const now = new Date();
+    const row: DbWarrantyClaim = {
+      id: data.id ?? randomUUID(),
+      number: data.number,
+      orderItemId: data.orderItemId,
+      deliveryId: data.deliveryId ?? null,
+      requesterId: data.requesterId,
+      type: data.type,
+      status: data.status ?? 'requested',
+      reason: data.reason,
+      resolutionNote: data.resolutionNote ?? null,
+      resolvedById: data.resolvedById ?? null,
+      replacementDeliveryId: data.replacementDeliveryId ?? null,
+      warrantyExpiresAt: data.warrantyExpiresAt,
+      createdAt: now,
+      updatedAt: now,
+      resolvedAt: data.resolvedAt ?? null,
+    };
+    this.rows.push(row);
+    return Promise.resolve(row);
+  }
+
+  findUnique({ where }: { where: { id: string }; include?: unknown }): Promise<unknown> {
+    const row = this.rows.find((r) => r.id === where.id);
+    return Promise.resolve(row ? this.decorate(row) : null);
+  }
+
+  findFirst({ where }: { where: ClaimWhere; include?: unknown }): Promise<unknown> {
+    const row = this.rows.find((r) => this.match(r, where));
+    return Promise.resolve(row ? this.decorate(row) : null);
+  }
+
+  findMany(args: {
+    where?: ClaimWhere;
+    include?: unknown;
+    orderBy?: { createdAt: 'asc' | 'desc' };
+    skip?: number;
+    take?: number;
+  }): Promise<unknown[]> {
+    let rows = this.rows.filter((r) => this.match(r, args.where));
+    rows = [...rows].sort((a, b) => a.createdAt.getTime() - b.createdAt.getTime());
+    if (args.orderBy?.createdAt === 'desc') rows.reverse();
+    const skip = args.skip ?? 0;
+    if (args.take !== undefined) rows = rows.slice(skip, skip + args.take);
+    else if (skip) rows = rows.slice(skip);
+    return Promise.resolve(rows.map((r) => this.decorate(r)));
+  }
+
+  count({ where }: { where?: ClaimWhere } = {}): Promise<number> {
+    return Promise.resolve(this.rows.filter((r) => this.match(r, where)).length);
+  }
+
+  update({
+    where,
+    data,
+  }: {
+    where: { id: string };
+    data: Partial<DbWarrantyClaim>;
+  }): Promise<DbWarrantyClaim> {
+    const row = this.rows.find((r) => r.id === where.id);
+    if (!row) return Promise.reject(new Error('Record not found'));
+    Object.assign(row, data, { updatedAt: new Date() });
+    return Promise.resolve(row);
+  }
+
+  updateMany({
+    where,
+    data,
+  }: {
+    where: ClaimWhere;
+    data: Partial<DbWarrantyClaim>;
+  }): Promise<{ count: number }> {
+    const rows = this.rows.filter((r) => this.match(r, where));
+    for (const row of rows) Object.assign(row, data, { updatedAt: new Date() });
+    return Promise.resolve({ count: rows.length });
   }
 }
 
@@ -2309,9 +2512,7 @@ export class FakeTicketStore {
 
   private decorate(row: DbTicket, include?: { messages?: unknown }): Record<string, unknown> {
     const requester = this.users().rows.find((u) => u.id === row.requesterId);
-    const assignee = row.assigneeId
-      ? this.users().rows.find((u) => u.id === row.assigneeId)
-      : null;
+    const assignee = row.assigneeId ? this.users().rows.find((u) => u.id === row.assigneeId) : null;
     const order = row.orderId ? this.orders().rows.find((o) => o.id === row.orderId) : null;
     const msgs = this.messages().rows.filter((m) => m.ticketId === row.id);
     const decorated: Record<string, unknown> = {
@@ -2608,6 +2809,7 @@ export interface FakePrismaStores {
   ticketMessage: FakeTicketMessageStore;
   setting: FakeSettingStore;
   notification: FakeNotificationStore;
+  warrantyClaim: FakeWarrantyClaimStore;
 }
 
 interface StoreSnapshot {
@@ -2653,10 +2855,13 @@ export function makeFakePrismaService(): PrismaService & FakePrismaStores {
   // order ↔ orderItem ↔ delivery ↔ warmingJob cross-reference; holders break the cycles.
   const orderHolder: { order?: FakeOrderStore } = {};
   const warmingHolder: { warmingJob?: FakeWarmingJobStore } = {};
+  const claimHolder: { warrantyClaim?: FakeWarrantyClaimStore } = {};
   const orderItem = new FakeOrderItemStore(
     () => orderHolder.order!,
     () => delivery,
     () => warmingHolder.warmingJob,
+    () => productVariant,
+    () => claimHolder.warrantyClaim,
   );
   const userStore = new FakeUserStore(() => orderHolder.order);
   const order = new FakeOrderStore(
@@ -2664,6 +2869,9 @@ export function makeFakePrismaService(): PrismaService & FakePrismaStores {
     promoCode,
     () => warmingHolder.warmingJob!,
     () => userStore,
+    () => productVariant,
+    () => delivery,
+    () => claimHolder.warrantyClaim,
   );
   orderHolder.order = order;
   const warmingTask = new FakeWarmingTaskStore();
@@ -2678,6 +2886,14 @@ export function makeFakePrismaService(): PrismaService & FakePrismaStores {
     () => bundle,
   );
   warmingHolder.warmingJob = warmingJob;
+  const warrantyClaim = new FakeWarrantyClaimStore(
+    () => orderItem,
+    () => order,
+    () => productVariant,
+    () => userStore,
+    () => warmingJob,
+  );
+  claimHolder.warrantyClaim = warrantyClaim;
   const warmingStageTemplate = new FakeWarmingStageStore();
   const ticketMessage = new FakeTicketMessageStore();
   const ticket = new FakeTicketStore(
@@ -2716,6 +2932,7 @@ export function makeFakePrismaService(): PrismaService & FakePrismaStores {
     ticketMessage,
     setting: new FakeSettingStore(),
     notification: new FakeNotificationStore(),
+    warrantyClaim,
   };
   return {
     ...stores,

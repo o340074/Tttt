@@ -27,6 +27,7 @@ const NAV: NavItem[] = [
   { to: '/admin/dashboard', labelKey: 'admin.nav.dashboard', icon: 'bolt', roles: ELEVATED },
   { to: '/admin/orders', labelKey: 'admin.nav.orders', icon: 'box' },
   { to: '/admin/tickets', labelKey: 'admin.nav.tickets', icon: 'mail', roles: SUPPORT },
+  { to: '/admin/warranty', labelKey: 'admin.nav.warranty', icon: 'refresh', roles: SUPPORT },
   { to: '/admin/warming', labelKey: 'admin.nav.warming', icon: 'spark' },
   { to: '/admin/catalog', labelKey: 'admin.nav.catalog', icon: 'ads', roles: ELEVATED },
   { to: '/admin/plans', labelKey: 'admin.nav.plans', icon: 'clock', roles: ELEVATED },

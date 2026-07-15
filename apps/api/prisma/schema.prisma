@@ -131,6 +131,23 @@ enum OrderItemDeliveryStatus {
   refunded
 }
 
+// Warranty claim type (E10): the buyer asks for a fresh asset or their money back.
+enum WarrantyClaimType {
+  replace
+  refund
+}
+
+// Warranty claim lifecycle (docs/14, E10). `requested` by the buyer inside the
+// warranty window; staff move it to `approved`/`rejected`; an approved claim is
+// fulfilled to `replaced` (new asset issued) or `refunded` (ledger credit).
+enum WarrantyClaimStatus {
+  requested
+  approved
+  rejected
+  replaced
+  refunded
+}
+
 // Warming Job lifecycle (docs/12, docs/14, docs/15). `queued` is the entry
 // state at checkout; operators walk it to `delivered`. `on_hold` pauses with a
 // recomputed ETA; `failed` is non-terminal — an operator resolves it by
@@ -328,6 +345,9 @@ model User {
   ticketsRaised    Ticket[]        @relation("TicketRequester")
   notifications    Notification[]  @relation("UserNotifications")
 
+  warrantyClaimsRaised   WarrantyClaim[] @relation("WarrantyClaimRequester")
+  warrantyClaimsResolved WarrantyClaim[] @relation("WarrantyClaimResolver")
+
   @@index([status])
   @@index([role])
   @@map("users")
@@ -406,6 +426,7 @@ model OrderItem {
   deliveries Delivery[] // qty > 1 → one Delivery per sold StockItem
   stockItems StockItem[]
   warmingJob WarmingJob? // MADE_TO_ORDER: 1:1 warming job
+  warrantyClaims WarrantyClaim[] // E10: replace/refund claims on this line
 
   @@index([orderId])
   @@index([deliveryStatus])
@@ -431,9 +452,45 @@ model Delivery {
   stockItem       StockItem? @relation(fields: [stockItemId], references: [id], onDelete: SetNull)
   bundle          Bundle?    @relation(fields: [bundleId], references: [id], onDelete: SetNull)
   deliveredByUser User?      @relation("DeliveredBy", fields: [deliveredBy], references: [id], onDelete: SetNull)
+  warrantyClaims  WarrantyClaim[] // E10: claims opened against this delivery
 
   @@index([orderItemId])
   @@map("deliveries")
+}
+
+// ============================================================
+// Warranty claims: replacements & refunds — E10 (docs/11, docs/14)
+// A buyer opens a claim on one delivered line inside its warranty window
+// (warrantyHours from delivery). Staff approve/reject; approved claims are
+// fulfilled to a fresh asset (replace) or a ledger credit (refund). Every
+// transition is audited; money moves only through the ledger (Decimal).
+// ============================================================
+model WarrantyClaim {
+  id                    String              @id @default(uuid()) @db.Uuid
+  number                String              @unique // human-readable, e.g. WC-2026-004821
+  orderItemId           String              @db.Uuid
+  deliveryId            String?             @db.Uuid // the delivery under warranty (source)
+  requesterId           String              @db.Uuid // owner (buyer)
+  type                  WarrantyClaimType
+  status                WarrantyClaimStatus @default(requested)
+  reason                String              @db.Text // buyer's description (no secrets)
+  resolutionNote        String?             @db.Text // staff note on approve/reject/fulfill
+  resolvedById          String?             @db.Uuid // staff who last resolved
+  replacementDeliveryId String?             @db.Uuid // new Delivery id on a fulfilled replace
+  warrantyExpiresAt     DateTime // snapshot of the window end at claim time
+  createdAt             DateTime            @default(now())
+  updatedAt             DateTime            @updatedAt
+  resolvedAt            DateTime?
+
+  orderItem  OrderItem @relation(fields: [orderItemId], references: [id], onDelete: Cascade)
+  delivery   Delivery? @relation(fields: [deliveryId], references: [id], onDelete: SetNull)
+  requester  User      @relation("WarrantyClaimRequester", fields: [requesterId], references: [id], onDelete: Cascade)
+  resolvedBy User?     @relation("WarrantyClaimResolver", fields: [resolvedById], references: [id], onDelete: SetNull)
+
+  @@index([requesterId, createdAt])
+  @@index([status, createdAt])
+  @@index([orderItemId])
+  @@map("warranty_claims")
 }
 
 model PromoCode {
@@ -820,6 +877,9 @@ enum NotificationType {
   order_paid
   warming_ready
   ticket_reply
+  warranty_replaced
+  warranty_refunded
+  warranty_rejected
 }
 
 /**

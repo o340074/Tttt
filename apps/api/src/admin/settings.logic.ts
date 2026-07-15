@@ -24,11 +24,14 @@ interface StoreSection {
 }
 type NotificationsSection = ShopSettings['notifications'];
 
-/** The transactional events that carry a localized template (E9). */
+/** The transactional events that carry a localized template (E9, E10). */
 export const NOTIFICATION_EVENTS: NotificationEventKey[] = [
   'orderPaid',
   'warmingReady',
   'ticketReply',
+  'warrantyReplaced',
+  'warrantyRefunded',
+  'warrantyRejected',
 ];
 
 const DEFAULT_STORE: StoreSection = {
@@ -53,6 +56,27 @@ const DEFAULT_NOTIFICATIONS: NotificationsSection = {
   ticketReply: {
     en: tpl('Support replied to your ticket', 'Ticket {{number}} has a new reply.'),
     ru: tpl('Поддержка ответила на ваш тикет', 'В тикете {{number}} новый ответ.'),
+  },
+  warrantyReplaced: {
+    en: tpl(
+      'Your warranty replacement is on the way',
+      'Claim {{number}} was approved — a replacement has been issued.',
+    ),
+    ru: tpl('Гарантийная замена в пути', 'Заявка {{number}} одобрена — замена оформлена.'),
+  },
+  warrantyRefunded: {
+    en: tpl('Your refund has been credited', 'Claim {{number}} was refunded to your balance.'),
+    ru: tpl('Возврат зачислен', 'По заявке {{number}} средства возвращены на баланс.'),
+  },
+  warrantyRejected: {
+    en: tpl(
+      'Your warranty claim was declined',
+      'Claim {{number}} was reviewed and could not be approved.',
+    ),
+    ru: tpl(
+      'Гарантийная заявка отклонена',
+      'Заявка {{number}} рассмотрена и не может быть одобрена.',
+    ),
   },
 };
 
@@ -100,11 +124,11 @@ export function readStore(raw: unknown): StoreSection {
  *  overlaid on the built-in defaults (E9; reused by the notifications sender). */
 export function readNotifications(raw: unknown): NotificationsSection {
   const r = (raw && typeof raw === 'object' ? raw : {}) as Record<string, unknown>;
-  return {
-    orderPaid: mergeTemplate(DEFAULT_NOTIFICATIONS.orderPaid, r.orderPaid),
-    warmingReady: mergeTemplate(DEFAULT_NOTIFICATIONS.warmingReady, r.warmingReady),
-    ticketReply: mergeTemplate(DEFAULT_NOTIFICATIONS.ticketReply, r.ticketReply),
-  };
+  const out = {} as NotificationsSection;
+  for (const event of NOTIFICATION_EVENTS) {
+    out[event] = mergeTemplate(DEFAULT_NOTIFICATIONS[event], r[event]);
+  }
+  return out;
 }
 
 /**
@@ -141,7 +165,8 @@ export function applyUpdate(
   if (patch.defaultLocale !== undefined) store.defaultLocale = patch.defaultLocale;
   if (patch.enabledLocales !== undefined) {
     const cleaned = patch.enabledLocales.filter(isLocale);
-    if (cleaned.length === 0) return { store, notifications, error: 'enabledLocales must be non-empty' };
+    if (cleaned.length === 0)
+      return { store, notifications, error: 'enabledLocales must be non-empty' };
     store.enabledLocales = [...new Set(cleaned)];
   }
   if (!store.enabledLocales.includes(store.defaultLocale)) {
@@ -149,9 +174,10 @@ export function applyUpdate(
   }
 
   if (patch.notifications) {
-    for (const key of ['orderPaid', 'warmingReady', 'ticketReply'] as const) {
-      if (patch.notifications[key]) {
-        notifications[key] = mergeTemplate(notifications[key], patch.notifications[key]);
+    for (const key of NOTIFICATION_EVENTS) {
+      const patchTpl = patch.notifications[key];
+      if (patchTpl) {
+        notifications[key] = mergeTemplate(notifications[key], patchTpl);
       }
     }
   }

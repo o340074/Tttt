@@ -825,6 +825,9 @@ enum NotificationType {
   order_paid
   warming_ready
   ticket_reply
+  warranty_replaced // E10
+  warranty_refunded // E10
+  warranty_rejected // E10
 }
 
 model Notification {
@@ -842,6 +845,55 @@ model Notification {
   @@index([userId, readAt]) // непрочитанные + бейдж
   @@index([userId, createdAt]) // лента по времени
   @@map("notifications")
+}
+
+// ============================================================
+// Warranty claims: замены и возвраты — E10 (docs/11, docs/14)
+// ============================================================
+
+// Тип заявки: новый актив (replace) или возврат средств (refund).
+enum WarrantyClaimType {
+  replace
+  refund
+}
+
+// Жизненный цикл заявки (docs/14): requested → approved/rejected →
+// replaced/refunded. approved — промежуточное; выполнение (fulfill) переводит в
+// replaced (выдан новый актив) или refunded (кредит в ledger).
+enum WarrantyClaimStatus {
+  requested
+  approved
+  rejected
+  replaced
+  refunded
+}
+
+model WarrantyClaim {
+  id                    String              @id @default(uuid()) @db.Uuid
+  number                String              @unique // человекочитаемый, напр. WC-2026-004821
+  orderItemId           String              @db.Uuid
+  deliveryId            String?             @db.Uuid // выданная позиция под гарантией (источник)
+  requesterId           String              @db.Uuid // владелец (покупатель)
+  type                  WarrantyClaimType
+  status                WarrantyClaimStatus @default(requested)
+  reason                String              @db.Text // описание проблемы (без секретов)
+  resolutionNote        String?             @db.Text // заметка стаффа при approve/reject/fulfill
+  resolvedById          String?             @db.Uuid // кто разрешил
+  replacementDeliveryId String?             @db.Uuid // новый Delivery при выполненной замене
+  warrantyExpiresAt     DateTime // снимок конца окна на момент заявки
+  createdAt             DateTime            @default(now())
+  updatedAt             DateTime            @updatedAt
+  resolvedAt            DateTime?
+
+  orderItem  OrderItem @relation(fields: [orderItemId], references: [id], onDelete: Cascade)
+  delivery   Delivery? @relation(fields: [deliveryId], references: [id], onDelete: SetNull)
+  requester  User      @relation("WarrantyClaimRequester", fields: [requesterId], references: [id], onDelete: Cascade)
+  resolvedBy User?     @relation("WarrantyClaimResolver", fields: [resolvedById], references: [id], onDelete: SetNull)
+
+  @@index([requesterId, createdAt]) // клиентская лента заявок
+  @@index([status, createdAt]) // очередь по статусу (админ)
+  @@index([orderItemId])
+  @@map("warranty_claims")
 }
 
 // ============================================================

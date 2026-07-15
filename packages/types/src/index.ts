@@ -372,6 +372,27 @@ export interface OrderItem {
   deliveryStatus: OrderItemDeliveryStatus;
   /** Warming progress for MADE_TO_ORDER lines; null for READY_STOCK. */
   warming?: WarmingProgress | null;
+  /** Warranty window + claim eligibility for a delivered line (E10); null when
+   *  the line was never delivered or its variant carries no warranty. */
+  warranty?: WarrantyInfo | null;
+}
+
+/**
+ * Buyer-facing warranty state of a delivered order line (E10). The window runs
+ * `warrantyHours` from the latest delivery's `deliveredAt`; `eligible` is true
+ * only inside the window, for a delivered/replaced line with no open claim.
+ */
+export interface WarrantyInfo {
+  /** Variant warranty window in hours; null means no warranty offered. */
+  warrantyHours: number | null;
+  /** ISO 8601 — latest delivery time (window start); null if not delivered. */
+  deliveredAt: string | null;
+  /** ISO 8601 — deliveredAt + warrantyHours; null when either is missing. */
+  expiresAt: string | null;
+  /** True when the buyer may open a replace/refund claim right now. */
+  eligible: boolean;
+  /** The buyer's not-yet-resolved claim on this line, if any. */
+  activeClaim?: WarrantyClaimRef | null;
 }
 
 /** GET /orders/:id and POST /orders/checkout response. */
@@ -778,6 +799,116 @@ export interface RefundResult {
   refundedItemIds: string[];
   amount: Money;
   currency: string;
+}
+
+// ============================================================
+// Warranties, replacements & refunds (docs/11, docs/14) — E10
+// ============================================================
+
+/** What the buyer asks for on a delivered line inside its warranty window. */
+export type WarrantyClaimType = 'replace' | 'refund';
+
+/**
+ * Warranty claim lifecycle (docs/14). A buyer opens it `requested`; staff move
+ * it to `approved` or `rejected`; approved claims are fulfilled to `replaced`
+ * (a fresh asset is issued) or `refunded` (funds credited to the ledger).
+ */
+export type WarrantyClaimStatus = 'requested' | 'approved' | 'rejected' | 'replaced' | 'refunded';
+
+/** Compact reference to a claim, embedded in an order line's warranty info. */
+export interface WarrantyClaimRef {
+  id: string;
+  number: string;
+  type: WarrantyClaimType;
+  status: WarrantyClaimStatus;
+}
+
+/** POST /warranty-claims — open a claim on one delivered line the buyer owns. */
+export interface CreateWarrantyClaimRequest {
+  orderItemId: string;
+  type: WarrantyClaimType;
+  /** Required human reason (what is wrong); stored and shown to staff. */
+  reason: string;
+}
+
+/** GET /warranty-claims[/:id] — the buyer's own view of a claim. */
+export interface WarrantyClaimView {
+  id: string;
+  number: string;
+  orderId: string;
+  orderNumber: string;
+  orderItemId: string;
+  /** Localized snapshot name of the claimed line. */
+  itemName: string;
+  type: WarrantyClaimType;
+  status: WarrantyClaimStatus;
+  reason: string;
+  /** Staff resolution note shown to the buyer on approve/reject/fulfill. */
+  resolutionNote: string | null;
+  /** ISO 8601 — the warranty window end captured when the claim was opened. */
+  warrantyExpiresAt: string;
+  createdAt: string;
+  resolvedAt: string | null;
+}
+
+/** One row of the admin warranty queue (GET /admin/warranty-claims). */
+export interface AdminWarrantyClaimListItem {
+  id: string;
+  number: string;
+  status: WarrantyClaimStatus;
+  type: WarrantyClaimType;
+  orderId: string;
+  orderNumber: string;
+  orderItemId: string;
+  itemName: string;
+  sku: string;
+  deliveryType: DeliveryType;
+  buyerEmail: string;
+  reason: string;
+  warrantyExpiresAt: string;
+  createdAt: string;
+  resolvedAt: string | null;
+}
+
+/** GET /admin/warranty-claims/:id — full claim with resolution trail. */
+export interface AdminWarrantyClaimDetail extends AdminWarrantyClaimListItem {
+  resolutionNote: string | null;
+  /** Money to be credited on a refund (unitPrice × quantity). */
+  amount: Money;
+  currency: string;
+  replacementDeliveryId: string | null;
+}
+
+/** POST /admin/warranty-claims/:id/(approve|reject|fulfill) — staff note. */
+export interface ResolveWarrantyClaimRequest {
+  /** Optional human note; required for a reject (why it was declined). */
+  note?: string;
+}
+
+/** Result of approve/reject/fulfill on a claim (admin). */
+export interface WarrantyClaimResult {
+  id: string;
+  status: WarrantyClaimStatus;
+  orderId: string;
+  orderStatus: OrderStatus;
+  orderItemId: string;
+  /** deliveryStatus of the affected line after the transition. */
+  itemStatus: OrderItemDeliveryStatus;
+  /** Credited amount on a fulfilled refund; null otherwise. */
+  refundedAmount: Money | null;
+  /** New replacement delivery id on a fulfilled replace; null otherwise. */
+  replacementDeliveryId: string | null;
+}
+
+export interface AdminWarrantyClaimsQuery {
+  page?: number;
+  limit?: number;
+  status?: WarrantyClaimStatus;
+}
+
+export interface MyWarrantyClaimsQuery {
+  page?: number;
+  limit?: number;
 }
 
 /**
@@ -1291,8 +1422,14 @@ export interface NotificationTemplate {
  */
 export type LocalizedNotificationTemplate = Record<Locale, NotificationTemplate>;
 
-/** The three transactional events that carry a template (E9). */
-export type NotificationEventKey = 'orderPaid' | 'warmingReady' | 'ticketReply';
+/** The transactional events that carry a template (E9, extended in E10). */
+export type NotificationEventKey =
+  | 'orderPaid'
+  | 'warmingReady'
+  | 'ticketReply'
+  | 'warrantyReplaced'
+  | 'warrantyRefunded'
+  | 'warrantyRejected';
 
 /**
  * Typed view over the key-value Setting store. Only non-secret operational
@@ -1305,12 +1442,8 @@ export interface ShopSettings {
   defaultLocale: Locale;
   /** Locales offered in the storefront switcher. */
   enabledLocales: Locale[];
-  /** Per-event templates, each localized by enabled locale (E9). */
-  notifications: {
-    orderPaid: LocalizedNotificationTemplate;
-    warmingReady: LocalizedNotificationTemplate;
-    ticketReply: LocalizedNotificationTemplate;
-  };
+  /** Per-event templates, each localized by enabled locale (E9, E10). */
+  notifications: Record<NotificationEventKey, LocalizedNotificationTemplate>;
   /** Read-only integration status flags — never the secrets themselves. */
   integrations: {
     cryptoAcquiringConfigured: boolean;
@@ -1388,8 +1521,14 @@ export interface MyTicketsQuery {
 // In-app notifications (docs/13 §13) — E9
 // ============================================================
 
-/** In-app notification kinds — one per transactional event. */
-export type NotificationType = 'order_paid' | 'warming_ready' | 'ticket_reply';
+/** In-app notification kinds — one per transactional event (E9, E10). */
+export type NotificationType =
+  | 'order_paid'
+  | 'warming_ready'
+  | 'ticket_reply'
+  | 'warranty_replaced'
+  | 'warranty_refunded'
+  | 'warranty_rejected';
 
 /**
  * A stored in-app notification for the current user. `data` carries non-secret
@@ -1406,6 +1545,8 @@ export interface NotificationView {
     orderNumber?: string;
     ticketId?: string;
     ticketNumber?: string;
+    claimId?: string;
+    claimNumber?: string;
   };
   readAt: string | null;
   createdAt: string;

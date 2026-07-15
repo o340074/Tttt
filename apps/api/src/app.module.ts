@@ -9,6 +9,7 @@ import { HealthModule } from './health/health.module';
 import { MailerModule } from './mailer/mailer.module';
 import { NotificationsModule } from './notifications/notifications.module';
 import { TicketsModule } from './tickets/tickets.module';
+import { WarrantyModule } from './warranty/warranty.module';
 import { AdminModule } from './admin/admin.module';
 import { AuthModule } from './auth/auth.module';
 import { CartModule } from './cart/cart.module';
@@ -40,6 +41,7 @@ import { WarmingModule } from './warming/warming.module';
     WarmingModule,
     OrdersModule,
     TicketsModule,
+    WarrantyModule,
     AdminModule,
     HealthModule,
   ],

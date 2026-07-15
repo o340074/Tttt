@@ -464,6 +464,41 @@ export class WarmingService {
     return this.getJob(id, locale);
   }
 
+  /**
+   * Re-open a warm line for a warranty replacement (E10): reset its tasks and
+   * job back to `queued` with a fresh ETA so operators redo the work and
+   * re-deliver through the normal workspace. The buyer's line returns to
+   * `queued`. Runs inside the caller's transaction (the admin warranty flow).
+   */
+  async reworkForReplacement(
+    tx: Prisma.TransactionClient,
+    jobId: string,
+    orderItemId: string,
+    orderId: string,
+  ): Promise<void> {
+    const job = await tx.warmingJob.findUnique({ where: { id: jobId } });
+    if (!job) throw new ApiException('NOT_FOUND', 'Warming job not found', 404);
+    const stages = (job.stagesSnapshot ?? []) as unknown as StageSnapshot[];
+    const now = new Date();
+    await tx.warmingTask.updateMany({
+      where: { jobId },
+      data: { status: 'pending', startedAt: null, doneAt: null, operatorId: null },
+    });
+    await tx.warmingJob.update({
+      where: { id: jobId },
+      data: {
+        status: 'queued',
+        assignedTo: null,
+        currentStage: 0,
+        startedAt: null,
+        readyAt: null,
+        deliveredAt: null,
+        etaAt: etaFrom(now, remainingMinutes(stages)),
+      },
+    });
+    await this.syncDeliveryStatus(tx, orderItemId, 'queued', orderId);
+  }
+
   // ---------- Internals ----------
 
   private async loadJob(id: string): Promise<JobWithRels> {

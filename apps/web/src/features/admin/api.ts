@@ -71,6 +71,12 @@ export function useIsStaff(): boolean {
   return Boolean(user && isStaffRole(user.role));
 }
 
+/** True for money-touching (FINANCE_STAFF) roles — warranty fulfillment, refunds. */
+export function useIsElevated(): boolean {
+  const { user } = useAuth();
+  return Boolean(user && (user.role === 'manager' || user.role === 'admin'));
+}
+
 function qs(params: Record<string, string | number | undefined>): string {
   const search = new URLSearchParams();
   for (const [key, value] of Object.entries(params)) {
@@ -640,8 +646,7 @@ export interface AdminTicketFilters {
 export function useAdminTickets(filters: AdminTicketFilters) {
   return useQuery({
     queryKey: ['admin', 'tickets', filters],
-    queryFn: () =>
-      apiFetch<Paginated<AdminTicketListItem>>(`/admin/tickets${qs({ ...filters })}`),
+    queryFn: () => apiFetch<Paginated<AdminTicketListItem>>(`/admin/tickets${qs({ ...filters })}`),
   });
 }
 

@@ -5,6 +5,7 @@ import { useOrder } from '../features/cart/api';
 import { formatMoney } from '../features/catalog/format';
 import { VaultCard } from '../features/orders/VaultCard';
 import { WarmingCard } from '../features/orders/WarmingCard';
+import { WarrantyControl } from '../features/warranty/WarrantyControl';
 import { ApiRequestError } from '../lib/api';
 import { OrderStatusBadge } from './OrdersPage';
 import type { OrderItem } from '@advault/types';
@@ -87,29 +88,29 @@ export function OrderPage() {
       <section className="mb-6 rounded-lg border border-border bg-surface px-6 py-2 shadow-2">
         <h2 className="py-4 text-[17px] font-bold">{t('orders.itemsHeading')}</h2>
         {data.items.map((item) => (
-          <div
-            key={item.id}
-            className="flex flex-wrap items-center justify-between gap-3 border-t border-border py-4"
-          >
-            <div className="min-w-0">
-              <div className="mb-1 truncate text-[15px] font-bold text-text-hi">
-                {item.name}{' '}
-                <span className="font-normal text-text-lo">
-                  {t('orders.qty', { count: item.quantity })}
-                </span>
+          <div key={item.id} className="border-t border-border py-4">
+            <div className="flex flex-wrap items-center justify-between gap-3">
+              <div className="min-w-0">
+                <div className="mb-1 truncate text-[15px] font-bold text-text-hi">
+                  {item.name}{' '}
+                  <span className="font-normal text-text-lo">
+                    {t('orders.qty', { count: item.quantity })}
+                  </span>
+                </div>
+                <div className="flex flex-wrap items-center gap-2 text-[12.5px] text-text-lo">
+                  <span className="uppercase tracking-[0.04em] text-text-dim">{item.sku}</span>
+                  <span className="tabular-nums">
+                    {t('orders.unitPrice', { price: formatMoney(item.unitPrice, data.currency) })}
+                  </span>
+                </div>
               </div>
-              <div className="flex flex-wrap items-center gap-2 text-[12.5px] text-text-lo">
-                <span className="uppercase tracking-[0.04em] text-text-dim">{item.sku}</span>
-                <span className="tabular-nums">
-                  {t('orders.unitPrice', { price: formatMoney(item.unitPrice, data.currency) })}
-                </span>
-              </div>
+              <span
+                className={`inline-flex h-6 items-center rounded-pill px-2.5 text-xs font-semibold ${DELIVERY_STYLES[item.deliveryStatus]}`}
+              >
+                {t(`orders.deliveryStatuses.${item.deliveryStatus}`)}
+              </span>
             </div>
-            <span
-              className={`inline-flex h-6 items-center rounded-pill px-2.5 text-xs font-semibold ${DELIVERY_STYLES[item.deliveryStatus]}`}
-            >
-              {t(`orders.deliveryStatuses.${item.deliveryStatus}`)}
-            </span>
+            <WarrantyControl item={item} />
           </div>
         ))}
       </section>

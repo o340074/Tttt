@@ -26,6 +26,8 @@ import { AdminTicketsController } from './admin-tickets.controller';
 import { AdminTicketsService } from './admin-tickets.service';
 import { AdminUsersController } from './admin-users.controller';
 import { AdminUsersService } from './admin-users.service';
+import { AdminWarrantyController } from './admin-warranty.controller';
+import { AdminWarrantyService } from './admin-warranty.service';
 import { AdminService } from './admin.service';
 
 /**
@@ -51,6 +53,7 @@ import { AdminService } from './admin.service';
     AdminReportsController,
     AdminStaffController,
     AdminSettingsController,
+    AdminWarrantyController,
   ],
   providers: [
     AdminService,
@@ -65,6 +68,7 @@ import { AdminService } from './admin.service';
     AdminReportsService,
     AdminStaffService,
     AdminSettingsService,
+    AdminWarrantyService,
   ],
 })
 export class AdminModule {}
