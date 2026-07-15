@@ -863,6 +863,7 @@ enum WarrantyClaimType {
 enum WarrantyClaimStatus {
   requested
   approved
+  reworking // E11: MADE_TO_ORDER замена в переделке — до warm-передоставки, затем → replaced
   rejected
   replaced
   refunded
@@ -900,23 +901,28 @@ model WarrantyClaim {
 // Reviews
 // ============================================================
 
+// E11: отзыв привязан к ВЫДАННОЙ позиции заказа (proof-of-purchase). `orderItemId`
+// уникален → не более одного отзыва на позицию, писать может только владелец
+// доставленной/replaced позиции. `hidden` — мягкое скрытие модератором (без удаления);
+// `Product.ratingAvg` — денормализованный кэш среднего по видимым отзывам.
 model Review {
   id          String   @id @default(uuid()) @db.Uuid
-  userId      String   @db.Uuid
   productId   String   @db.Uuid
-  orderId     String   @db.Uuid
-  orderItemId String?  @db.Uuid
+  orderItemId String   @unique @db.Uuid
+  authorId    String   @db.Uuid
   rating      Int // 1..5 (валидируется в приложении)
+  title       String?
   body        String?  @db.Text
+  hidden      Boolean  @default(false)
   createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
 
-  user      User       @relation(fields: [userId], references: [id], onDelete: Cascade)
-  product   Product    @relation(fields: [productId], references: [id], onDelete: Cascade)
-  order     Order      @relation(fields: [orderId], references: [id], onDelete: Cascade)
-  orderItem OrderItem? @relation(fields: [orderItemId], references: [id], onDelete: SetNull)
+  product   Product   @relation(fields: [productId], references: [id], onDelete: Cascade)
+  orderItem OrderItem @relation(fields: [orderItemId], references: [id], onDelete: Cascade)
+  author    User      @relation("ReviewAuthor", fields: [authorId], references: [id], onDelete: Cascade)
 
-  @@unique([userId, productId, orderId]) // один отзыв на купленный товар в рамках заказа
-  @@index([productId, createdAt])
+  @@index([productId, hidden, createdAt]) // публичная лента видимых отзывов товара
+  @@index([authorId])
   @@map("reviews")
 }
 

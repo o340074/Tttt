@@ -1279,8 +1279,65 @@ components:
       type: string
       enum: [replace, refund]
     WarrantyClaimStatus:
+      # `reworking` (E11): MADE_TO_ORDER replacement in progress — the warm job was
+      # re-opened and the claim flips to `replaced` only on the warm re-delivery.
       type: string
-      enum: [requested, approved, rejected, replaced, refunded]
+      enum: [requested, approved, reworking, rejected, replaced, refunded]
+    ProductReview:
+      type: object
+      properties:
+        id: { type: string, format: uuid }
+        rating: { type: integer, minimum: 1, maximum: 5 }
+        title: { type: string, nullable: true }
+        body: { type: string, nullable: true }
+        authorName: { type: string, description: Masked author label (never the raw email) }
+        createdAt: { type: string, format: date-time }
+    ReviewSummary:
+      type: object
+      properties:
+        average: { type: string, nullable: true, description: Two-decimal mean or null }
+        count: { type: integer }
+        distribution:
+          type: object
+          description: Count per star bucket (keys "1".."5")
+    ProductReviewsResponse:
+      type: object
+      properties:
+        data: { type: array, items: { $ref: '#/components/schemas/ProductReview' } }
+        meta: { $ref: '#/components/schemas/PageMeta' }
+        summary: { $ref: '#/components/schemas/ReviewSummary' }
+    ReviewEligibility:
+      # Attached to OrderItem.review — null when the line was never delivered.
+      type: object
+      properties:
+        canReview: { type: boolean }
+        productSlug: { type: string }
+        myReview: { $ref: '#/components/schemas/ProductReview', nullable: true }
+    CreateReviewRequest:
+      type: object
+      required: [orderItemId, rating]
+      properties:
+        orderItemId: { type: string, format: uuid }
+        rating: { type: integer, minimum: 1, maximum: 5 }
+        title: { type: string, maxLength: 120 }
+        body: { type: string, maxLength: 2000 }
+    AdminReviewListItem:
+      type: object
+      properties:
+        id: { type: string, format: uuid }
+        productSlug: { type: string }
+        productName: { type: string }
+        rating: { type: integer }
+        title: { type: string, nullable: true }
+        body: { type: string, nullable: true }
+        authorEmail: { type: string, description: Full email — admin-only }
+        hidden: { type: boolean }
+        createdAt: { type: string, format: date-time }
+    ModerateReviewRequest:
+      type: object
+      required: [hidden]
+      properties:
+        hidden: { type: boolean }
     WarrantyClaimRef:
       type: object
       properties:
@@ -1634,29 +1691,26 @@ paths:
           content: { application/json: { schema: { $ref: '#/components/schemas/Product' } } }
         '404': { $ref: '#/components/responses/NotFound' }
 
-  /products/{id}/reviews:
+  /products/{slug}/reviews:
     get:
-      tags: [Catalog]
-      summary: Отзывы товара
+      tags: [Reviews]
+      summary: Отзывы товара + рейтинг-роллап (публично, только видимые)
       security: []
       parameters:
-        - { name: id, in: path, required: true, schema: { type: string, format: uuid } }
+        - { name: slug, in: path, required: true, schema: { type: string } }
         - $ref: '#/components/parameters/Page'
         - $ref: '#/components/parameters/Limit'
       responses:
         '200':
           content:
             application/json:
-              schema:
-                type: object
-                properties:
-                  data: { type: array, items: { $ref: '#/components/schemas/Review' } }
-                  meta: { $ref: '#/components/schemas/PaginationMeta' }
+              schema: { $ref: '#/components/schemas/ProductReviewsResponse' }
+        '404': { $ref: '#/components/responses/NotFound' }
+
+  /reviews:
     post:
-      tags: [Catalog]
-      summary: Оставить отзыв (только если товар куплен)
-      parameters:
-        - { name: id, in: path, required: true, schema: { type: string, format: uuid } }
+      tags: [Reviews]
+      summary: Оставить отзыв на выданную позицию заказа (владелец, один раз)
       requestBody:
         required: true
         content:
@@ -1664,10 +1718,46 @@ paths:
             schema: { $ref: '#/components/schemas/CreateReviewRequest' }
       responses:
         '201':
-          content: { application/json: { schema: { $ref: '#/components/schemas/Review' } } }
-        '403':
-          description: Товар не куплен либо отзыв уже оставлен (REVIEW_NOT_ALLOWED).
+          content: { application/json: { schema: { $ref: '#/components/schemas/ProductReview' } } }
+        '404':
+          description: Позиция не найдена или не принадлежит покупателю (scoping).
           content: { application/json: { schema: { $ref: '#/components/schemas/Error' } } }
+        '409':
+          description: Позиция не выдана либо уже есть отзыв (REVIEW_NOT_ALLOWED).
+          content: { application/json: { schema: { $ref: '#/components/schemas/Error' } } }
+
+  /admin/reviews:
+    get:
+      tags: [Admin]
+      summary: Очередь модерации отзывов (SUPPORT_STAFF)
+      parameters:
+        - $ref: '#/components/parameters/Page'
+        - $ref: '#/components/parameters/Limit'
+        - { name: hidden, in: query, schema: { type: boolean } }
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data: { type: array, items: { $ref: '#/components/schemas/AdminReviewListItem' } }
+                  meta: { $ref: '#/components/schemas/PageMeta' }
+  /admin/reviews/{id}:
+    patch:
+      tags: [Admin]
+      summary: Скрыть/восстановить отзыв (SUPPORT_STAFF; пересчёт ratingAvg + аудит)
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: string, format: uuid } }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/ModerateReviewRequest' }
+      responses:
+        '200':
+          content: { application/json: { schema: { $ref: '#/components/schemas/AdminReviewListItem' } } }
+        '404': { $ref: '#/components/responses/NotFound' }
 
   # ---------------- Корзина ----------------
   /cart:

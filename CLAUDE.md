@@ -76,9 +76,12 @@
   ручная выдача+сверка) + Users + Promo (ч.2); Catalog & Bundles CRUD + Warming plans
   CRUD с версионированием (ч.3); **Dashboard/Reports + Tickets (Ticket/TicketMessage) +
   Staff&roles UI + Settings (key-value)** (ч.4). Всё под RBAC/аудитом, проверено вживую.
-- 🔜 **Следующий шаг — эпик E9 (Поддержка и уведомления: клиентский портал тикетов,
-  mailer/in-app уведомления по шаблонам из Settings)**. Далее строго по порядку эпиков/вех
-  из `docs/16-development-plan.md`.
+- ✅ **E9…E11 готовы** (поддержка/уведомления · гарантии/замены/возвраты · полировка/
+  безопасность/запуск). **ВЕСЬ MVP (E0…E11) готов по коду — веха M5.** Отзывы/рейтинг,
+  security-заголовки+CSP (helmet), BullMQ-уведомления, warm-rework↔claim (`reworking`),
+  юр-страницы, E2E Playwright; чек-лист запуска `docs/09` закрыт; прод-ранбук `docs/17`.
+- 🔜 **Следующий шаг** — релизные операции M5 (`docs/17`) и/или пост-MVP E12+
+  (см. `docs/16` §E12, `docs/NEXT-SESSION-PROMPT.md`).
 - Живой статус и «что дальше» — всегда в `docs/SESSION-LOG.md`.
 
 ## Где что лежит

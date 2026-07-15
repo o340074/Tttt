@@ -7,7 +7,22 @@
 
 ## 📍 Текущий статус
 
-- **Фаза:** разработка. E0…E9 готовы. **E10 (Гарантии, замены, возвраты) — ЗАВЕРШЕНА**:
+- **Фаза:** разработка. E0…E10 готовы. **E11 (Полировка, безопасность, запуск) —
+  ЗАВЕРШЕНА** (веха **M5 — Release** достигнута по коду): security-заголовки (helmet
+  strict CSP/HSTS/frameguard/noSniff/referrer, Swagger только вне прода), финальный
+  rate-limit; mailer не логирует токены в проде; доставка уведомлений вынесена в
+  BullMQ-воркер с ретраями (долг E9 закрыт, деградирует до inline без очереди/при сбое);
+  **отзывы/рейтинг** (модель Review + миграция; 1 отзыв на выданную позицию владельца,
+  1..5+title/body, маска автора, денормализация `Product.ratingAvg`; публичные
+  `GET /products/:slug/reviews`, `POST /reviews`; админ-модерация
+  `GET|PATCH /admin/reviews` с пересчётом рейтинга+аудитом; web: рейтинг+блок отзывов на
+  карточке, контрол на позиции заказа, админ-очередь); **связывание warm-rework↔claim**
+  (долг E10: новый статус `reworking` — MADE_TO_ORDER замена терминальна `replaced`
+  только на warm-передоставке, +аудит+уведомление); юр-страницы `/legal/*` (ToS/Privacy/
+  Refund, EN/RU, дисклеймер); footer-ссылки; E2E Playwright (сторфронт+auth против живого
+  стека). Чек-лист запуска `docs/09` закрыт (кроме бизнес-подтверждения провайдера/хостинга);
+  security-review без критичных находок. Прод-ранбук — `docs/17`.
+- **Фаза (ранее):** E0…E9 готовы. **E10 (Гарантии, замены, возвраты) — ЗАВЕРШЕНА**:
   клиентская заявка `WarrantyClaim` (`/warranty-claims*` scoped на владельца) на замену/
   возврат по доставленной позиции строго в окне `warrantyHours` от выдачи; статусы
   requested→approved/rejected→replaced/refunded с аудитом каждого перехода. Замена
@@ -18,10 +33,14 @@
   warranty.replaced/refunded/rejected. Проверено вживую (curl полного цикла на реальном
   Postgres+Redis: replace+refund, scoping 404, RBAC 403, ledger/аудит/уведомления в БД) и
   e2e. Долг E8: inline-edit промо.
-- **Следующий шаг:** **E11 — Полировка, безопасность, запуск** (MVP→release). См. `docs/16`
-  §E11.
-- **Ветка:** актуальная база — `claude/advault-e10-warranties-o987dr` (E0…E9 + E10).
-  Отходит от `…e9-support-notifications-grpdmg`. В main код ещё не влит.
+- **Следующий шаг:** релизные операции M5 (деплой по `docs/17`: секреты, миграции
+  `migrate deploy`, CSP web-SPA, бэкапы/восстановление, мониторинг) + бизнес-подтверждение
+  платёжного провайдера/хостинга; финальная юр-вычитка ToS/Privacy/Refund. Далее —
+  пост-MVP (E12+). Оставшиеся долги (не блокеры запуска): аллокация discount при частичном
+  возврате (E10), grace-период окна (E10), inline-edit промо (E8), WebSocket для realtime
+  бейджа (E9).
+- **Ветка:** актуальная база — `claude/advault-e11-polish-launch-drvjw3` (E0…E11).
+  Отходит от `…e10-warranties-o987dr`. В main код ещё не влит.
 - **Прогресс по эпикам (из `docs/16`):**
 
 | Эпик | Название | Статус |
@@ -38,13 +57,73 @@
 | E8 | Полная админка / операторка | ✅ готово (Orders+Warming+Inventory · Finance/Users/Promo · Catalog/Bundles+Warming-plans · Dashboard/Reports+Tickets+Staff+Settings) |
 | E9 | Поддержка и уведомления | ✅ готово (клиентский портал тикетов · in-app Notification+бейдж · email+in-app по order.paid/warming.ready/ticket.reply на per-locale шаблонах Settings) |
 | E10 | Гарантии, замены, возвраты | ✅ готово (WarrantyClaim · клиентская заявка в окне warrantyHours · замена стока/rework warm · возврат через ledger · админ-очередь approve/reject/fulfill · RBAC+аудит+уведомления) |
-| E11 | Полировка, безопасность, запуск | ⬜ |
+| E11 | Полировка, безопасность, запуск | ✅ готово (security-заголовки+CSP · BullMQ-уведомления · отзывы/рейтинг · warm-rework↔claim · юр-страницы · E2E Playwright · чек-лист запуска docs/09 · ранбук docs/17) |
 
 Легенда: ⬜ не начато · 🟡 в работе · ✅ готово
 
 ---
 
 ## Записи
+
+### Сессия — Полировка, безопасность, запуск (эпик E11 — ЗАВЕРШЁН, веха M5)
+- **Развилки (asking):** заданы через AskUserQuestion (пользователь — «без предпочтений»,
+  реализованы рекомендации): отзывы — **базовый полный срез**; E2E — **2–3 критичных потока
+  Playwright**; долги в этой сессии — **BullMQ-уведомления (E9) + warm-rework↔claim (E10)**
+  (остальные — после запуска); CSP — **строгая self+allowlist** на API + документированный
+  CSP для web-SPA.
+- **Безопасность/прод-готовность:** helmet (`common/security.ts`) — CSP `default-src 'none'`,
+  `frame-ancestors 'none'`, HSTS(prod), frameguard deny, noSniff, no-referrer, снят
+  `X-Powered-By`; Swagger смонтирован только вне прода (+ ослабленный CSP на `/api/docs`).
+  Mailer больше не логирует verify/reset-токены в проде. Rate-limit подтверждён (throttler
+  глобально 300/мин + узко на `/auth/*`). Проверено вживую: заголовки на реальном ответе,
+  `security-headers.e2e` + `mailer.service.spec`.
+- **BullMQ-уведомления (долг E9):** `notifications.queue.ts`/`.processor.ts` — очередь
+  `notifications` с ретраями (5×, экспоненц. backoff), воркер вызывает
+  `NotificationsService.deliver` (бросает → BullMQ ретраит). `emit` кладёт джобу; без
+  очереди (тесты, `NODE_ENV=test`) или при сбое enqueue — деградирует до inline-доставки
+  (лучший-эффект, ничего не теряется). Очередь регистрируется только вне тестов
+  (connection из `REDIS_URL`). Проверено вживую: `bull:notifications:*` в Redis, `order_paid`
+  доставлен воркером.
+- **Отзывы/рейтинг (E11):** миграция `20260715220247_reviews_and_warranty_reworking` —
+  модель `Review` (productId, `orderItemId @unique`, authorId, rating, title, body, hidden)
+  + `ReviewAuthor`-связь; `Product.ratingAvg` теперь заполняется. Контракты: `@advault/types`
+  (`ProductReview`/`ReviewSummary`/`ProductReviewsResponse`/`ReviewEligibility`/
+  `CreateReviewRequest`/`AdminReviewListItem`/`ModerateReviewRequest`, `OrderItem.review`);
+  `docs/backend/{openapi,prisma-schema}` обновлены. Backend: `ReviewsModule` (публичный
+  `GET /products/:slug/reviews` — только видимые, маска автора, роллап; `POST /reviews` —
+  scoped на владельца выданной позиции, дедуп по позиции, пересчёт `ratingAvg` в транзакции);
+  `AdminReviewsService`/controller (`GET|PATCH /admin/reviews`, SUPPORT_STAFF, hide/restore
+  + пересчёт + аудит `review.hidden|restored`). `orders.service` отдаёт `OrderItem.review`
+  (eligibility) через расширенный ORDER_INCLUDE (defensive). Web: `features/reviews`
+  (Stars/StarInput, ProductReviews, LineReview, api-хуки), рейтинг+блок на ProductPage,
+  контрол на позиции OrderPage, `AdminReviewsPage` + маршрут + нав; иконка `star` в спрайт;
+  i18n EN/RU (`reviews.*`, `admin.reviews.*`). Проверено вживую (curl на реальном Postgres):
+  создание→маска `us***`→дедуп 409→список+summary→`ratingAvg=5.00`; admin hide→`ratingAvg=null`
+  +пустой публичный список; non-staff 403.
+- **warm-rework↔claim (долг E10):** новый статус `WarrantyClaimStatus.reworking`
+  (миграция+типы+`OPEN_CLAIM_STATES`). Fulfill MADE_TO_ORDER-замены теперь ставит
+  `reworking` (не терминальный `replaced`) + аудит `rework_started`, без преждевременного
+  уведомления. `warming.transition(deliver)` вызывает `resolveReworkingClaim` в той же
+  транзакции: находит `reworking`+`replace`-заявку на позиции → `replaced` c
+  `replacementDeliveryId`, затем аудит `warranty.claim.replaced` + уведомление buyer.
+  READY_STOCK-путь без изменений (замена синхронна → терминальна сразу).
+- **Полировка/юр:** страницы `/legal/{terms,privacy,refund}` (общий `LegalPage`, контент из
+  i18n EN/RU, дисклеймер «не юр-консультация»), footer-ссылки. Состояния UI (loading/empty/
+  error) и a11y соблюдены в новых экранах (radiogroup у звёзд, aria-labels, тёмная тема через
+  токены).
+- **E2E (Playwright):** `apps/web/e2e/*` (config с pre-installed Chromium, `testMatch *.e2e.ts`,
+  webServer=vite, proxy→API) — сторфронт (каталог→товар→блок отзывов; footer→юр-страница),
+  auth (регистрация→verify-экран; логин демо-юзера). 4 теста зелёные против живого стека.
+  Исключены из `pnpm test` (нужен стек); скрипт `test:e2e`; артефакты в `.gitignore`.
+- **Проверка (DoD):** lint/typecheck/build зелёные; API **323 теста** (было 304: +2
+  security-headers, +2 mailer, +3 notifications-queue, +6 reviews.logic, +6 reviews.service,
+  все прежние — зелёные); web locales.spec (EN/RU-паритет) зелёный; 4 Playwright e2e зелёные.
+  Security-review по diff — без критичных находок. Живой стек (локальный Postgres16+Redis):
+  миграция применена, сид, полный цикл отзывов/заголовков/очереди — ок.
+- **Долг/следующее:** M5-релизные операции (деплой/бэкапы/мониторинг — `docs/17`); бизнес-
+  подтверждение провайдера/хостинга; юр-вычитка. Не-блокеры на потом: аллокация discount
+  при частичном возврате (E10), grace-период окна (E10), inline-edit промо (E8), WebSocket
+  realtime (E9), нагрузочное тестирование выдачи/оплаты.
 
 ### Сессия — Гарантии, замены, возвраты (эпик E10 — ЗАВЕРШЁН)
 - **Развилки (asking):** через AskUserQuestion, все по рекомендациям — модель заявки
