@@ -20,6 +20,7 @@
 | `WEB_URL` | база для ссылок в письмах |
 | `SENTRY_DSN` (опц.) | DSN Sentry для отчётов об ошибках; пусто — выключено (no-op) |
 | `SENTRY_RELEASE` (опц.) | тег релиза в событиях Sentry (напр. git SHA) |
+| `WARRANTY_GRACE_MINUTES` (опц., дефолт 60) | буфер к гарантийному окну для проверки приёма заявки — заявка на границе не теряется из-за расхождения часов/медленной подачи; отображаемый expiresAt не продлевается (E10) |
 
 Полный шаблон со всеми переменными и подсказками генерации секретов — `.env.example`
 (включая compose-инфру `POSTGRES_*` для `docker-compose.prod.yml`).
@@ -131,3 +132,20 @@ reverse-proxy `/api`, CSP/HSTS уровня документа), `.env.example` 
   `load/README.md` (нужен seeded READY_STOCK-вариант + `PAYMENT_WEBHOOK_SECRET`). Механика
   хелпера top-up (подпись вебхука) проверена вживую; сами сценарии требуют установленного
   `k6` в среде прогона.
+
+## 7. Realtime-уведомления (WebSocket, E9)
+
+- **Транспорт:** один `ws`-сервер поднят на **том же** HTTP-сервере Nest-процесса
+  (отдельного сервиса нет). Путь `/api/ws/notifications` — за тем же прокси `/api`.
+  Клиент (бейдж) подключается с access-JWT в query `?token=`; сервер пушит
+  `{ "type":"unread", "unread": N }` при connect и при любом изменении непрочитанного
+  владельца. Клиент деградирует к HTTP-поллингу `/notifications/unread-count`, если
+  сокет недоступен.
+- **Прокси:** dev — Vite (`vite.config.ts`, `ws:true` на `/api`); прод — Nginx
+  (`apps/web/nginx.conf`: `map $http_upgrade $connection_upgrade` + заголовки Upgrade/
+  Connection на `location /api/`, `proxy_read_timeout 3600s`). CSP `connect-src 'self'`
+  покрывает same-origin WS — доп. правил не нужно.
+- **Скоуп/масштаб:** push доходит до клиентов **этого** инстанса API. При горизонтальном
+  масштабировании (несколько реплик API) нужен fan-out через **Redis pub/sub**
+  (открытый долг). До тех пор поллинг-fallback закрывает межинстансные пробелы —
+  функциональной регрессии нет, только задержка бейджа у части вкладок.

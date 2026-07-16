@@ -142,6 +142,7 @@ describe('WarmingService (E6 made-to-order)', () => {
       audit,
       warming,
       notifications,
+      config,
     );
     const buyer = await prisma.user.create({
       data: { email: 'buyer@advault.dev', passwordHash: 'x' },

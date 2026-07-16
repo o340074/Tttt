@@ -28,6 +28,41 @@ describe('warranty.logic (E10)', () => {
     expect(computeWindow(delivered, 48, now).withinWindow).toBe(true);
   });
 
+  it('accepts a claim just past expiry while inside the grace buffer', () => {
+    const delivered = new Date('2026-07-01T00:00:00.000Z');
+    // 30 min past a 48h window: rejected with no grace, accepted with 60 min grace.
+    const now = new Date(delivered.getTime() + 48 * HOUR + 30 * 60_000);
+    expect(computeWindow(delivered, 48, now).withinWindow).toBe(false);
+    expect(computeWindow(delivered, 48, now, 60).withinWindow).toBe(true);
+  });
+
+  it('reports the true expiry regardless of the grace buffer', () => {
+    const delivered = new Date('2026-07-01T00:00:00.000Z');
+    const w = computeWindow(delivered, 48, delivered, 60);
+    // expiresAt is the real window end, not extended by grace.
+    expect(w.expiresAt?.toISOString()).toBe('2026-07-03T00:00:00.000Z');
+  });
+
+  it('still rejects a claim once the grace buffer is also exhausted', () => {
+    const delivered = new Date('2026-07-01T00:00:00.000Z');
+    const now = new Date(delivered.getTime() + 48 * HOUR + 61 * 60_000);
+    expect(computeWindow(delivered, 48, now, 60).withinWindow).toBe(false);
+  });
+
+  it('honours the grace buffer through isClaimEligible', () => {
+    const delivered = new Date('2026-07-01T00:00:00.000Z');
+    const now = new Date(delivered.getTime() + 72 * HOUR + 10 * 60_000);
+    const base = {
+      deliveryStatus: 'delivered' as const,
+      deliveredAt: delivered,
+      warrantyHours: 72,
+      existingClaimStatuses: [],
+      now,
+    };
+    expect(isClaimEligible(base)).toBe(false);
+    expect(isClaimEligible({ ...base, graceMinutes: 60 })).toBe(true);
+  });
+
   it('has no window without a delivery or without warranty', () => {
     expect(computeWindow(null, 48).withinWindow).toBe(false);
     expect(computeWindow(new Date(), null).withinWindow).toBe(false);

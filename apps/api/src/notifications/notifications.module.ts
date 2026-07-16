@@ -1,9 +1,11 @@
 import { Global, Module } from '@nestjs/common';
 import { BullModule } from '@nestjs/bullmq';
 import { ConfigService } from '@nestjs/config';
+import { AuthModule } from '../auth/auth.module';
 import { NotificationsController } from './notifications.controller';
 import { NotificationsService } from './notifications.service';
 import { NotificationsProcessor } from './notifications.processor';
+import { NotificationsRealtimeService } from './notifications.realtime';
 import { NOTIFICATIONS_QUEUE } from './notifications.queue';
 import type { DynamicModule } from '@nestjs/common';
 import type { Env } from '../config/env';
@@ -44,9 +46,12 @@ const bullImports: DynamicModule[] = isTest
  */
 @Global()
 @Module({
-  imports: bullImports,
+  // AuthModule provides TokenService for the realtime socket handshake auth.
+  imports: [AuthModule, ...bullImports],
   controllers: [NotificationsController],
-  providers: isTest ? [NotificationsService] : [NotificationsService, NotificationsProcessor],
-  exports: [NotificationsService],
+  providers: isTest
+    ? [NotificationsService, NotificationsRealtimeService]
+    : [NotificationsService, NotificationsRealtimeService, NotificationsProcessor],
+  exports: [NotificationsService, NotificationsRealtimeService],
 })
 export class NotificationsModule {}

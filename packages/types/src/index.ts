@@ -947,7 +947,11 @@ export interface AdminWarrantyClaimListItem {
 /** GET /admin/warranty-claims/:id — full claim with resolution trail. */
 export interface AdminWarrantyClaimDetail extends AdminWarrantyClaimListItem {
   resolutionNote: string | null;
-  /** Money to be credited on a refund (unitPrice × quantity). */
+  /**
+   * Money to be credited on a refund: the line subtotal net of its
+   * proportional share of the order promo discount (E10). Equals the gross
+   * unitPrice × quantity when the order carried no discount.
+   */
   amount: Money;
   currency: string;
   replacementDeliveryId: string | null;
@@ -1626,8 +1630,18 @@ export interface NotificationView {
   createdAt: string;
 }
 
-/** GET /notifications/unread-count — badge source (polled). */
+/** GET /notifications/unread-count — badge source (polling fallback). */
 export interface UnreadCountResponse {
+  unread: number;
+}
+
+/**
+ * A push over the notifications WebSocket (E9 — realtime badge). Sent on connect
+ * (seeding the count) and whenever the owner's unread total changes; the client
+ * updates the badge in place and falls back to polling when the socket is down.
+ */
+export interface NotificationSocketMessage {
+  type: 'unread';
   unread: number;
 }
 

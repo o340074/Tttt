@@ -1316,6 +1316,12 @@ components:
     UnreadCountResponse:
       type: object
       properties: { unread: { type: integer } }
+    NotificationSocketMessage:
+      type: object
+      description: 'Realtime push over the notifications WebSocket (E9). Sent on connect and on any unread-count change.'
+      properties:
+        type: { type: string, enum: [unread] }
+        unread: { type: integer }
 
     # ---- E10: Warranty claims ----
     WarrantyClaimType:
@@ -1444,7 +1450,7 @@ components:
         - type: object
           properties:
             resolutionNote: { type: string, nullable: true }
-            amount: { type: string, description: 'Money (unitPrice × quantity)' }
+            amount: { type: string, description: 'Money to be credited on a refund: line subtotal net of its proportional share of the order promo discount (E10). Equals unitPrice × quantity when the order had no discount.' }
             currency: { type: string }
             replacementDeliveryId: { type: string, format: uuid, nullable: true }
     ResolveWarrantyClaimRequest:
@@ -1462,7 +1468,7 @@ components:
         itemStatus:
           type: string
           enum: [pending, awaiting_manual, queued, assigned, in_progress, qc, ready, on_hold, failed, delivered, replaced, refunded]
-        refundedAmount: { type: string, nullable: true }
+        refundedAmount: { type: string, nullable: true, description: 'Credited amount on a fulfilled refund — the line net of its promo discount share (E10); null otherwise.' }
         replacementDeliveryId: { type: string, format: uuid, nullable: true }
 
   responses:
@@ -2691,10 +2697,22 @@ paths:
   /notifications/unread-count:
     get:
       tags: [Notifications]
-      summary: Счётчик непрочитанного для бейджа (поллинг)
+      summary: Счётчик непрочитанного для бейджа (fallback-поллинг; realtime — по WS ниже)
       responses:
         '200': { description: OK, content: { application/json: { schema: { $ref: '#/components/schemas/UnreadCountResponse' } } } }
         '401': { $ref: '#/components/responses/Unauthorized' }
+  # ---- E9: realtime-бейдж по WebSocket (не в HTTP-схеме OpenAPI) ----
+  # WS-эндпоинт (тот же Nest-процесс/HTTP-сервер, за прокси `/api`):
+  #   GET (Upgrade) /api/ws/notifications?token=<accessToken>
+  #   Аутентификация: access-JWT в query `token` (браузер не ставит заголовки на
+  #     WS-handshake); невалидный/отсутствующий токен → 401 на upgrade.
+  #   Сообщения (server→client), JSON `NotificationSocketMessage`:
+  #     { "type": "unread", "unread": <int> }
+  #   Шлётся: при connect (сид текущего счётчика) и при любом изменении
+  #     непрочитанного владельца (доставка/пометка прочитанным/все прочитаны).
+  #   Клиент обновляет бейдж на месте и деградирует к поллингу при недоступности
+  #   сокета. Однопроцессный скоуп (push доходит до клиентов этого инстанса);
+  #   горизонтальное масштабирование — через Redis pub/sub (долг, docs/17 §7).
   /notifications/read-all:
     post:
       tags: [Notifications]

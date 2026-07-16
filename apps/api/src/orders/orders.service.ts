@@ -1,4 +1,5 @@
 import { Injectable } from '@nestjs/common';
+import { ConfigService } from '@nestjs/config';
 import { Prisma } from '@prisma/client';
 import { randomInt } from 'node:crypto';
 import { ApiException } from '../common/api-exception';
@@ -15,6 +16,7 @@ import { LedgerService } from '../wallet/ledger.service';
 import { WarmingService } from '../warming/warming.service';
 import { isReviewableStatus } from '../reviews/reviews.logic';
 import { computeWindow, isClaimEligible } from '../warranty/warranty.logic';
+import type { Env } from '../config/env';
 import type {
   DeliveryPayload,
   Locale,
@@ -135,7 +137,13 @@ export class OrdersService {
     private readonly audit: AuditService,
     private readonly warming: WarmingService,
     private readonly notifications: NotificationsService,
+    private readonly config: ConfigService<Env, true>,
   ) {}
+
+  /** Acceptance grace buffer for the warranty window, minutes (env, E10). */
+  private get warrantyGraceMinutes(): number {
+    return this.config.get('WARRANTY_GRACE_MINUTES', { infer: true });
+  }
 
   async checkout(
     userId: string,
@@ -506,6 +514,7 @@ export class OrdersService {
         deliveredAt,
         warrantyHours,
         existingClaimStatuses: statuses,
+        graceMinutes: this.warrantyGraceMinutes,
       }),
       activeClaim: open
         ? { id: open.id, number: open.number, type: open.type, status: open.status }

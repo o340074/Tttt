@@ -6,7 +6,9 @@ import { AppModule } from './app.module';
 import { configureApp } from './app.setup';
 import { swaggerCspRelaxation } from './common/security';
 import { API_VERSION } from './health/health.service';
+import { NotificationsRealtimeService } from './notifications/notifications.realtime';
 import type { Env } from './config/env';
+import type { Server as HttpServer } from 'node:http';
 
 async function bootstrap(): Promise<void> {
   // rawBody keeps the exact webhook bytes available for signature checks.
@@ -29,6 +31,10 @@ async function bootstrap(): Promise<void> {
     const document = SwaggerModule.createDocument(app, swaggerConfig);
     SwaggerModule.setup('api/docs', app, document);
   }
+
+  // Realtime notifications share the API's HTTP server (E9): attach the ws
+  // upgrade handler before listening so the badge can push instead of poll.
+  app.get(NotificationsRealtimeService).attach(app.getHttpServer() as HttpServer);
 
   const port = config.get('PORT', { infer: true });
   await app.listen(port);

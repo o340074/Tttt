@@ -270,6 +270,65 @@ describe('Warranty claims (e2e)', () => {
     expect(order.body.items[0].deliveryStatus).toBe('refunded');
   });
 
+  it('refunds a line net of its promo discount share, not the gross subtotal (E10)', async () => {
+    const buyer = await registerToken('warranty-discount@advault.dev');
+    await prisma.promoCode.create({
+      data: { code: 'WARRANTY10', type: 'percent', value: '10.00', maxUses: 1000 },
+    });
+    // Fund the buyer.
+    await authed(request(http).post('/api/v1/wallet/topups'), buyer)
+      .set('Idempotency-Key', randomUUID())
+      .send({ amount: '100.00', asset: 'USDT-TRC20' })
+      .expect(201);
+    const externalId = prisma.topUp.rows.at(-1)!.externalId!;
+    const raw = JSON.stringify({ externalId, status: 'paid' });
+    await request(http)
+      .post('/api/v1/webhooks/payments/sandbox')
+      .set('Content-Type', 'application/json')
+      .set('X-Signature', sign(raw))
+      .send(raw)
+      .expect(200);
+    // Checkout one 42.00 line with 10% off → pays 37.80.
+    await authed(request(http).post('/api/v1/cart/items'), buyer)
+      .send({ variantId: variant.id, quantity: 1 })
+      .expect(201);
+    const checkout = await authed(request(http).post('/api/v1/orders/checkout'), buyer)
+      .set('Idempotency-Key', randomUUID())
+      .send({ promoCode: 'WARRANTY10' })
+      .expect(201);
+    expect(checkout.body).toMatchObject({ subtotal: '42.00', discount: '4.20', total: '37.80' });
+    const itemId = checkout.body.items[0].id;
+    const before = (await authed(request(http).get('/api/v1/wallet'), buyer).expect(200)).body
+      .balance;
+
+    const created = await authed(request(http).post('/api/v1/warranty-claims'), buyer)
+      .send({ orderItemId: itemId, type: 'refund', reason: 'net refund please' })
+      .expect(201);
+    const claimId = created.body.id;
+
+    // The admin detail previews the discount-adjusted amount, not the gross.
+    const detail = await authed(
+      request(http).get(`/api/v1/admin/warranty-claims/${claimId}`),
+      adminToken,
+    ).expect(200);
+    expect(detail.body.amount).toBe('37.80');
+
+    await authed(request(http).post(`/api/v1/admin/warranty-claims/${claimId}/approve`), adminToken)
+      .send({})
+      .expect(200);
+    const fulfilled = await authed(
+      request(http).post(`/api/v1/admin/warranty-claims/${claimId}/fulfill`),
+      adminToken,
+    )
+      .set('Idempotency-Key', randomUUID())
+      .expect(200);
+    // Credited the discounted amount (37.80), never the gross 42.00.
+    expect(fulfilled.body.refundedAmount).toBe('37.80');
+    const after = (await authed(request(http).get('/api/v1/wallet'), buyer).expect(200)).body
+      .balance;
+    expect(Number(after) - Number(before)).toBeCloseTo(37.8, 2);
+  });
+
   it('rejects a claim on a line whose warranty window has expired (409)', async () => {
     const { itemId } = await topUpAndCheckout(buyerToken);
     // Backdate the delivery beyond the 72h window.

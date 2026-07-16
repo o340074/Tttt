@@ -15,7 +15,11 @@ export interface WarrantyWindow {
   deliveredAt: Date | null;
   /** Window end = deliveredAt + warrantyHours; null when either is missing. */
   expiresAt: Date | null;
-  /** True while `now` is at or before `expiresAt`. */
+  /**
+   * True while `now` is at or before `expiresAt` **plus the grace buffer**. The
+   * grace buffer only relaxes acceptance — `expiresAt` is the true, displayed
+   * window end and is never extended.
+   */
   withinWindow: boolean;
 }
 
@@ -23,17 +27,28 @@ export interface WarrantyWindow {
  * Compute the warranty window for a delivered line. The window runs
  * `warrantyHours` from `deliveredAt`; with no warranty (null hours) or no
  * delivery there is no window and nothing is claimable.
+ *
+ * `graceMinutes` (default 0) is a small buffer added on top of `warrantyHours`
+ * for the acceptance check only, so a claim filed right on the boundary — where
+ * client/server clock skew or a slow submit would otherwise push it just past
+ * expiry — is still accepted. The reported `expiresAt` stays the true window end.
  */
 export function computeWindow(
   deliveredAt: Date | null,
   warrantyHours: number | null,
   now: Date = new Date(),
+  graceMinutes = 0,
 ): WarrantyWindow {
   if (!deliveredAt || warrantyHours == null || warrantyHours <= 0) {
     return { deliveredAt, expiresAt: null, withinWindow: false };
   }
   const expiresAt = new Date(deliveredAt.getTime() + warrantyHours * 3_600_000);
-  return { deliveredAt, expiresAt, withinWindow: now.getTime() <= expiresAt.getTime() };
+  const graceMs = Math.max(0, graceMinutes) * 60_000;
+  return {
+    deliveredAt,
+    expiresAt,
+    withinWindow: now.getTime() <= expiresAt.getTime() + graceMs,
+  };
 }
 
 export interface EligibilityInput {
@@ -43,6 +58,8 @@ export interface EligibilityInput {
   /** Statuses of any existing claims on this line. */
   existingClaimStatuses: WarrantyClaimStatus[];
   now?: Date;
+  /** Acceptance grace buffer in minutes (default 0); see `computeWindow`. */
+  graceMinutes?: number;
 }
 
 /** A buyer may open a claim only for a claimable, in-window line that has no
@@ -50,7 +67,12 @@ export interface EligibilityInput {
 export function isClaimEligible(input: EligibilityInput): boolean {
   if (!CLAIMABLE_DELIVERY_STATES.includes(input.deliveryStatus)) return false;
   if (input.existingClaimStatuses.some((s) => OPEN_CLAIM_STATES.includes(s))) return false;
-  const window = computeWindow(input.deliveredAt, input.warrantyHours, input.now);
+  const window = computeWindow(
+    input.deliveredAt,
+    input.warrantyHours,
+    input.now,
+    input.graceMinutes ?? 0,
+  );
   return window.withinWindow;
 }
 

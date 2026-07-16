@@ -139,6 +139,7 @@ describe('OrdersService.checkout (E5 stock delivery)', () => {
         config,
       ),
       makeFakeNotificationsService(prisma),
+      config,
     );
     const user = await prisma.user.create({
       data: { email: 'buyer@advault.dev', passwordHash: 'x' },

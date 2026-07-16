@@ -1,8 +1,10 @@
 import { Injectable } from '@nestjs/common';
+import { ConfigService } from '@nestjs/config';
 import { Prisma } from '@prisma/client';
 import { ApiException } from '../common/api-exception';
 import { AuditService } from '../audit/audit.service';
 import { PrismaService } from '../prisma/prisma.service';
+import type { Env } from '../config/env';
 import {
   computeWindow,
   generateClaimNumber,
@@ -41,7 +43,13 @@ export class WarrantyService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly audit: AuditService,
+    private readonly config: ConfigService<Env, true>,
   ) {}
+
+  /** Acceptance grace buffer for the warranty window, minutes (env, E10). */
+  private get graceMinutes(): number {
+    return this.config.get('WARRANTY_GRACE_MINUTES', { infer: true });
+  }
 
   async create(
     userId: string,
@@ -77,7 +85,7 @@ export class WarrantyService {
     if (warrantyHours == null || warrantyHours <= 0) {
       throw new ApiException('VALIDATION_ERROR', 'This item carries no warranty', 422);
     }
-    const window = computeWindow(deliveredAt, warrantyHours);
+    const window = computeWindow(deliveredAt, warrantyHours, new Date(), this.graceMinutes);
     if (!window.withinWindow) {
       throw new ApiException('CONFLICT', 'The warranty window has expired', 409, {
         expiresAt: window.expiresAt?.toISOString() ?? null,
@@ -90,6 +98,7 @@ export class WarrantyService {
         deliveredAt,
         warrantyHours,
         existingClaimStatuses: existingStatuses,
+        graceMinutes: this.graceMinutes,
       })
     ) {
       throw new ApiException('CONFLICT', 'This line is not eligible for a warranty claim', 409);

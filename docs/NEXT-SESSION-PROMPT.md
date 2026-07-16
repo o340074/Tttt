@@ -17,7 +17,7 @@
 1. Проверь, что в рабочей папке есть проект — файлы CLAUDE.md и docs/16-development-plan.md.
 2. Если их нет (папка пустая / не та ветка), выполни:
      git fetch --all
-     git checkout claude/advault-m5-release-ops-uh9e17   # актуальная база: E0…E11 + M5 release-ops
+     git checkout claude/advault-m5-release-debts-0alyde   # актуальная база: E0…E11 + M5 release-ops + долги Трека B
    (в main пока только документация/прототипы — код эпиков туда ещё не влит;
    проверяй: рядом с docs/ должны быть apps/ и packages/).
 3. Прочитай для контекста, строго в этом порядке:
@@ -37,8 +37,9 @@
   - M5 остаток (бизнес/эксплуатация, `docs/17`): бизнес-подтверждение провайдера/хостинга;
     прогон k6 в среде с установленным k6 и сборка прод-образов; финальная юр-вычитка
     ToS/Privacy/Refund.
-  - Оставшиеся долги (не блокеры): аллокация discount при частичном возврате (E10),
-    grace-период окна (E10), inline-edit промо (E8), WebSocket realtime бейджа (E9).
+  - Долги Трека B ЗАКРЫТЫ (аллокация discount при частичном возврате E10, grace-период
+    окна E10, inline-edit промо E8, WebSocket realtime бейджа E9). Остаток realtime:
+    fan-out WS через Redis pub/sub при мультиинстансе (docs/17 §7).
   - E12+ (пост-MVP): интеграции Octo/прокси-API, полу-автоматизация прогрева, прямая
     оплата криптой/картой, рефералка, аналитика/BI, мультивендорность.
   Критерий приёмки: lint/typecheck/тесты/CI зелёные; для E12 — DoD из docs/16 §8.
@@ -86,10 +87,11 @@ E2E Playwright). Веха M5 достигнута по коду; чек-лист
 бизнес-подтверждения провайдера/хостинга). Всё под RBAC/аудитом, проверено вживую
 (curl+Playwright на реальном Postgres+Redis).
 
-ВАЖНО — БАЗА КОДА: актуальный код в ветке claude/advault-e11-polish-launch-drvjw3
-(E0…E11; в main ещё не влито). Если в рабочей папке нет apps/ и packages/:
+ВАЖНО — БАЗА КОДА: актуальный код в ветке claude/advault-m5-release-debts-0alyde
+(E0…E11 + M5 release-ops + закрытые долги Трека B; в main ещё не влито). Если в рабочей
+папке нет apps/ и packages/:
   git fetch --all
-  git checkout claude/advault-e11-polish-launch-drvjw3
+  git checkout claude/advault-m5-release-debts-0alyde
 Новую feature-ветку создавай от неё.
 
 ПЕРЕД РАБОТОЙ прочитай: CLAUDE.md (контекст/конвенции/границы), docs/SESSION-LOG.md
@@ -100,9 +102,9 @@ docs/17-operations-runbook.md (прод-операции), docs/backend/{prisma-
   A) M5 Release-операции (docs/17): деплой (secrets/`prisma migrate deploy`/CSP web-SPA/
      HSTS), бэкапы+тест-восстановление, мониторинг/алерты (Sentry, глубина BullMQ-очереди,
      сверка баланса), нагрузочное тестирование выдачи/оплаты (k6/Artillery).
-  B) Закрытие долгов (не блокеры): аллокация discount при частичном возврате (E10),
-     grace-период гарантийного окна (E10), inline-edit промо (E8), WebSocket realtime
-     бейджа уведомлений (E9).
+  B) Закрытие долгов Трека B — ВЫПОЛНЕНО (аллокация discount E10, grace-период E10,
+     inline-edit промо E8, WebSocket realtime бейджа E9). Остаток: fan-out WS через Redis
+     pub/sub при горизонтальном масштабировании API (docs/17 §7).
   C) Пост-MVP E12+ (оценка отдельно): интеграции Octo Browser API + провайдер прокси
      (авто-провижининг), полу-автоматизация прогрева (шаблоны/напоминания/дашборды
      загрузки), прямая оплата криптой за заказ / оплата картой, реферальная программа,

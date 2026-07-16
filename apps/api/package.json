@@ -37,6 +37,7 @@
     "ioredis": "^5.4.0",
     "reflect-metadata": "^0.2.2",
     "rxjs": "^7.8.0",
+    "ws": "^8.18.0",
     "zod": "^3.24.0"
   },
   "devDependencies": {
@@ -49,6 +50,7 @@
     "@types/express": "^5.0.0",
     "@types/node": "^22.10.0",
     "@types/supertest": "^6.0.2",
+    "@types/ws": "^8.5.13",
     "prisma": "^6.5.0",
     "supertest": "^7.0.0",
     "tsx": "^4.23.0",

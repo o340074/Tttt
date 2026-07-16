@@ -1498,6 +1498,10 @@ export class FakeWarrantyClaimStore {
                   number: order.number,
                   currency: order.currency,
                   userId: order.userId,
+                  discount: order.discount,
+                  items: this.orderItems()
+                    .rows.filter((i) => i.orderId === order.id)
+                    .map((i) => ({ id: i.id, unitPrice: i.unitPrice, quantity: i.quantity })),
                 }
               : null,
             warmingJob: job ? { id: job.id, status: job.status } : null,
@@ -2967,6 +2971,7 @@ export const TEST_ENV: Partial<Env> = {
   STOCK_RESERVE_TTL_SECONDS: 300,
   WARMING_HOLD_BUFFER_MINUTES: 720,
   WARMING_DEFAULT_STAGE_MINUTES: 1_440,
+  WARRANTY_GRACE_MINUTES: 60,
   SENTRY_DSN: '',
   SENTRY_RELEASE: '',
 };

@@ -80,8 +80,13 @@
   безопасность/запуск). **ВЕСЬ MVP (E0…E11) готов по коду — веха M5.** Отзывы/рейтинг,
   security-заголовки+CSP (helmet), BullMQ-уведомления, warm-rework↔claim (`reworking`),
   юр-страницы, E2E Playwright; чек-лист запуска `docs/09` закрыт; прод-ранбук `docs/17`.
-- 🔜 **Следующий шаг** — релизные операции M5 (`docs/17`) и/или пост-MVP E12+
-  (см. `docs/16` §E12, `docs/NEXT-SESSION-PROMPT.md`).
+- ✅ **M5 Release-операции (Трек A)** готовы; **долги Трека B ЗАКРЫТЫ**: аллокация
+  discount при частичном возврате (E10), grace-период гарантийного окна (E10, env
+  `WARRANTY_GRACE_MINUTES`), inline-edit промо (E8), WebSocket realtime-бейдж уведомлений
+  (E9, `/api/ws/notifications` в том же Nest-процессе, деградация к поллингу).
+- 🔜 **Следующий шаг** — эксплуатационные подтверждения M5 (`docs/17`) и/или пост-MVP E12+
+  (см. `docs/16` §E12, `docs/NEXT-SESSION-PROMPT.md`); realtime-остаток — Redis pub/sub
+  fan-out при мультиинстансе.
 - Живой статус и «что дальше» — всегда в `docs/SESSION-LOG.md`.
 
 ## Где что лежит

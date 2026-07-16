@@ -3,19 +3,20 @@ import { useTranslation } from 'react-i18next';
 import { Banner } from '../../components/ui/Banner';
 import { Button } from '../../components/ui/Button';
 import { Icon } from '../../components/ui/Icon';
-import { useCreatePromo, useDeletePromo, usePromoCodes } from '../../features/admin/api';
+import {
+  useCreatePromo,
+  useDeletePromo,
+  usePromoCodes,
+  useUpdatePromo,
+} from '../../features/admin/api';
 import { formatMoney } from '../../features/catalog/format';
-import type { AdminPromoCode, PromoType } from '@advault/types';
+import type { AdminPromoCode, PromoType, UpdatePromoCodeRequest } from '@advault/types';
 
 /** Promo codes CRUD (docs/13 §12). Manager/admin only. */
 export function AdminPromoPage() {
-  const { t, i18n } = useTranslation();
+  const { t } = useTranslation();
   const promos = usePromoCodes();
   const [showForm, setShowForm] = useState(false);
-  const del = useDeletePromo();
-
-  const formatValue = (p: AdminPromoCode): string =>
-    p.type === 'percent' ? `${Number(p.value)}%` : formatMoney(p.value, 'USD');
 
   return (
     <div className="mx-auto w-full max-w-[1000px] px-4 py-8 md:px-8">
@@ -64,42 +65,189 @@ export function AdminPromoPage() {
             </thead>
             <tbody>
               {promos.data!.map((p) => (
-                <tr key={p.id} className="border-b border-border last:border-0">
-                  <td className="px-4 py-3 font-display font-bold text-text-hi">{p.code}</td>
-                  <td className="px-4 py-3 text-text-lo">{t(`admin.promo.${p.type}`)}</td>
-                  <td className="px-4 py-3 text-right tabular-nums text-text-hi">
-                    {formatValue(p)}
-                  </td>
-                  <td className="px-4 py-3 text-right tabular-nums text-text-lo">
-                    {p.usedCount}
-                    {p.maxUses !== null ? ` / ${p.maxUses}` : ` / ∞`}
-                  </td>
-                  <td className="px-4 py-3 text-text-dim">
-                    {p.expiresAt
-                      ? new Date(p.expiresAt).toLocaleDateString(i18n.resolvedLanguage, {
-                          dateStyle: 'medium',
-                        })
-                      : t('admin.promo.never')}
-                  </td>
-                  <td className="px-4 py-3 text-right">
-                    <button
-                      type="button"
-                      aria-label={t('admin.promo.delete')}
-                      onClick={() => {
-                        if (window.confirm(t('admin.promo.deleteConfirm'))) del.mutate(p.id);
-                      }}
-                      className="rounded-sm p-1.5 text-text-dim transition-colors hover:bg-[rgba(255,77,109,0.1)] hover:text-danger"
-                    >
-                      <Icon name="trash" className="!h-4 !w-4" />
-                    </button>
-                  </td>
-                </tr>
+                <PromoRow key={p.id} promo={p} />
               ))}
             </tbody>
           </table>
         </div>
       )}
     </div>
+  );
+}
+
+/** ISO date-time → yyyy-mm-dd for a native date input (empty when null). */
+function toDateInput(iso: string | null): string {
+  return iso ? iso.slice(0, 10) : '';
+}
+
+const cellInputClass =
+  'h-9 w-full rounded-md border border-border bg-surface-2 px-2 text-sm text-text-hi outline-none focus:border-volt';
+
+/**
+ * One promo row that flips between a read-only view and an inline editor
+ * (E8 debt). Code is the redemption key and stays immutable; type / value /
+ * max uses / expiry are editable via PATCH (FINANCE_STAFF, audited server-side).
+ */
+function PromoRow({ promo }: { promo: AdminPromoCode }) {
+  const { t, i18n } = useTranslation();
+  const del = useDeletePromo();
+  const update = useUpdatePromo();
+
+  const [editing, setEditing] = useState(false);
+  const [type, setType] = useState<PromoType>(promo.type);
+  const [value, setValue] = useState(promo.value);
+  const [maxUses, setMaxUses] = useState(promo.maxUses === null ? '' : String(promo.maxUses));
+  const [expiresAt, setExpiresAt] = useState(toDateInput(promo.expiresAt));
+  const [error, setError] = useState<string | null>(null);
+
+  const startEdit = () => {
+    setType(promo.type);
+    setValue(promo.value);
+    setMaxUses(promo.maxUses === null ? '' : String(promo.maxUses));
+    setExpiresAt(toDateInput(promo.expiresAt));
+    setError(null);
+    setEditing(true);
+  };
+
+  const formatValue = (p: AdminPromoCode): string =>
+    p.type === 'percent' ? `${Number(p.value)}%` : formatMoney(p.value, 'USD');
+
+  /** Only the fields the operator actually changed go into the PATCH. */
+  const buildPatch = (): UpdatePromoCodeRequest => {
+    const patch: UpdatePromoCodeRequest = {};
+    if (type !== promo.type) patch.type = type;
+    if (value.trim() && Number(value) !== Number(promo.value)) patch.value = value.trim();
+    const nextMax = maxUses.trim() ? Number(maxUses) : null;
+    if (nextMax !== promo.maxUses) patch.maxUses = nextMax;
+    const nextExp = expiresAt ? new Date(expiresAt).toISOString() : null;
+    if (toDateInput(nextExp) !== toDateInput(promo.expiresAt)) patch.expiresAt = nextExp;
+    return patch;
+  };
+
+  const save = () => {
+    setError(null);
+    const patch = buildPatch();
+    if (Object.keys(patch).length === 0) {
+      setEditing(false); // nothing changed
+      return;
+    }
+    update.mutate(
+      { id: promo.id, ...patch },
+      {
+        onSuccess: () => setEditing(false),
+        onError: () => setError(t('admin.promo.saveError')),
+      },
+    );
+  };
+
+  if (editing) {
+    return (
+      <tr className="border-b border-border last:border-0 align-top">
+        <td className="px-4 py-3 font-display font-bold text-text-hi">{promo.code}</td>
+        <td className="px-4 py-3">
+          <select
+            aria-label={t('admin.promo.type')}
+            value={type}
+            onChange={(e) => setType(e.target.value as PromoType)}
+            className={cellInputClass}
+          >
+            <option value="percent">{t('admin.promo.percent')}</option>
+            <option value="fixed">{t('admin.promo.fixed')}</option>
+          </select>
+        </td>
+        <td className="px-4 py-3">
+          <input
+            aria-label={t('admin.promo.value')}
+            value={value}
+            onChange={(e) => setValue(e.target.value)}
+            inputMode="decimal"
+            className={`${cellInputClass} text-right`}
+          />
+        </td>
+        <td className="px-4 py-3">
+          <input
+            aria-label={t('admin.promo.maxUses')}
+            value={maxUses}
+            onChange={(e) => setMaxUses(e.target.value)}
+            inputMode="numeric"
+            placeholder={t('admin.promo.maxUsesPlaceholder')}
+            className={`${cellInputClass} text-right`}
+          />
+        </td>
+        <td className="px-4 py-3">
+          <input
+            aria-label={t('admin.promo.expiresAt')}
+            type="date"
+            value={expiresAt}
+            onChange={(e) => setExpiresAt(e.target.value)}
+            className={cellInputClass}
+          />
+        </td>
+        <td className="px-4 py-3">
+          <div className="flex items-center justify-end gap-1">
+            {error && <span className="mr-2 text-[11px] text-danger">{error}</span>}
+            <button
+              type="button"
+              aria-label={t('admin.promo.save')}
+              disabled={update.isPending}
+              onClick={save}
+              className="rounded-sm p-1.5 text-success transition-colors hover:bg-[rgba(52,211,153,0.12)] disabled:opacity-50"
+            >
+              <Icon name="check" className="!h-4 !w-4" />
+            </button>
+            <button
+              type="button"
+              aria-label={t('admin.promo.cancel')}
+              onClick={() => setEditing(false)}
+              className="rounded-sm p-1.5 text-text-dim transition-colors hover:bg-surface-2 hover:text-text-hi"
+            >
+              <Icon name="x" className="!h-4 !w-4" />
+            </button>
+          </div>
+        </td>
+      </tr>
+    );
+  }
+
+  return (
+    <tr className="border-b border-border last:border-0">
+      <td className="px-4 py-3 font-display font-bold text-text-hi">{promo.code}</td>
+      <td className="px-4 py-3 text-text-lo">{t(`admin.promo.${promo.type}`)}</td>
+      <td className="px-4 py-3 text-right tabular-nums text-text-hi">{formatValue(promo)}</td>
+      <td className="px-4 py-3 text-right tabular-nums text-text-lo">
+        {promo.usedCount}
+        {promo.maxUses !== null ? ` / ${promo.maxUses}` : ` / ∞`}
+      </td>
+      <td className="px-4 py-3 text-text-dim">
+        {promo.expiresAt
+          ? new Date(promo.expiresAt).toLocaleDateString(i18n.resolvedLanguage, {
+              dateStyle: 'medium',
+            })
+          : t('admin.promo.never')}
+      </td>
+      <td className="px-4 py-3">
+        <div className="flex items-center justify-end gap-1">
+          <button
+            type="button"
+            aria-label={t('admin.promo.edit')}
+            onClick={startEdit}
+            className="rounded-sm p-1.5 text-text-dim transition-colors hover:bg-surface-2 hover:text-text-hi"
+          >
+            <Icon name="pencil" className="!h-4 !w-4" />
+          </button>
+          <button
+            type="button"
+            aria-label={t('admin.promo.delete')}
+            onClick={() => {
+              if (window.confirm(t('admin.promo.deleteConfirm'))) del.mutate(promo.id);
+            }}
+            className="rounded-sm p-1.5 text-text-dim transition-colors hover:bg-[rgba(255,77,109,0.1)] hover:text-danger"
+          >
+            <Icon name="trash" className="!h-4 !w-4" />
+          </button>
+        </div>
+      </td>
+    </tr>
   );
 }
 

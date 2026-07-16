@@ -34,6 +34,12 @@ export const envSchema = z.object({
   /** Fallback stage duration when a warm variant has no plan, minutes. */
   WARMING_DEFAULT_STAGE_MINUTES: z.coerce.number().int().positive().default(1_440),
   /**
+   * Grace buffer added to a line's warranty window for the claim-acceptance
+   * check only, minutes (E10). Lets a claim filed right on the boundary through
+   * despite clock skew / a slow submit; the displayed expiry is never extended.
+   */
+  WARRANTY_GRACE_MINUTES: z.coerce.number().int().nonnegative().default(60),
+  /**
    * Sentry DSN for error reporting (M5, docs/17 §3). Empty disables reporting
    * (no-op) — the app never depends on Sentry being reachable. When set, 5xx /
    * unhandled exceptions are forwarded via the Sentry envelope HTTP API.

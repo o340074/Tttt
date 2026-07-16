@@ -40,13 +40,16 @@
   `.env.example`, `scripts/deploy.sh`); бэкапы+тест-восстановление (`scripts/backup.sh`,
   `scripts/restore-test.sh`); нагрузочные k6 (`load/*`). Проверено вживую на реальном
   Postgres+Redis.
+- **Долги Трека B — ЗАКРЫТЫ** (см. запись ниже): аллокация discount при частичном
+  возврате (E10), grace-период гарантийного окна (E10), inline-edit промо (E8),
+  WebSocket-realtime бейдж уведомлений (E9). Все четыре проверены вживую на реальном
+  Postgres+Redis; lint/typecheck/**353 теста**/build зелёные.
 - **Следующий шаг:** бизнес-подтверждение платёжного провайдера/хостинга; финальная
   юр-вычитка ToS/Privacy/Refund; прогон k6 в среде с установленным k6. Далее — пост-MVP
-  (E12+). Оставшиеся долги (не блокеры запуска): аллокация discount при частичном
-  возврате (E10), grace-период окна (E10), inline-edit промо (E8), WebSocket для realtime
-  бейджа (E9).
-- **Ветка:** `claude/advault-m5-release-ops-uh9e17` (M5 release-ops, отходит от
-  `…e11-polish-launch-drvjw3` = E0…E11). В main код ещё не влит.
+  (E12+). Оставшийся тех-долг realtime: fan-out WS через Redis pub/sub при
+  горизонтальном масштабировании API (docs/17 §7; сейчас — поллинг-fallback).
+- **Ветка:** `claude/advault-m5-release-debts-0alyde` (Трек B долги, отходит от
+  `…m5-release-ops-uh9e17` = E0…E11 + M5 release-ops). В main код ещё не влит.
 - **Прогресс по эпикам (из `docs/16`):**
 
 | Эпик | Название | Статус |
@@ -70,6 +73,50 @@
 ---
 
 ## Записи
+
+### Сессия — Долги Трека B (E8/E9/E10) — ЗАКРЫТЫ
+- **Развилки (asking):** grace-период по умолчанию — выбрано **60 минут**; WebSocket —
+  **интеграция в существующий Nest-процесс** (native `ws`, без отдельного сервера).
+- **1) Аллокация discount при частичном возврате (E10):** новый чистый модуль
+  `warranty/refund.logic.ts` — `allocateDiscount()` распределяет промо-скидку по строкам
+  заказа пропорционально их subtotal методом наибольших остатков (Hamilton) в целых
+  центах (BigInt): сумма аллокаций **ровно** равна скидке, доля строки детерминирована и
+  стабильна независимо от порядка возвратов; `refundAmountForLine()` = subtotal − доля.
+  Вплетено в `AdminWarrantyService`: refund кредитует **нетто** (не gross), `result()`/
+  detail `amount` показывают ту же нетто-сумму; `CLAIM_INCLUDE` дотянут `order.discount` +
+  сиблинг-строки. Заказ без скидки → поведение прежнее. Тесты: `refund.logic.spec` (9) +
+  e2e «refund net of promo discount share». **Контракт:** `AdminWarrantyClaimDetail.amount`
+  и `WarrantyClaimResult.refundedAmount` переописаны в openapi. Схема БД не менялась
+  (миграция не нужна — читаются существующие колонки).
+- **2) Grace-период гарантийного окна (E10):** env `WARRANTY_GRACE_MINUTES` (дефолт 60).
+  `computeWindow()`/`isClaimEligible()` приняли `graceMinutes` — влияет **только** на
+  `withinWindow` (приём заявки), отображаемый `expiresAt` — истинный, не продлевается.
+  Проброшено в `WarrantyService` (приём заявки) и `OrdersService.buildWarrantyInfo`
+  (`eligible` в карточке заказа) через `ConfigService`. Тесты: +4 в `warranty.logic.spec`.
+- **3) Inline-edit промо (E8):** бэкенд `PATCH /admin/promo-codes/:id` (RBAC
+  `FINANCE_STAFF`, аудит) уже был — добавлен inline-редактор строки в `AdminPromoPage`
+  (тип/значение/лимит/срок; код неизменяем как ключ погашения), `useUpdatePromo` уже был;
+  новая иконка `pencil` в SVG-спрайте; отправляются только изменённые поля; состояния
+  загрузки/ошибки, i18n (переиспользованы существующие ключи EN/RU). Danger — только на
+  удалении (window.confirm), правка обратима.
+- **4) WebSocket realtime-бейдж (E9):** зависимость `ws`. `NotificationsRealtimeService`
+  поднимает `ws`-сервер на **том же** HTTP-сервере Nest (`/api/ws/notifications`,
+  attach из `main.ts`); аутентификация access-JWT в query `?token=` (401 на upgrade при
+  невалидном), реестр сокетов per-user. `NotificationsService.deliver`/`markRead`/
+  `markAllRead` пушат свежий unread-count (`@Optional` — в тестах no-op). Фронт:
+  `useUnreadCount` открывает WS, обновляет кэш бейджа, при недоступности деградирует к
+  поллингу (30s → 300s когда сокет жив), backoff-reconnect. Прокси: Vite `ws:true`, Nginx
+  `map $connection_upgrade` + Upgrade-заголовки. Тип `NotificationSocketMessage` +
+  openapi-заметка (не в HTTP-схеме). Тесты: `notifications.realtime.spec` (4, реальный
+  ws-клиент). Долг: fan-out через Redis pub/sub при мультиинстансе (docs/17 §7).
+- **Проверено вживую** (реальный Postgres 16 + Redis 7, собранный API): скрипты
+  `scratchpad/{demo,grace}.mjs` — discount-refund кредитует 37.80 (нетто), не 42.00
+  (баланс 500→401→438.80); grace: заявка +30мин принята (201), +90мин отклонена (409),
+  окно в карточке 48h (истинное); inline-PATCH SAVE5→7.50/250 + RBAC 403 у покупателя;
+  WS: сид-фрейм `unread:0`, отказ неаутентифицированному, push `unread:1` после оплаты.
+- **DoD:** lint ✓, typecheck ✓, test ✓ (**353**, +18), build ✓, format ✓. Контракты:
+  `docs/backend/openapi.md` (Ops warranty amount/refundedAmount, WS-заметка +
+  `NotificationSocketMessage`), `docs/17` (§1 env, §7 realtime), `.env.example`.
 
 ### Сессия — M5 Release-операции (Трек A) — ЗАВЕРШЕНА по коду/скриптам
 - **Развилка (asking):** ветка сессии — `m5-release-ops` → Трек A. Через AskUserQuestion

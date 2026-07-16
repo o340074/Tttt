@@ -11,7 +11,8 @@ export default defineConfig({
     port: 5173,
     host: true,
     proxy: {
-      '/api': { target: apiTarget, changeOrigin: true },
+      // `ws: true` forwards the notifications WebSocket upgrade (E9) too.
+      '/api': { target: apiTarget, changeOrigin: true, ws: true },
     },
   },
   test: {

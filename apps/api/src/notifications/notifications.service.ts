@@ -5,6 +5,7 @@ import { PrismaService } from '../prisma/prisma.service';
 import { MailerService } from '../mailer/mailer.service';
 import { readNotifications, readStore, SETTING_KEYS } from '../admin/settings.logic';
 import { EVENT_TO_TYPE, renderTemplate } from './notifications.logic';
+import { NotificationsRealtimeService } from './notifications.realtime';
 import { DELIVER_JOB, NOTIFICATION_JOB_OPTIONS, NOTIFICATIONS_QUEUE } from './notifications.queue';
 import type { NotificationEvent } from './notifications.logic';
 import type { NotificationJob } from './notifications.queue';
@@ -38,6 +39,8 @@ export class NotificationsService {
     @Optional()
     @InjectQueue(NOTIFICATIONS_QUEUE)
     private readonly queue?: Queue<NotificationJob>,
+    @Optional()
+    private readonly realtime?: NotificationsRealtimeService,
   ) {}
 
   /**
@@ -120,6 +123,8 @@ export class NotificationsService {
     });
     // Email is a parallel channel (stub transport in dev; never logs secrets).
     this.mailer.sendNotification(user.email, rendered.subject, rendered.body);
+    // Push the fresh badge count to any live socket (E9 realtime; no-op offline).
+    await this.pushUnread(userId);
   }
 
   async list(
@@ -154,7 +159,10 @@ export class NotificationsService {
       where: { id, userId, readAt: null },
       data: { readAt: new Date() },
     });
-    return this.unreadCount(userId);
+    const unread = await this.unreadCount(userId);
+    // Keep other open tabs' badges in sync in realtime.
+    this.realtime?.broadcastUnread(userId, unread);
+    return unread;
   }
 
   async markAllRead(userId: string): Promise<number> {
@@ -162,10 +170,21 @@ export class NotificationsService {
       where: { userId, readAt: null },
       data: { readAt: new Date() },
     });
+    this.realtime?.broadcastUnread(userId, 0);
     return 0;
   }
 
   // ---------- Internals ----------
+
+  /** Push the current unread count to the user's live sockets (best-effort). */
+  private async pushUnread(userId: string): Promise<void> {
+    if (!this.realtime) return;
+    try {
+      this.realtime.broadcastUnread(userId, await this.unreadCount(userId));
+    } catch (error) {
+      this.logger.warn(`realtime unread push failed for ${userId}: ${String(error)}`);
+    }
+  }
 
   private async readSettingRows(): Promise<Record<string, unknown>> {
     const stored = await this.prisma.setting.findMany();

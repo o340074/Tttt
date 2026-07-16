@@ -9,6 +9,7 @@ import { WarmingService } from '../warming/warming.service';
 import { aggregateOrderStatus } from '../warming/warming.logic';
 import { IdempotencyService } from '../wallet/idempotency.service';
 import { LedgerService } from '../wallet/ledger.service';
+import { refundAmountForLine, type RefundLine } from '../warranty/refund.logic';
 import type {
   AdminWarrantyClaimDetail,
   AdminWarrantyClaimListItem,
@@ -34,7 +35,17 @@ const CLAIM_INCLUDE = {
       variantId: true,
       variant: { select: { fulfillmentType: true } },
       order: {
-        select: { id: true, number: true, currency: true, userId: true },
+        select: {
+          id: true,
+          number: true,
+          currency: true,
+          userId: true,
+          // Discount + sibling line values drive the proportional refund
+          // allocation (E10): a partial refund credits the line net of its
+          // share of the promo discount, never the gross subtotal.
+          discount: true,
+          items: { select: { id: true, unitPrice: true, quantity: true } },
+        },
       },
       warmingJob: { select: { id: true, status: true } },
     },
@@ -185,7 +196,10 @@ export class AdminWarrantyService {
     const orderId = item.order.id;
 
     if (claim.type === 'refund') {
-      const amount = item.unitPrice.times(item.quantity);
+      // Credit what was actually paid for the line: its subtotal net of its
+      // proportional share of the order's promo discount (E10). On an order
+      // with no discount this equals the gross subtotal (unchanged behaviour).
+      const amount = this.lineRefund(item);
       await this.prisma.$transaction(async (tx) => {
         // The ledger unique (refund, orderItemId) makes a second credit of the
         // same line impossible — it surfaces as a 409 CONFLICT.
@@ -293,6 +307,20 @@ export class AdminWarrantyService {
 
   // ---------- Internals ----------
 
+  /**
+   * The money a refund credits for this claim's line: its subtotal net of the
+   * line's proportional share of the order promo discount (E10). Stable — it
+   * depends only on the purchase-time line values, so it reads the same before
+   * and after the refund and across sibling partial refunds.
+   */
+  private lineRefund(item: ClaimWithRels['orderItem']): Prisma.Decimal {
+    const lines: RefundLine[] = item.order.items.map((l) => ({
+      id: l.id,
+      subtotal: l.unitPrice.times(l.quantity),
+    }));
+    return refundAmountForLine(lines, item.order.discount, item.id);
+  }
+
   private async loadClaim(id: string): Promise<ClaimWithRels> {
     const row = await this.prisma.warrantyClaim.findUnique({
       where: { id },
@@ -332,8 +360,7 @@ export class AdminWarrantyService {
   private async result(id: string): Promise<WarrantyClaimResult> {
     const row = await this.loadClaim(id);
     const item = row.orderItem;
-    const refunded =
-      row.status === 'refunded' ? item.unitPrice.times(item.quantity).toFixed(2) : null;
+    const refunded = row.status === 'refunded' ? this.lineRefund(item).toFixed(2) : null;
     return {
       id: row.id,
       status: row.status,
@@ -374,7 +401,8 @@ export class AdminWarrantyService {
     return {
       ...this.toListItem(row, locale),
       resolutionNote: row.resolutionNote,
-      amount: row.orderItem.unitPrice.times(row.orderItem.quantity).toFixed(2),
+      // Discount-adjusted value of the line — the exact sum a refund credits.
+      amount: this.lineRefund(row.orderItem).toFixed(2),
       currency: row.orderItem.order.currency,
       replacementDeliveryId: row.replacementDeliveryId,
     };

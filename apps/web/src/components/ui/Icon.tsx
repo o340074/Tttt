@@ -29,6 +29,7 @@ export type IconName =
   | 'cart'
   | 'tag'
   | 'trash'
+  | 'pencil'
   | 'plus'
   | 'minus'
   | 'vault'

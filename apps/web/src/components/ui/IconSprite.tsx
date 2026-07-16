@@ -352,6 +352,18 @@ export function IconSprite() {
           <path d="M6 7l1 12a1 1 0 0 0 1 1h8a1 1 0 0 0 1-1l1-12" />
         </g>
       </symbol>
+      <symbol id="ic-pencil" viewBox="0 0 24 24">
+        <g
+          fill="none"
+          stroke="currentColor"
+          strokeWidth="2"
+          strokeLinecap="round"
+          strokeLinejoin="round"
+        >
+          <path d="M4 20h4L18.5 9.5a2 2 0 0 0 0-2.8l-1.2-1.2a2 2 0 0 0-2.8 0L4 16v4Z" />
+          <path d="M13.5 6.5l4 4" />
+        </g>
+      </symbol>
       <symbol id="ic-plus" viewBox="0 0 24 24">
         <path
           d="M12 5v14M5 12h14"
