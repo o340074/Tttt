@@ -2967,6 +2967,8 @@ export const TEST_ENV: Partial<Env> = {
   STOCK_RESERVE_TTL_SECONDS: 300,
   WARMING_HOLD_BUFFER_MINUTES: 720,
   WARMING_DEFAULT_STAGE_MINUTES: 1_440,
+  SENTRY_DSN: '',
+  SENTRY_RELEASE: '',
 };
 
 export function makeFakeConfigService(overrides: Partial<Env> = {}): ConfigService<Env, true> {

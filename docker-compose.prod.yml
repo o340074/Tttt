@@ -1,0 +1,74 @@
+# AdVault — production compose (docs/17 §5). Self-contained stack for a single
+# host: Postgres + Redis + API (prod build) + Nginx-served web that also reverse-
+# proxies /api. Only the web port is published; the API is reached through Nginx.
+#
+# Usage:
+#   cp .env.example .env   # fill real secrets (validateEnv refuses dev defaults)
+#   ./scripts/deploy.sh    # migrate + build + up (see the script)
+#
+# For a managed database, delete the `postgres` service and point DATABASE_URL
+# at the managed instance; likewise for a managed Redis.
+
+name: advault-prod
+
+services:
+  postgres:
+    image: postgres:17-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:?set POSTGRES_USER in .env}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD in .env}
+      POSTGRES_DB: ${POSTGRES_DB:?set POSTGRES_DB in .env}
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ['CMD-SHELL', 'pg_isready -U $${POSTGRES_USER} -d $${POSTGRES_DB}']
+      interval: 5s
+      timeout: 3s
+      retries: 10
+    # Not published: only the API (same network) reaches it.
+
+  redis:
+    image: redis:7-alpine
+    restart: unless-stopped
+    # Append-only file so queued (in-flight) notifications survive a restart.
+    command: ['redis-server', '--appendonly', 'yes']
+    volumes:
+      - redis-data:/data
+    healthcheck:
+      test: ['CMD', 'redis-cli', 'ping']
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+  api:
+    build:
+      context: .
+      dockerfile: apps/api/Dockerfile
+    restart: unless-stopped
+    env_file: .env
+    environment:
+      NODE_ENV: production
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    # Not published: the web service reverse-proxies /api to it on the network.
+    expose:
+      - '3000'
+
+  web:
+    build:
+      context: .
+      dockerfile: apps/web/Dockerfile.prod
+    restart: unless-stopped
+    depends_on:
+      - api
+    ports:
+      # Terminate TLS at an upstream LB/proxy, or add a TLS sidecar here.
+      - '80:80'
+
+volumes:
+  postgres-data:
+  redis-data:

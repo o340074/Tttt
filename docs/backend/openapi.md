@@ -641,6 +641,49 @@ components:
         orderCount: { type: integer }
         refundCount: { type: integer }
 
+    BalanceDriftEntry:
+      type: object
+      description: Пользователь, чей кэш баланса разошёлся с истиной леджера.
+      properties:
+        userId: { type: string, format: uuid }
+        cached: { $ref: '#/components/schemas/Money' }
+        ledger: { $ref: '#/components/schemas/Money' }
+        delta: { $ref: '#/components/schemas/Money' }
+    ReconciliationMetric:
+      type: object
+      description: Per-user сверка кэша User.balance с истиной леджера (docs/17 §3).
+      properties:
+        balanced: { type: boolean, description: true, когда ни один пользователь не дрейфует }
+        driftingUsers: { type: integer }
+        totalDrift: { $ref: '#/components/schemas/Money', description: SUM|cached − ledger| }
+        sample:
+          type: array
+          items: { $ref: '#/components/schemas/BalanceDriftEntry' }
+    QueueDepthMetric:
+      type: object
+      description: Глубина BullMQ-очереди уведомлений; available=false при недоступном Redis.
+      properties:
+        available: { type: boolean }
+        waiting: { type: integer }
+        active: { type: integer }
+        delayed: { type: integer }
+        failed: { type: integer }
+        completed: { type: integer }
+    TopUpHealthMetric:
+      type: object
+      description: Top-up, зависшие в pending (сигнал здоровья провайдера/свипа).
+      properties:
+        pending: { type: integer }
+        expiredPending: { type: integer, description: pending c истёкшим expiresAt }
+    OpsMetrics:
+      type: object
+      description: Агрегированные операционные метрики (GET /admin/ops/metrics, docs/17 §3).
+      properties:
+        timestamp: { type: string, format: date-time }
+        reconciliation: { $ref: '#/components/schemas/ReconciliationMetric' }
+        notificationsQueue: { $ref: '#/components/schemas/QueueDepthMetric' }
+        topUps: { $ref: '#/components/schemas/TopUpHealthMetric' }
+
     AdminUserListItem:
       type: object
       description: Строка таблицы пользователей (docs/13 §10). Без секретов.
@@ -2808,6 +2851,30 @@ paths:
         - { name: to, in: query, schema: { type: string, format: date-time } }
       responses:
         '200': { description: OK, content: { application/json: { schema: { $ref: '#/components/schemas/OperatorLoadReport' } } } }
+        '403': { $ref: '#/components/responses/Forbidden' }
+
+  # ---- M5: Ops metrics (monitoring/alerting, docs/17 §3, RBAC manager+) ----
+  /admin/ops/metrics:
+    get:
+      tags: [Admin]
+      summary: >-
+        Операционные метрики (JSON): per-user сверка баланса (дрейф кэша ↔ леджер),
+        глубина BullMQ-очереди уведомлений, зависшие top-up. RBAC manager/admin.
+      description: >-
+        Read-only. Сверка сравнивает `User.balance` с истиной леджера по каждому
+        пользователю и возвращает только дрейфующих — ловит взаимокомпенсирующиеся
+        расхождения, которые глобальная сумма в /admin/finance/summary пропустила бы.
+      responses:
+        '200': { description: OK, content: { application/json: { schema: { $ref: '#/components/schemas/OpsMetrics' } } } }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+  /admin/ops/metrics.prom:
+    get:
+      tags: [Admin]
+      summary: Те же метрики в Prometheus text-exposition формате (для скрейпера). RBAC manager+
+      responses:
+        '200': { description: OK, content: { 'text/plain': { schema: { type: string } } } }
+        '401': { $ref: '#/components/responses/Unauthorized' }
         '403': { $ref: '#/components/responses/Forbidden' }
 
   # ---- E8: Settings (RBAC admin-only) ----

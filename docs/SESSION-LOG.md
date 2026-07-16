@@ -33,14 +33,20 @@
   warranty.replaced/refunded/rejected. Проверено вживую (curl полного цикла на реальном
   Postgres+Redis: replace+refund, scoping 404, RBAC 403, ledger/аудит/уведомления в БД) и
   e2e. Долг E8: inline-edit промо.
-- **Следующий шаг:** релизные операции M5 (деплой по `docs/17`: секреты, миграции
-  `migrate deploy`, CSP web-SPA, бэкапы/восстановление, мониторинг) + бизнес-подтверждение
-  платёжного провайдера/хостинга; финальная юр-вычитка ToS/Privacy/Refund. Далее —
-  пост-MVP (E12+). Оставшиеся долги (не блокеры запуска): аллокация discount при частичном
+- **M5 Release-операции (Трек A) — ГОТОВО по коду/скриптам** (см. запись ниже):
+  наблюдаемость (`/admin/ops/metrics` JSON+Prometheus: per-user сверка баланса, глубина
+  BullMQ-очереди, зависшие top-up) + Sentry-репортер 5xx (dependency-free); прод-деплой
+  инфра (`docker-compose.prod.yml`, `apps/web/Dockerfile.prod`+Nginx с CSP/HSTS,
+  `.env.example`, `scripts/deploy.sh`); бэкапы+тест-восстановление (`scripts/backup.sh`,
+  `scripts/restore-test.sh`); нагрузочные k6 (`load/*`). Проверено вживую на реальном
+  Postgres+Redis.
+- **Следующий шаг:** бизнес-подтверждение платёжного провайдера/хостинга; финальная
+  юр-вычитка ToS/Privacy/Refund; прогон k6 в среде с установленным k6. Далее — пост-MVP
+  (E12+). Оставшиеся долги (не блокеры запуска): аллокация discount при частичном
   возврате (E10), grace-период окна (E10), inline-edit промо (E8), WebSocket для realtime
   бейджа (E9).
-- **Ветка:** актуальная база — `claude/advault-e11-polish-launch-drvjw3` (E0…E11).
-  Отходит от `…e10-warranties-o987dr`. В main код ещё не влит.
+- **Ветка:** `claude/advault-m5-release-ops-uh9e17` (M5 release-ops, отходит от
+  `…e11-polish-launch-drvjw3` = E0…E11). В main код ещё не влит.
 - **Прогресс по эпикам (из `docs/16`):**
 
 | Эпик | Название | Статус |
@@ -64,6 +70,53 @@
 ---
 
 ## Записи
+
+### Сессия — M5 Release-операции (Трек A) — ЗАВЕРШЕНА по коду/скриптам
+- **Развилка (asking):** ветка сессии — `m5-release-ops` → Трек A. Через AskUserQuestion
+  выбран объём: **все четыре** направления (наблюдаемость+сверка · прод-деплой · бэкапы ·
+  нагрузка).
+- **Наблюдаемость + сверка баланса (код):** новый `OpsModule`.
+  - `GET /admin/ops/metrics` (JSON) и `…/metrics.prom` (Prometheus text-exposition), RBAC
+    `ELEVATED` (manager/admin), read-only, без аудита. Отдаёт `OpsMetrics`:
+    **`reconciliation`** — per-user сверка `User.balance` ↔ истина леджера
+    (`SUM credit − SUM debit`) одним grouped-запросом, возвращает только дрейфующих
+    (`driftingUsers`, `totalDrift`, sample worst-first). Ловит взаимокомпенсирующиеся
+    расхождения, которые глобальная сумма в `/admin/finance/summary` свела бы к нулю;
+    **`notificationsQueue`** — глубина BullMQ (`getJobCounts`, через глобальный
+    `NotificationsService.queueJobCounts`; `available:false` без Redis);
+    **`topUps`** — `pending` и `pending` с истёкшим `expiresAt`.
+  - **Sentry-репортер** (`ops/error-reporter.ts`) — dependency-free, шлёт 5xx/необработанные
+    в Sentry через envelope-HTTP-API на глобальном `fetch` (Node 22). Включается `SENTRY_DSN`
+    (пусто → no-op; fire-and-forget, таймаут 2s, ошибки глотаются — мониторинг не ломает
+    запрос). Вплетён в `HttpExceptionFilter` (опц. reporter, DI через `app.setup`). В событие
+    идут только тип/сообщение/стек + метод/путь/статус, **никаких** тел/заголовков/секретов.
+  - env: `SENTRY_DSN`/`SENTRY_RELEASE` в `config/env.ts` (+ `TEST_ENV`).
+  - Тесты: `ops.logic.spec` (сверка+Prometheus), `error-reporter.spec` (DSN-парсинг,
+    no-op, envelope, глотание ошибок), `metrics.service.spec` (сборка, деградация очереди).
+    **+12 тестов → 335 зелёных.**
+- **Прод-деплой инфра:** `docker-compose.prod.yml` (postgres+redis+api+web, публикуется
+  только web; Redis AOF), `apps/web/Dockerfile.prod` (сборка SPA → Nginx),
+  `apps/web/nginx.conf` + `security-headers.conf` (отдача статики + reverse-proxy `/api` +
+  строгий CSP/HSTS уровня документа; сниппет не на `/api/` во избежание двойного CSP),
+  `.env.example` (все секреты + подсказки генерации), `scripts/deploy.sh` (CI-гейт →
+  `migrate deploy` → up → health-гейт).
+- **Бэкапы:** `scripts/backup.sh` (custom-format `pg_dump`, опц. GPG, ретеншен; санитайз
+  Prisma `?schema=`) + `scripts/restore-test.sh` (восстановление в одноразовую БД +
+  smoke + уборка).
+- **Нагрузка (k6):** `load/{lib,checkout,idempotency}.js` + `README.md` — пропускная
+  способность checkout и идемпотентность под конкуренцией (30 параллельных checkout с одним
+  `Idempotency-Key` → одно списание, ассерт в teardown).
+- **Проверено вживую** (локальный Postgres 16 + Redis, реальный API):
+  - сверка баланса: seeded-дрейф → `GET /admin/ops/metrics` (401 без токена, 200 у manager)
+    вернул ровно дрейфующего пользователя `delta -3.00`; Prometheus-формат корректен;
+  - бэкап+тест-восстановление: dump 92K → restore в одноразовую БД → smoke (`users=3`,
+    `ledger_entries=2`) → чистая уборка;
+  - механика k6-хелпера top-up (подпись вебхука HMAC) → баланс зачислен `100.00`.
+  k6 в среде не установлен (сценарии готовы, синтаксис провалидирован); Docker-registry
+  недоступен (образы прод-compose не собирались здесь) — compose-конфиг провалидирован.
+- **DoD:** lint ✓, typecheck ✓, test ✓ (335), build ✓. Контракты: `docs/backend/openapi.md`
+  (+`/admin/ops/metrics`, схемы Ops*), `docs/17` (§1–6 обновлены под реальные артефакты).
+  Отдельным chore-коммитом нормализован pre-existing prettier-дрейф 22 файлов E11.
 
 ### Сессия — Полировка, безопасность, запуск (эпик E11 — ЗАВЕРШЁН, веха M5)
 - **Развилки (asking):** заданы через AskUserQuestion (пользователь — «без предпочтений»,

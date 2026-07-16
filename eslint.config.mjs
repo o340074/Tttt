@@ -49,5 +49,12 @@ export default tseslint.config(
       '@typescript-eslint/consistent-type-imports': 'off',
     },
   },
+  {
+    // k6 load tests run in the k6 runtime, which injects __ENV/__VU/__ITER.
+    files: ['load/**/*.js'],
+    languageOptions: {
+      globals: { __ENV: 'readonly', __VU: 'readonly', __ITER: 'readonly' },
+    },
+  },
   prettier,
 );

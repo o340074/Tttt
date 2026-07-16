@@ -887,12 +887,7 @@ export type WarrantyClaimType = 'replace' | 'refund';
  * (a fresh asset is issued) or `refunded` (funds credited to the ledger).
  */
 export type WarrantyClaimStatus =
-  | 'requested'
-  | 'approved'
-  | 'reworking'
-  | 'rejected'
-  | 'replaced'
-  | 'refunded';
+  'requested' | 'approved' | 'reworking' | 'rejected' | 'replaced' | 'refunded';
 
 /** Compact reference to a claim, embedded in an order line's warranty info. */
 export interface WarrantyClaimRef {
@@ -1641,4 +1636,61 @@ export interface NotificationsQuery {
   limit?: number;
   /** When true, only unread notifications are returned. */
   unread?: boolean;
+}
+
+// ---------- Ops: monitoring metrics (M5 release-ops, docs/17 §3) ----------
+//
+// Read-only operational signals for alerting: per-user ledger drift (the SUM
+// reconciliation in FinanceSummary can hide offsetting mismatches — this one
+// compares each user's cached balance to their ledger truth), notification
+// queue depth, and stuck top-ups. Elevated (manager/admin) only. No mutations.
+
+/** One user whose cached balance disagrees with the ledger truth. */
+export interface BalanceDriftEntry {
+  userId: string;
+  /** Cached User.balance. */
+  cached: Money;
+  /** SUM(credit) − SUM(debit) over the user's ledger. */
+  ledger: Money;
+  /** cached − ledger (signed). */
+  delta: Money;
+}
+
+/** Per-user ledger reconciliation — the truthful drift check for alerting. */
+export interface ReconciliationMetric {
+  /** True when no user's cached balance drifts from their ledger truth. */
+  balanced: boolean;
+  /** Number of users whose cached balance ≠ ledger truth. */
+  driftingUsers: number;
+  /** SUM|cached − ledger| across drifting users. */
+  totalDrift: Money;
+  /** A bounded sample of the drifting users (capped), worst-drift first. */
+  sample: BalanceDriftEntry[];
+}
+
+/** BullMQ notifications queue depth — alert when waiting/failed climbs. */
+export interface QueueDepthMetric {
+  /** Whether a live queue was reachable; false when Redis/queue is absent. */
+  available: boolean;
+  waiting: number;
+  active: number;
+  delayed: number;
+  failed: number;
+  completed: number;
+}
+
+/** Top-ups stuck in `pending` — a payment-provider or sweep health signal. */
+export interface TopUpHealthMetric {
+  /** Top-ups still `pending`. */
+  pending: number;
+  /** `pending` past their expiresAt — the sweep should have closed these. */
+  expiredPending: number;
+}
+
+/** GET /admin/ops/metrics — aggregated operational signals (docs/17 §3). */
+export interface OpsMetrics {
+  timestamp: string;
+  reconciliation: ReconciliationMetric;
+  notificationsQueue: QueueDepthMetric;
+  topUps: TopUpHealthMetric;
 }

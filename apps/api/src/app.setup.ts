@@ -5,6 +5,7 @@ import cookieParser from 'cookie-parser';
 import { ApiException } from './common/api-exception';
 import { HttpExceptionFilter } from './common/http-exception.filter';
 import { configureSecurity } from './common/security';
+import { ErrorReporter } from './ops/error-reporter';
 import type { Env } from './config/env';
 import type { NextFunction, Request, Response } from 'express';
 
@@ -56,7 +57,7 @@ export function configureApp(app: INestApplication): INestApplication {
         }),
     }),
   );
-  app.useGlobalFilters(new HttpExceptionFilter());
+  app.useGlobalFilters(new HttpExceptionFilter(app.get(ErrorReporter)));
   app.enableCors({
     origin: config.get('CORS_ORIGIN', { infer: true }).split(','),
     credentials: true,

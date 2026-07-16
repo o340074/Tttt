@@ -33,6 +33,14 @@ export const envSchema = z.object({
   WARMING_HOLD_BUFFER_MINUTES: z.coerce.number().int().nonnegative().default(720),
   /** Fallback stage duration when a warm variant has no plan, minutes. */
   WARMING_DEFAULT_STAGE_MINUTES: z.coerce.number().int().positive().default(1_440),
+  /**
+   * Sentry DSN for error reporting (M5, docs/17 §3). Empty disables reporting
+   * (no-op) — the app never depends on Sentry being reachable. When set, 5xx /
+   * unhandled exceptions are forwarded via the Sentry envelope HTTP API.
+   */
+  SENTRY_DSN: z.string().default(''),
+  /** Deployment tag attached to Sentry events (e.g. git SHA or version). */
+  SENTRY_RELEASE: z.string().default(''),
 });
 
 export type Env = z.infer<typeof envSchema>;

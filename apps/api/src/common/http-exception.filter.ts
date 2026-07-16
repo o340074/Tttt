@@ -1,9 +1,10 @@
 import { Catch, HttpException, HttpStatus, Logger } from '@nestjs/common';
 import type { ArgumentsHost, ExceptionFilter } from '@nestjs/common';
 import { ThrottlerException } from '@nestjs/throttler';
-import type { Response } from 'express';
+import type { Request, Response } from 'express';
 import type { ApiError, ApiErrorCode } from '@advault/types';
 import { ApiException } from './api-exception';
+import type { ErrorReporter } from '../ops/error-reporter';
 
 const STATUS_CODES: Record<number, ApiErrorCode> = {
   [HttpStatus.BAD_REQUEST]: 'VALIDATION_ERROR',
@@ -22,8 +23,17 @@ const STATUS_CODES: Record<number, ApiErrorCode> = {
 export class HttpExceptionFilter implements ExceptionFilter {
   private readonly logger = new Logger(HttpExceptionFilter.name);
 
+  /**
+   * The reporter is optional so unit tests (and any construction outside DI)
+   * work without it. When present, only unexpected 5xx (unhandled) errors are
+   * forwarded — client errors (4xx) and known ApiExceptions are expected and
+   * would only add noise.
+   */
+  constructor(private readonly reporter?: ErrorReporter) {}
+
   catch(exception: unknown, host: ArgumentsHost): void {
-    const response = host.switchToHttp().getResponse<Response>();
+    const http = host.switchToHttp();
+    const response = http.getResponse<Response>();
 
     if (exception instanceof ApiException) {
       response.status(exception.getStatus()).json(exception.getResponse());
@@ -60,6 +70,16 @@ export class HttpExceptionFilter implements ExceptionFilter {
       `Unhandled exception: ${(exception as Error).message}`,
       (exception as Error).stack,
     );
+    // Forward the unexpected failure to Sentry (best-effort, fire-and-forget).
+    // Only method/path/status travel with it — never the body/headers/payload.
+    if (this.reporter?.enabled) {
+      const request = http.getRequest<Request>();
+      void this.reporter.captureException(exception, {
+        method: request?.method,
+        path: request?.path,
+        statusCode: HttpStatus.INTERNAL_SERVER_ERROR,
+      });
+    }
     const body: ApiError = {
       error: { code: 'INTERNAL_ERROR', message: 'Internal server error' },
     };

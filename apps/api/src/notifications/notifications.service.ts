@@ -5,11 +5,7 @@ import { PrismaService } from '../prisma/prisma.service';
 import { MailerService } from '../mailer/mailer.service';
 import { readNotifications, readStore, SETTING_KEYS } from '../admin/settings.logic';
 import { EVENT_TO_TYPE, renderTemplate } from './notifications.logic';
-import {
-  DELIVER_JOB,
-  NOTIFICATION_JOB_OPTIONS,
-  NOTIFICATIONS_QUEUE,
-} from './notifications.queue';
+import { DELIVER_JOB, NOTIFICATION_JOB_OPTIONS, NOTIFICATIONS_QUEUE } from './notifications.queue';
 import type { NotificationEvent } from './notifications.logic';
 import type { NotificationJob } from './notifications.queue';
 import type { Locale, NotificationView, Paginated } from '@advault/types';
@@ -71,6 +67,29 @@ export class NotificationsService {
     } catch (error) {
       this.logger.error(`deliver(${event}) failed for user ${userId}: ${String(error)}`);
     }
+  }
+
+  /**
+   * BullMQ queue depth for monitoring (M5, docs/17 §3). Returns null when no
+   * queue is wired (tests / inline delivery) so the ops metrics can report the
+   * queue as unavailable rather than fabricating zeros.
+   */
+  async queueJobCounts(): Promise<{
+    waiting: number;
+    active: number;
+    delayed: number;
+    failed: number;
+    completed: number;
+  } | null> {
+    if (!this.queue) return null;
+    const c = await this.queue.getJobCounts('waiting', 'active', 'delayed', 'failed', 'completed');
+    return {
+      waiting: c.waiting ?? 0,
+      active: c.active ?? 0,
+      delayed: c.delayed ?? 0,
+      failed: c.failed ?? 0,
+      completed: c.completed ?? 0,
+    };
   }
 
   /**

@@ -17,6 +17,7 @@ import { CatalogModule } from './catalog/catalog.module';
 import { InventoryModule } from './inventory/inventory.module';
 import { OrdersModule } from './orders/orders.module';
 import { ReviewsModule } from './reviews/reviews.module';
+import { OpsModule } from './ops/ops.module';
 import { UsersModule } from './users/users.module';
 import { WalletModule } from './wallet/wallet.module';
 import { WarmingModule } from './warming/warming.module';
@@ -46,6 +47,7 @@ import { WarmingModule } from './warming/warming.module';
     WarrantyModule,
     AdminModule,
     HealthModule,
+    OpsModule,
   ],
 })
 export class AppModule {}
