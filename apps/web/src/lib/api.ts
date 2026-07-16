@@ -51,6 +51,9 @@ export function refreshSession(): Promise<boolean> {
       const response = await fetch('/api/v1/auth/refresh', {
         method: 'POST',
         credentials: 'include',
+        // Never let a stalled API wedge the boot splash: bail after 8s so the
+        // app falls back to the signed-out state instead of a blank screen.
+        signal: AbortSignal.timeout(8000),
       });
       if (!response.ok) {
         setAccessToken(null);
