@@ -53,7 +53,22 @@ $COMPOSE run --rm api pnpm --filter @advault/api db:seed || true
 echo "==> Starting API + web"
 $COMPOSE up -d api web
 
-# 6. Diagnose ---------------------------------------------------------------
+# 6. Open the HOST firewall for 80/443 (best-effort; the cloud provider's
+#    security-group is separate and can only be opened in their web panel) ----
+echo "==> Opening host firewall for 80/443"
+if command -v ufw >/dev/null 2>&1 && ufw status 2>/dev/null | grep -q "Status: active"; then
+  ufw allow 80/tcp  >/dev/null 2>&1 || true
+  ufw allow 443/tcp >/dev/null 2>&1 || true
+  echo "   ufw: allowed 80,443"
+fi
+if command -v iptables >/dev/null 2>&1; then
+  iptables -C INPUT -p tcp --dport 80  -j ACCEPT 2>/dev/null || iptables -I INPUT -p tcp --dport 80  -j ACCEPT
+  iptables -C INPUT -p tcp --dport 443 -j ACCEPT 2>/dev/null || iptables -I INPUT -p tcp --dport 443 -j ACCEPT
+  { iptables-save > /etc/iptables/rules.v4; } 2>/dev/null || netfilter-persistent save 2>/dev/null || true
+  echo "   iptables: allowed 80,443"
+fi
+
+# 7. Diagnose ---------------------------------------------------------------
 sleep 6
 line; echo "CONTAINERS:"; $COMPOSE ps
 line; echo "API HEALTH (through nginx on :80):"
