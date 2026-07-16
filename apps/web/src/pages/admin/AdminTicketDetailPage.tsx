@@ -217,7 +217,9 @@ function ReplyBox({ ticketId }: { ticketId: string }) {
       <textarea
         value={body}
         onChange={(e) => setBody(e.target.value)}
-        placeholder={internal ? t('admin.tickets.notePlaceholder') : t('admin.tickets.replyPlaceholder')}
+        placeholder={
+          internal ? t('admin.tickets.notePlaceholder') : t('admin.tickets.replyPlaceholder')
+        }
         aria-label={t('admin.tickets.reply')}
         rows={3}
         className="w-full rounded-md border border-border bg-surface-2 px-3 py-2 text-sm text-text-hi outline-none focus:border-volt"

@@ -38,16 +38,14 @@ export class AdminStaffService {
     const openTicketsBy = new Map(ticketGroups.map((g) => [g.assigneeId, g._count._all]));
     const activeJobsBy = new Map(jobGroups.map((g) => [g.assignedTo, g._count._all]));
 
-    return staff.map(
-      (u): AdminStaffMember => ({
-        id: u.id,
-        email: u.email,
-        role: u.role as Role,
-        status: u.status as UserStatus,
-        assignedOpenTickets: openTicketsBy.get(u.id) ?? 0,
-        activeWarmingJobs: activeJobsBy.get(u.id) ?? 0,
-        createdAt: u.createdAt.toISOString(),
-      }),
-    );
+    return staff.map((u): AdminStaffMember => ({
+      id: u.id,
+      email: u.email,
+      role: u.role as Role,
+      status: u.status as UserStatus,
+      assignedOpenTickets: openTicketsBy.get(u.id) ?? 0,
+      activeWarmingJobs: activeJobsBy.get(u.id) ?? 0,
+      createdAt: u.createdAt.toISOString(),
+    }));
   }
 }

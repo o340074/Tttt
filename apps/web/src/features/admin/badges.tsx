@@ -150,7 +150,9 @@ const TICKET_STATUS: Record<TicketStatus, string> = {
 export function TicketStatusBadge({ status }: { status: TicketStatus }) {
   const { t } = useTranslation();
   return (
-    <span className={`${PILL} ${TICKET_STATUS[status]}`}>{t(`admin.ticketStatuses.${status}`)}</span>
+    <span className={`${PILL} ${TICKET_STATUS[status]}`}>
+      {t(`admin.ticketStatuses.${status}`)}
+    </span>
   );
 }
 

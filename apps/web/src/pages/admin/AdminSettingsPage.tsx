@@ -86,7 +86,9 @@ function SettingsForm({ data }: { data: ShopSettings }) {
         </h2>
         <div className="grid gap-4 md:grid-cols-2">
           <label className="flex flex-col gap-1">
-            <span className="text-xs font-semibold text-text-lo">{t('admin.settings.storeName')}</span>
+            <span className="text-xs font-semibold text-text-lo">
+              {t('admin.settings.storeName')}
+            </span>
             <input
               className={field}
               value={form.storeName}
@@ -94,7 +96,9 @@ function SettingsForm({ data }: { data: ShopSettings }) {
             />
           </label>
           <label className="flex flex-col gap-1">
-            <span className="text-xs font-semibold text-text-lo">{t('admin.settings.supportEmail')}</span>
+            <span className="text-xs font-semibold text-text-lo">
+              {t('admin.settings.supportEmail')}
+            </span>
             <input
               className={field}
               value={form.supportEmail}
@@ -208,8 +212,14 @@ function SettingsForm({ data }: { data: ShopSettings }) {
           {t('admin.settings.integrations')}
         </h2>
         <div className="grid gap-3 md:grid-cols-3">
-          <IntegrationFlag label={t('admin.settings.crypto')} ok={form.integrations.cryptoAcquiringConfigured} />
-          <IntegrationFlag label={t('admin.settings.octo')} ok={form.integrations.octoApiConfigured} />
+          <IntegrationFlag
+            label={t('admin.settings.crypto')}
+            ok={form.integrations.cryptoAcquiringConfigured}
+          />
+          <IntegrationFlag
+            label={t('admin.settings.octo')}
+            ok={form.integrations.octoApiConfigured}
+          />
           <IntegrationFlag label={t('admin.settings.kms')} ok={form.integrations.kmsConfigured} />
         </div>
         <p className="mt-3 text-xs text-text-dim">{t('admin.settings.integrationsNote')}</p>

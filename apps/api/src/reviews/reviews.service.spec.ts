@@ -61,7 +61,9 @@ function makeMock() {
         take?: number;
       }) => {
         let rows = reviews.filter(
-          (r) => r.productId === where.productId && (where.hidden === undefined || r.hidden === where.hidden),
+          (r) =>
+            r.productId === where.productId &&
+            (where.hidden === undefined || r.hidden === where.hidden),
         );
         rows = [...rows].sort((a, b) => b.createdAt.getTime() - a.createdAt.getTime());
         rows = rows.slice(skip, take !== undefined ? skip + take : undefined);
@@ -70,7 +72,9 @@ function makeMock() {
       count: ({ where }: { where: { productId: string; hidden?: boolean } }) =>
         Promise.resolve(
           reviews.filter(
-            (r) => r.productId === where.productId && (where.hidden === undefined || r.hidden === where.hidden),
+            (r) =>
+              r.productId === where.productId &&
+              (where.hidden === undefined || r.hidden === where.hidden),
           ).length,
         ),
       create: ({ data }: { data: Omit<ReviewRow, 'id' | 'createdAt' | 'hidden' | 'author'> }) => {
@@ -102,7 +106,11 @@ describe('ReviewsService (E11)', () => {
   });
 
   it('creates a review for a delivered line and refreshes the rating cache', async () => {
-    const review = await service.create('buyer-1', { orderItemId: 'oi-1', rating: 5, title: 'Great' });
+    const review = await service.create('buyer-1', {
+      orderItemId: 'oi-1',
+      rating: 5,
+      title: 'Great',
+    });
     expect(review.rating).toBe(5);
     expect(review.authorName).toBe('bu***');
     expect(mock.state.product.ratingAvg).toBe('5.00');
@@ -139,6 +147,8 @@ describe('ReviewsService (E11)', () => {
   });
 
   it('404s reviews for an unknown product', async () => {
-    await expect(service.listForProduct('nope', 1, 20)).rejects.toMatchObject({ code: 'NOT_FOUND' });
+    await expect(service.listForProduct('nope', 1, 20)).rejects.toMatchObject({
+      code: 'NOT_FOUND',
+    });
   });
 });

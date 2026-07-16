@@ -69,7 +69,11 @@ export function AdminTicketsPage() {
         </Button>
       </div>
 
-      <div className="mb-5 flex flex-wrap items-center gap-2" role="group" aria-label={t('admin.tickets.colStatus')}>
+      <div
+        className="mb-5 flex flex-wrap items-center gap-2"
+        role="group"
+        aria-label={t('admin.tickets.colStatus')}
+      >
         {STATUS_FILTERS.map((s) => (
           <button
             key={s}
@@ -136,7 +140,10 @@ export function AdminTicketsPage() {
                         {tk.number}
                       </Link>
                     </td>
-                    <td className="max-w-[280px] truncate px-4 py-3 text-text-hi" title={tk.subject}>
+                    <td
+                      className="max-w-[280px] truncate px-4 py-3 text-text-hi"
+                      title={tk.subject}
+                    >
                       {tk.lastMessageFromCustomer && (
                         <span
                           className="mr-1.5 inline-flex h-4 items-center gap-1 rounded-pill bg-[rgba(124,125,250,0.16)] px-1.5 align-middle text-[10px] font-bold uppercase tracking-wide text-volt-400"

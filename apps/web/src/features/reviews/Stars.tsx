@@ -32,7 +32,11 @@ export function StarInput({
 }) {
   const { t } = useTranslation();
   return (
-    <div className="inline-flex items-center gap-1" role="radiogroup" aria-label={t('reviews.ratingLabel')}>
+    <div
+      className="inline-flex items-center gap-1"
+      role="radiogroup"
+      aria-label={t('reviews.ratingLabel')}
+    >
       {[1, 2, 3, 4, 5].map((n) => (
         <button
           key={n}

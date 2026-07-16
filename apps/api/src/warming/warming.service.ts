@@ -290,7 +290,13 @@ export class WarmingService {
       if (action === 'deliver') {
         data.deliveredAt = now;
         const deliveryId = await this.assembleAndDeliver(tx, job, actorId, now);
-        replacedClaim = await this.resolveReworkingClaim(tx, job.orderItemId, actorId, deliveryId, now);
+        replacedClaim = await this.resolveReworkingClaim(
+          tx,
+          job.orderItemId,
+          actorId,
+          deliveryId,
+          now,
+        );
       }
       await tx.warmingJob.update({ where: { id }, data });
       await this.syncDeliveryStatus(
@@ -326,7 +332,11 @@ export class WarmingService {
           action: 'warranty.claim.replaced',
           entity: 'WarrantyClaim',
           entityId: closed.id,
-          diff: { number: closed.number, orderItemId: job.orderItemId, fulfillment: 'MADE_TO_ORDER' },
+          diff: {
+            number: closed.number,
+            orderItemId: job.orderItemId,
+            fulfillment: 'MADE_TO_ORDER',
+          },
         });
         await this.notifications.emit(
           job.orderItem.order.userId,

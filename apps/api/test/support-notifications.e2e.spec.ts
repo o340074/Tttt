@@ -81,7 +81,10 @@ describe('Support portal + notifications (e2e)', () => {
     expect(list.body.data.some((t: { id: string }) => t.id === id)).toBe(true);
 
     // 3) A different buyer cannot read it (owner scoping → 404).
-    await request(http).get(url(`/tickets/${id}`)).set(auth(otherBuyerToken)).expect(404);
+    await request(http)
+      .get(url(`/tickets/${id}`))
+      .set(auth(otherBuyerToken))
+      .expect(404);
 
     // 4) Support assigns + replies (public) then adds an internal note.
     await request(http)
@@ -139,7 +142,10 @@ describe('Support portal + notifications (e2e)', () => {
       .expect(201);
     expect(reopened.body.status).toBe('open');
 
-    const queue = await request(http).get(url('/admin/tickets')).set(auth(supportToken)).expect(200);
+    const queue = await request(http)
+      .get(url('/admin/tickets'))
+      .set(auth(supportToken))
+      .expect(200);
     const row = queue.body.data.find((t: { id: string }) => t.id === id);
     expect(row.lastMessageFromCustomer).toBe(true);
 

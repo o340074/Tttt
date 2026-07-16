@@ -52,7 +52,13 @@ type DbOrderItemWithWarming = DbOrderItem & {
     type: WarrantyClaimType;
     status: WarrantyClaimStatus;
   }[];
-  review?: { id: string; rating: number; title: string | null; body: string | null; createdAt: Date } | null;
+  review?: {
+    id: string;
+    rating: number;
+    title: string | null;
+    body: string | null;
+    createdAt: Date;
+  } | null;
 };
 type OrderWithItems = DbOrder & {
   items: DbOrderItemWithWarming[];

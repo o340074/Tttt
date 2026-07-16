@@ -16,8 +16,7 @@ import type {
 export function useProductReviews(slug: string, page = 1) {
   return useQuery({
     queryKey: ['reviews', slug, page],
-    queryFn: () =>
-      apiFetch<ProductReviewsResponse>(`/products/${slug}/reviews?page=${page}`),
+    queryFn: () => apiFetch<ProductReviewsResponse>(`/products/${slug}/reviews?page=${page}`),
     enabled: Boolean(slug),
   });
 }

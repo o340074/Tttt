@@ -46,9 +46,7 @@ describe('NotificationsService — queue delivery (E11)', () => {
     const service = new NotificationsService(prisma, mailer, queue);
     const userId = await seedUser();
 
-    await expect(
-      service.emit(userId, 'orderPaid', { number: 'AV-9' }),
-    ).resolves.toBeUndefined();
+    await expect(service.emit(userId, 'orderPaid', { number: 'AV-9' })).resolves.toBeUndefined();
 
     // Inline fallback persisted the row despite the failed enqueue.
     expect(prisma.notification.rows.filter((r) => r.userId === userId)).toHaveLength(1);

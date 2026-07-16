@@ -54,9 +54,13 @@ export function AdminStaffPage() {
               <tr className="border-b border-border bg-surface text-left text-xs uppercase tracking-wide text-text-dim">
                 <th className="px-4 py-3 font-semibold">{t('admin.staff.colEmail')}</th>
                 <th className="px-4 py-3 font-semibold">{t('admin.staff.colRole')}</th>
-                <th className="px-4 py-3 text-right font-semibold">{t('admin.staff.colTickets')}</th>
+                <th className="px-4 py-3 text-right font-semibold">
+                  {t('admin.staff.colTickets')}
+                </th>
                 <th className="px-4 py-3 text-right font-semibold">{t('admin.staff.colJobs')}</th>
-                {isAdmin && <th className="px-4 py-3 font-semibold">{t('admin.staff.colChangeRole')}</th>}
+                {isAdmin && (
+                  <th className="px-4 py-3 font-semibold">{t('admin.staff.colChangeRole')}</th>
+                )}
               </tr>
             </thead>
             <tbody>
@@ -88,7 +92,11 @@ function StaffRow({
   const save = () => {
     setError(null);
     if (role === member.role) return;
-    if (!window.confirm(t('admin.staff.confirm', { email: member.email, role: t(`admin.roles.${role}`) })))
+    if (
+      !window.confirm(
+        t('admin.staff.confirm', { email: member.email, role: t(`admin.roles.${role}`) }),
+      )
+    )
       return;
     setUserRole.mutate({ role }, { onError: (e) => setError((e as Error).message) });
   };
@@ -102,7 +110,9 @@ function StaffRow({
       <td className="px-4 py-3">
         <RoleBadge role={member.role} />
       </td>
-      <td className="px-4 py-3 text-right tabular-nums text-text-lo">{member.assignedOpenTickets}</td>
+      <td className="px-4 py-3 text-right tabular-nums text-text-lo">
+        {member.assignedOpenTickets}
+      </td>
       <td className="px-4 py-3 text-right tabular-nums text-text-lo">{member.activeWarmingJobs}</td>
       {isAdmin && (
         <td className="px-4 py-3">

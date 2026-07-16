@@ -7,8 +7,7 @@ import type { Env } from '../config/env';
 /** Minimal ConfigService stub returning a fixed env. */
 function configFor(nodeEnv: Env['NODE_ENV']): ConfigService<Env, true> {
   return {
-    get: (key: keyof Env) =>
-      key === 'NODE_ENV' ? nodeEnv : 'http://localhost:5173',
+    get: (key: keyof Env) => (key === 'NODE_ENV' ? nodeEnv : 'http://localhost:5173'),
   } as unknown as ConfigService<Env, true>;
 }
 

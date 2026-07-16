@@ -46,9 +46,7 @@ const bullImports: DynamicModule[] = isTest
 @Module({
   imports: bullImports,
   controllers: [NotificationsController],
-  providers: isTest
-    ? [NotificationsService]
-    : [NotificationsService, NotificationsProcessor],
+  providers: isTest ? [NotificationsService] : [NotificationsService, NotificationsProcessor],
   exports: [NotificationsService],
 })
 export class NotificationsModule {}

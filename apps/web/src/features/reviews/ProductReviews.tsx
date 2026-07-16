@@ -4,7 +4,11 @@ import { Stars } from './Stars';
 import { useProductReviews } from './api';
 
 function formatDate(iso: string, locale: string): string {
-  return new Date(iso).toLocaleDateString(locale, { year: 'numeric', month: 'short', day: 'numeric' });
+  return new Date(iso).toLocaleDateString(locale, {
+    year: 'numeric',
+    month: 'short',
+    day: 'numeric',
+  });
 }
 
 /** Reviews block on the product page: rating rollup + paginated review list. */
@@ -67,7 +71,10 @@ export function ProductReviews({ slug }: { slug: string }) {
                   <div key={star} className="flex items-center gap-2 text-xs text-text-lo">
                     <span className="w-3 tabular-nums">{star}</span>
                     <div className="h-2 flex-1 overflow-hidden rounded-pill bg-surface-2">
-                      <div className="h-full rounded-pill bg-warning" style={{ width: `${pct}%` }} />
+                      <div
+                        className="h-full rounded-pill bg-warning"
+                        style={{ width: `${pct}%` }}
+                      />
                     </div>
                     <span className="w-8 text-right tabular-nums">{n}</span>
                   </div>

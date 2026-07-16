@@ -30,9 +30,7 @@ export class AdminReportsController {
   }
 
   @Get('sales')
-  async sales(
-    @Query() query: ReportPeriodDto & { locale?: string },
-  ): Promise<SalesReport> {
+  async sales(@Query() query: ReportPeriodDto & { locale?: string }): Promise<SalesReport> {
     return this.reports.sales(this.period(query), resolveLocale(query.locale));
   }
 

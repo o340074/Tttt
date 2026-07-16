@@ -10,7 +10,10 @@ export function Footer() {
         <p className="text-sm text-text-dim">
           © {new Date().getFullYear()} {t('brand.name')}. {t('footer.rights')}
         </p>
-        <nav className="flex flex-wrap items-center gap-x-5 gap-y-2 text-xs" aria-label={t('footer.legal')}>
+        <nav
+          className="flex flex-wrap items-center gap-x-5 gap-y-2 text-xs"
+          aria-label={t('footer.legal')}
+        >
           <Link to="/legal/terms" className="text-text-dim hover:text-text-hi">
             {t('footer.terms')}
           </Link>

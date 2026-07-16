@@ -11,15 +11,33 @@ import {
 const meta = new Map<string, VariantMeta>([
   [
     'v1',
-    { productId: 'p1', productLabel: 'Ads · Std', categoryId: 'c1', categoryLabel: 'Google Ads', goal: 'google_ads' },
+    {
+      productId: 'p1',
+      productLabel: 'Ads · Std',
+      categoryId: 'c1',
+      categoryLabel: 'Google Ads',
+      goal: 'google_ads',
+    },
   ],
   [
     'v2',
-    { productId: 'p2', productLabel: 'Ext · Dev', categoryId: 'c2', categoryLabel: 'Chrome', goal: 'chrome_extension_dev' },
+    {
+      productId: 'p2',
+      productLabel: 'Ext · Dev',
+      categoryId: 'c2',
+      categoryLabel: 'Chrome',
+      goal: 'chrome_extension_dev',
+    },
   ],
   [
     'v3',
-    { productId: 'p3', productLabel: 'Stock acc', categoryId: 'c1', categoryLabel: 'Google Ads', goal: null },
+    {
+      productId: 'p3',
+      productLabel: 'Stock acc',
+      categoryId: 'c1',
+      categoryLabel: 'Google Ads',
+      goal: null,
+    },
   ],
 ]);
 

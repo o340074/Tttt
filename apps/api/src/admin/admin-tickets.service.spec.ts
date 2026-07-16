@@ -147,9 +147,9 @@ describe('AdminTicketsService (E8 tickets)', () => {
       requesterEmail: 'buyer@shop.com',
     });
     await tickets.update(supportId, ticket.id, { status: 'closed' });
-    await expect(
-      tickets.addMessage(supportId, ticket.id, { body: 'late' }),
-    ).rejects.toMatchObject({ code: 'CONFLICT' });
+    await expect(tickets.addMessage(supportId, ticket.id, { body: 'late' })).rejects.toMatchObject({
+      code: 'CONFLICT',
+    });
   });
 
   it('rejects assigning to a non-staff user', async () => {

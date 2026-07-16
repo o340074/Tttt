@@ -217,9 +217,7 @@ export class AdminTicketsService {
     }
     if (dto.assigneeId !== undefined && dto.assigneeId !== ticket.assigneeId) {
       if (dto.assigneeId) await this.assertStaff(dto.assigneeId);
-      data.assignee = dto.assigneeId
-        ? { connect: { id: dto.assigneeId } }
-        : { disconnect: true };
+      data.assignee = dto.assigneeId ? { connect: { id: dto.assigneeId } } : { disconnect: true };
       diff.assignee = { from: ticket.assigneeId, to: dto.assigneeId };
     }
 
@@ -296,16 +294,14 @@ export class AdminTicketsService {
       ...this.toListItem(row),
       closedAt: row.closedAt?.toISOString() ?? null,
       updatedAt: row.updatedAt.toISOString(),
-      messages: row.messages.map(
-        (m): AdminTicketMessage => ({
-          id: m.id,
-          authorId: m.authorId,
-          authorEmail: m.author?.email ?? null,
-          body: m.body,
-          isInternal: m.isInternal,
-          createdAt: m.createdAt.toISOString(),
-        }),
-      ),
+      messages: row.messages.map((m): AdminTicketMessage => ({
+        id: m.id,
+        authorId: m.authorId,
+        authorEmail: m.author?.email ?? null,
+        body: m.body,
+        isInternal: m.isInternal,
+        createdAt: m.createdAt.toISOString(),
+      })),
     };
   }
 }
