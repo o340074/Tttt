@@ -96,6 +96,8 @@ export interface RegisterRequest {
   email: string;
   password: string;
   locale?: Locale;
+  /** Optional referral code captured from an invite link (E12). Unknown/own codes are ignored. */
+  referralCode?: string;
 }
 
 /** POST /auth/login */
@@ -300,7 +302,13 @@ export interface ModerateReviewRequest {
 export type LedgerDirection = 'credit' | 'debit';
 
 /** What a ledger entry references (money movement source). */
-export type LedgerRefType = 'topup' | 'order' | 'refund' | 'adjustment' | 'replacement';
+export type LedgerRefType =
+  | 'topup'
+  | 'order'
+  | 'refund'
+  | 'adjustment'
+  | 'replacement'
+  | 'referral';
 
 export type TopUpStatus = 'pending' | 'paid' | 'expired' | 'failed';
 
@@ -1500,14 +1508,15 @@ export interface NotificationTemplate {
  */
 export type LocalizedNotificationTemplate = Record<Locale, NotificationTemplate>;
 
-/** The transactional events that carry a template (E9, extended in E10). */
+/** The transactional events that carry a template (E9, extended in E10, E12). */
 export type NotificationEventKey =
   | 'orderPaid'
   | 'warmingReady'
   | 'ticketReply'
   | 'warrantyReplaced'
   | 'warrantyRefunded'
-  | 'warrantyRejected';
+  | 'warrantyRejected'
+  | 'referralRewarded';
 
 /**
  * Typed view over the key-value Setting store. Only non-secret operational
@@ -1606,7 +1615,8 @@ export type NotificationType =
   | 'ticket_reply'
   | 'warranty_replaced'
   | 'warranty_refunded'
-  | 'warranty_rejected';
+  | 'warranty_rejected'
+  | 'referral_rewarded';
 
 /**
  * A stored in-app notification for the current user. `data` carries non-secret
@@ -1625,6 +1635,8 @@ export interface NotificationView {
     ticketNumber?: string;
     claimId?: string;
     claimNumber?: string;
+    /** Reward credited to the referrer (E12), for the notification deep-link. */
+    referralReward?: Money;
   };
   readAt: string | null;
   createdAt: string;
@@ -1707,4 +1719,86 @@ export interface OpsMetrics {
   reconciliation: ReconciliationMetric;
   notificationsQueue: QueueDepthMetric;
   topUps: TopUpHealthMetric;
+}
+
+// ============================================================
+// Referral programme (E12, docs/16 §E12+)
+// ============================================================
+
+/** A referral's lifecycle as seen in APIs (mirrors the Prisma enum). */
+export type ReferralStatus = 'pending' | 'qualified' | 'cancelled';
+
+/** One of the current user's referrals (GET /referrals/me → `referrals`). */
+export interface ReferralView {
+  id: string;
+  /** Masked referee email, e.g. "a•••@example.com". */
+  refereeMasked: string;
+  status: ReferralStatus;
+  /** Credit posted to the current user when this referral qualified (0 until then). */
+  reward: Money;
+  /** ISO 8601 date-time the referee registered under the code. */
+  createdAt: string;
+  /** ISO 8601 date-time of the qualifying purchase, or null. */
+  qualifiedAt: string | null;
+}
+
+/** Aggregate counters for the current user's referrals. */
+export interface ReferralStats {
+  total: number;
+  pending: number;
+  qualified: number;
+  /** SUM of referrer rewards actually credited (qualified referrals). */
+  earned: Money;
+}
+
+/**
+ * GET /referrals/me — the current user's invite code, a ready-to-share link, the
+ * per-side reward terms in force, aggregate stats and their referral list.
+ */
+export interface MyReferral {
+  code: string;
+  /** Absolute invite URL (WEB_URL + ?ref=CODE). */
+  link: string;
+  /** Whether the programme is currently posting rewards (env toggle). */
+  enabled: boolean;
+  /** Reward terms in force now (snapshotted per referral at qualification). */
+  terms: {
+    referrerReward: Money;
+    refereeReward: Money;
+    minPurchase: Money;
+  };
+  stats: ReferralStats;
+  referrals: ReferralView[];
+}
+
+/** One row of the admin referrals queue (GET /admin/referrals). */
+export interface AdminReferral {
+  id: string;
+  status: ReferralStatus;
+  code: string;
+  referrerEmail: string;
+  refereeEmail: string;
+  referrerReward: Money;
+  refereeReward: Money;
+  qualifyingOrderId: string | null;
+  createdAt: string;
+  qualifiedAt: string | null;
+  cancelledReason: string | null;
+}
+
+/** GET /admin/referrals — paginated queue plus programme-wide totals. */
+export interface AdminReferralList extends Paginated<AdminReferral> {
+  summary: {
+    total: number;
+    pending: number;
+    qualified: number;
+    cancelled: number;
+    /** SUM of all rewards posted (both sides) across qualified referrals. */
+    rewardsPaid: Money;
+  };
+}
+
+/** PATCH /admin/referrals/:id/cancel — reason for cancelling a pending referral. */
+export interface CancelReferralRequest {
+  reason: string;
 }

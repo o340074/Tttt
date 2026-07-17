@@ -10,6 +10,7 @@ import { SUPPORTED_LOCALES } from '../catalog/locale';
 import { PayloadCryptoService } from '../crypto/payload-crypto.service';
 import { NotificationsService } from '../notifications/notifications.service';
 import { PrismaService } from '../prisma/prisma.service';
+import { ReferralsService } from '../referrals/referrals.service';
 import { StockService } from '../stock/stock.service';
 import { IdempotencyService } from '../wallet/idempotency.service';
 import { LedgerService } from '../wallet/ledger.service';
@@ -137,6 +138,7 @@ export class OrdersService {
     private readonly audit: AuditService,
     private readonly warming: WarmingService,
     private readonly notifications: NotificationsService,
+    private readonly referrals: ReferralsService,
     private readonly config: ConfigService<Env, true>,
   ) {}
 
@@ -166,6 +168,8 @@ export class OrdersService {
         { number: response.number },
         { orderId: response.id, orderNumber: response.number },
       );
+      // A referral may have just qualified on this order — notify the inviter (E12).
+      await this.referrals.notifyQualified(response.id);
       return response;
     } catch (error) {
       // Free the key so the client may retry after fixing the cause
@@ -418,7 +422,14 @@ export class OrdersService {
         });
       }
 
-      // 6) The cart is spent.
+      // 6) A pending referral qualifies on the buyer's first clearing purchase
+      //    (E12): flips it to qualified and credits both sides atomically here.
+      await this.referrals.qualifyWithinCheckout(tx, userId, {
+        id: order.id,
+        total: money.total,
+      });
+
+      // 7) The cart is spent.
       await tx.cartItem.deleteMany({ where: { cartId } });
 
       // Re-read with warming jobs/tasks so the response carries buyer progress.

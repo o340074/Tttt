@@ -21,6 +21,8 @@ import type {
   ProductTranslation,
   ProductVariant as DbVariant,
   PromoCode as DbPromoCode,
+  Referral as DbReferral,
+  ReferralCode as DbReferralCode,
   Setting as DbSetting,
   StockItem as DbStockItem,
   Ticket as DbTicket,
@@ -35,6 +37,9 @@ import type {
 } from '@prisma/client';
 import { MailerService } from '../mailer/mailer.service';
 import { NotificationsService } from '../notifications/notifications.service';
+import { AuditService } from '../audit/audit.service';
+import { LedgerService } from '../wallet/ledger.service';
+import { ReferralsService } from '../referrals/referrals.service';
 import type { PrismaService } from '../prisma/prisma.service';
 import type { RedisService } from '../redis/redis.service';
 import type { Env } from '../config/env';
@@ -2782,6 +2787,194 @@ export class FakeNotificationStore {
   }
 }
 
+export class FakeReferralCodeStore {
+  readonly rows: DbReferralCode[] = [];
+
+  create({ data }: { data: { userId: string; code: string } }): Promise<DbReferralCode> {
+    if (this.rows.some((r) => r.userId === data.userId)) {
+      return Promise.reject(uniqueViolation('referral_codes_userId_key'));
+    }
+    if (this.rows.some((r) => r.code === data.code)) {
+      return Promise.reject(uniqueViolation('referral_codes_code_key'));
+    }
+    const row: DbReferralCode = {
+      id: randomUUID(),
+      userId: data.userId,
+      code: data.code,
+      createdAt: new Date(),
+    };
+    this.rows.push(row);
+    return Promise.resolve(row);
+  }
+
+  findUnique({
+    where,
+  }: {
+    where: { userId?: string; code?: string };
+  }): Promise<DbReferralCode | null> {
+    const row = this.rows.find(
+      (r) =>
+        (where.userId === undefined || r.userId === where.userId) &&
+        (where.code === undefined || r.code === where.code),
+    );
+    return Promise.resolve(row ?? null);
+  }
+}
+
+interface ReferralWhere {
+  referrerId?: string;
+  refereeId?: string;
+  status?: DbReferral['status'];
+  qualifyingOrderId?: string;
+  id?: string;
+}
+
+function matchesReferral(row: DbReferral, where: ReferralWhere = {}): boolean {
+  return (
+    (where.id === undefined || row.id === where.id) &&
+    (where.referrerId === undefined || row.referrerId === where.referrerId) &&
+    (where.refereeId === undefined || row.refereeId === where.refereeId) &&
+    (where.status === undefined || row.status === where.status) &&
+    (where.qualifyingOrderId === undefined || row.qualifyingOrderId === where.qualifyingOrderId)
+  );
+}
+
+export class FakeReferralStore {
+  readonly rows: DbReferral[] = [];
+
+  constructor(
+    private readonly users: () => FakeUserStore,
+    private readonly codes: () => FakeReferralCodeStore,
+  ) {}
+
+  create({
+    data,
+  }: {
+    data: { referrerId: string; refereeId: string; codeId: string };
+  }): Promise<DbReferral> {
+    if (this.rows.some((r) => r.refereeId === data.refereeId)) {
+      return Promise.reject(uniqueViolation('referrals_refereeId_key'));
+    }
+    const row: DbReferral = {
+      id: randomUUID(),
+      referrerId: data.referrerId,
+      refereeId: data.refereeId,
+      codeId: data.codeId,
+      status: 'pending',
+      referrerReward: new Prisma.Decimal(0),
+      refereeReward: new Prisma.Decimal(0),
+      qualifyingOrderId: null,
+      qualifiedAt: null,
+      cancelledReason: null,
+      createdAt: new Date(),
+      updatedAt: new Date(),
+    };
+    this.rows.push(row);
+    return Promise.resolve(row);
+  }
+
+  findUnique({ where }: { where: ReferralWhere }): Promise<DbReferral | null> {
+    return Promise.resolve(this.rows.find((r) => matchesReferral(r, where)) ?? null);
+  }
+
+  findFirst({ where }: { where?: ReferralWhere } = {}): Promise<DbReferral | null> {
+    return Promise.resolve(this.rows.find((r) => matchesReferral(r, where)) ?? null);
+  }
+
+  findMany(args: {
+    where?: ReferralWhere;
+    include?: unknown;
+    orderBy?: unknown;
+    skip?: number;
+    take?: number;
+  }): Promise<unknown[]> {
+    let rows = this.rows.filter((r) => matchesReferral(r, args.where));
+    rows = [...rows].sort((a, b) => b.createdAt.getTime() - a.createdAt.getTime());
+    const skip = args.skip ?? 0;
+    rows = rows.slice(skip, args.take !== undefined ? skip + args.take : undefined);
+    return Promise.resolve(rows.map((r) => this.withInclude(r, args.include)));
+  }
+
+  count({ where }: { where?: ReferralWhere } = {}): Promise<number> {
+    return Promise.resolve(this.rows.filter((r) => matchesReferral(r, where)).length);
+  }
+
+  updateMany({
+    where,
+    data,
+  }: {
+    where?: ReferralWhere;
+    data: Partial<DbReferral>;
+  }): Promise<{ count: number }> {
+    let count = 0;
+    for (const row of this.rows.filter((r) => matchesReferral(r, where))) {
+      Object.assign(row, data, { updatedAt: new Date() });
+      count += 1;
+    }
+    return Promise.resolve({ count });
+  }
+
+  update({
+    where,
+    data,
+    include,
+  }: {
+    where: { id: string };
+    data: Partial<DbReferral>;
+    include?: unknown;
+  }): Promise<unknown> {
+    const row = this.rows.find((r) => r.id === where.id);
+    if (!row) return Promise.reject(new Error('Referral not found'));
+    Object.assign(row, data, { updatedAt: new Date() });
+    return Promise.resolve(this.withInclude(row, include));
+  }
+
+  groupBy(_args: {
+    by: ['status'];
+    _count: { _all: true };
+  }): Promise<{ status: DbReferral['status']; _count: { _all: number } }[]> {
+    const counts = new Map<DbReferral['status'], number>();
+    for (const r of this.rows) counts.set(r.status, (counts.get(r.status) ?? 0) + 1);
+    return Promise.resolve(
+      [...counts.entries()].map(([status, n]) => ({ status, _count: { _all: n } })),
+    );
+  }
+
+  aggregate(args: {
+    where?: ReferralWhere;
+    _sum: { referrerReward?: true; refereeReward?: true };
+  }): Promise<{ _sum: { referrerReward: Prisma.Decimal | null; refereeReward: Prisma.Decimal | null } }> {
+    const rows = this.rows.filter((r) => matchesReferral(r, args.where));
+    const sum = (pick: (r: DbReferral) => Prisma.Decimal): Prisma.Decimal | null =>
+      rows.length === 0 ? null : rows.reduce((acc, r) => acc.plus(pick(r)), new Prisma.Decimal(0));
+    return Promise.resolve({
+      _sum: {
+        referrerReward: sum((r) => r.referrerReward),
+        refereeReward: sum((r) => r.refereeReward),
+      },
+    });
+  }
+
+  private withInclude(row: DbReferral, include: unknown): unknown {
+    if (!include || typeof include !== 'object') return row;
+    const inc = include as Record<string, unknown>;
+    const out: Record<string, unknown> = { ...row };
+    if (inc.referee) {
+      const u = this.users().rows.find((x) => x.id === row.refereeId);
+      out.referee = { email: u?.email ?? '' };
+    }
+    if (inc.referrer) {
+      const u = this.users().rows.find((x) => x.id === row.referrerId);
+      out.referrer = { email: u?.email ?? '' };
+    }
+    if (inc.code) {
+      const c = this.codes().rows.find((x) => x.id === row.codeId);
+      out.code = { code: c?.code ?? '' };
+    }
+    return out;
+  }
+}
+
 export interface FakePrismaStores {
   user: FakeUserStore;
   category: FakeCategoryStore;
@@ -2814,6 +3007,8 @@ export interface FakePrismaStores {
   setting: FakeSettingStore;
   notification: FakeNotificationStore;
   warrantyClaim: FakeWarrantyClaimStore;
+  referralCode: FakeReferralCodeStore;
+  referral: FakeReferralStore;
 }
 
 interface StoreSnapshot {
@@ -2905,6 +3100,11 @@ export function makeFakePrismaService(): PrismaService & FakePrismaStores {
     () => order,
     () => ticketMessage,
   );
+  const referralCode = new FakeReferralCodeStore();
+  const referral = new FakeReferralStore(
+    () => userStore,
+    () => referralCode,
+  );
   const stores: FakePrismaStores = {
     user: userStore,
     category: new FakeCategoryStore(),
@@ -2937,6 +3137,8 @@ export function makeFakePrismaService(): PrismaService & FakePrismaStores {
     setting: new FakeSettingStore(),
     notification: new FakeNotificationStore(),
     warrantyClaim,
+    referralCode,
+    referral,
   };
   return {
     ...stores,
@@ -2974,6 +3176,10 @@ export const TEST_ENV: Partial<Env> = {
   WARRANTY_GRACE_MINUTES: 60,
   SENTRY_DSN: '',
   SENTRY_RELEASE: '',
+  REFERRAL_ENABLED: true,
+  REFERRAL_REFERRER_REWARD: '5.00',
+  REFERRAL_REFEREE_REWARD: '5.00',
+  REFERRAL_MIN_PURCHASE: '10.00',
 };
 
 export function makeFakeConfigService(overrides: Partial<Env> = {}): ConfigService<Env, true> {
@@ -2992,4 +3198,23 @@ export function makeFakeNotificationsService(
   prisma: PrismaService & FakePrismaStores,
 ): NotificationsService {
   return new NotificationsService(prisma, new MailerService(makeFakeConfigService()));
+}
+
+/**
+ * A real ReferralsService over the fakes (E12). Orders/warming specs wire this
+ * so checkout's qualification hook runs against the fake stores; pass config
+ * overrides to tune reward terms.
+ */
+export function makeFakeReferralsService(
+  prisma: PrismaService & FakePrismaStores,
+  overrides: Partial<Env> = {},
+): ReferralsService {
+  const config = makeFakeConfigService(overrides);
+  return new ReferralsService(
+    prisma,
+    new LedgerService(),
+    new AuditService(prisma),
+    makeFakeNotificationsService(prisma),
+    config,
+  );
 }

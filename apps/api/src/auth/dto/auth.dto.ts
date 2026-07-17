@@ -1,4 +1,12 @@
-import { IsEmail, IsIn, IsNotEmpty, IsOptional, IsString, MinLength } from 'class-validator';
+import {
+  IsEmail,
+  IsIn,
+  IsNotEmpty,
+  IsOptional,
+  IsString,
+  MaxLength,
+  MinLength,
+} from 'class-validator';
 import { Transform } from 'class-transformer';
 import type {
   ForgotPasswordRequest,
@@ -24,6 +32,11 @@ export class RegisterDto implements RegisterRequest {
   @IsOptional()
   @IsIn(['en', 'ru'])
   locale?: Locale;
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(64)
+  referralCode?: string;
 }
 
 export class LoginDto implements LoginRequest {

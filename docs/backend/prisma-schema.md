@@ -192,6 +192,7 @@ enum LedgerRefType {
   refund
   adjustment
   replacement
+  referral
 }
 
 enum TopUpStatus {
@@ -828,6 +829,7 @@ enum NotificationType {
   warranty_replaced // E10
   warranty_refunded // E10
   warranty_rejected // E10
+  referral_rewarded // E12
 }
 
 model Notification {
@@ -959,6 +961,55 @@ model IdempotencyKey {
   @@unique([key, endpoint])
   @@index([createdAt])
   @@map("idempotency_keys")
+}
+
+// ============================================================
+// Referrals (E12). Код-приглашение живёт в ReferralCode (один на пользователя,
+// выпускается лениво). Referral фиксирует связь referrer→referee на регистрации;
+// первая подходящая покупка реферала начисляет вознаграждение каждой стороне
+// (ledger, refType=referral, Decimal + идемпотентно) и переводит в `qualified`.
+// Суммы снимаются на момент qualified — правки конфига не переписывают историю.
+// ============================================================
+
+enum ReferralStatus {
+  pending
+  qualified
+  cancelled
+}
+
+model ReferralCode {
+  id        String   @id @default(uuid()) @db.Uuid
+  userId    String   @unique @db.Uuid
+  code      String   @unique // человекочитаемый, напр. AV-7QK4ZP
+  createdAt DateTime @default(now())
+
+  user      User       @relation("UserReferralCode", fields: [userId], references: [id], onDelete: Cascade)
+  referrals Referral[]
+
+  @@map("referral_codes")
+}
+
+model Referral {
+  id                String         @id @default(uuid()) @db.Uuid
+  referrerId        String         @db.Uuid // владелец кода (пригласивший)
+  refereeId         String         @unique @db.Uuid // приглашённый — один реферал на человека
+  codeId            String         @db.Uuid
+  status            ReferralStatus @default(pending)
+  referrerReward    Decimal        @default(0) @db.Decimal(18, 2) // снимок на qualified
+  refereeReward     Decimal        @default(0) @db.Decimal(18, 2) // снимок на qualified
+  qualifyingOrderId String?        @db.Uuid // заказ, активировавший вознаграждение
+  qualifiedAt       DateTime?
+  cancelledReason   String? // причина отмены ожидающего реферала (staff)
+  createdAt         DateTime       @default(now())
+  updatedAt         DateTime       @updatedAt
+
+  referrer User         @relation("ReferralReferrer", fields: [referrerId], references: [id], onDelete: Cascade)
+  referee  User         @relation("ReferralReferee", fields: [refereeId], references: [id], onDelete: Cascade)
+  code     ReferralCode @relation(fields: [codeId], references: [id], onDelete: Restrict)
+
+  @@index([referrerId, createdAt])
+  @@index([status, createdAt])
+  @@map("referrals")
 }
 ```
 

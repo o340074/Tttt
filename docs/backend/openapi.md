@@ -48,6 +48,7 @@ tags:
   - name: Support
   - name: Warming
   - name: Inventory
+  - name: Referrals
   - name: Admin
 
 # ============================================================
@@ -181,6 +182,10 @@ components:
         email: { type: string, format: email }
         password: { type: string, minLength: 8 }
         locale: { type: string, enum: [en, ru], default: en }
+        referralCode:
+          type: string
+          maxLength: 64
+          description: Код-приглашение из реф-ссылки (E12). Неизвестный/собственный код игнорируется.
 
     LoginRequest:
       type: object
@@ -519,7 +524,7 @@ components:
         direction: { type: string, enum: [credit, debit] }
         amount: { $ref: '#/components/schemas/Money' }
         balanceAfter: { $ref: '#/components/schemas/Money' }
-        refType: { type: string, enum: [topup, order, refund, adjustment, replacement] }
+        refType: { type: string, enum: [topup, order, refund, adjustment, replacement, referral] }
         refId: { type: string, format: uuid }
         createdAt: { type: string, format: date-time }
 
@@ -1387,6 +1392,73 @@ components:
       required: [hidden]
       properties:
         hidden: { type: boolean }
+
+    # ---- Рефералы (E12) ----
+    ReferralStatus:
+      type: string
+      enum: [pending, qualified, cancelled]
+    ReferralView:
+      type: object
+      properties:
+        id: { type: string, format: uuid }
+        refereeMasked: { type: string, description: Маскированный email реферала (a•••@example.com) }
+        status: { $ref: '#/components/schemas/ReferralStatus' }
+        reward: { $ref: '#/components/schemas/Money' }
+        createdAt: { type: string, format: date-time }
+        qualifiedAt: { type: string, format: date-time, nullable: true }
+    MyReferral:
+      type: object
+      properties:
+        code: { type: string }
+        link: { type: string, description: Абсолютная ссылка-приглашение (WEB_URL + ?ref=CODE) }
+        enabled: { type: boolean, description: Начисляет ли программа вознаграждения сейчас }
+        terms:
+          type: object
+          properties:
+            referrerReward: { $ref: '#/components/schemas/Money' }
+            refereeReward: { $ref: '#/components/schemas/Money' }
+            minPurchase: { $ref: '#/components/schemas/Money' }
+        stats:
+          type: object
+          properties:
+            total: { type: integer }
+            pending: { type: integer }
+            qualified: { type: integer }
+            earned: { $ref: '#/components/schemas/Money' }
+        referrals: { type: array, items: { $ref: '#/components/schemas/ReferralView' } }
+    AdminReferral:
+      type: object
+      properties:
+        id: { type: string, format: uuid }
+        status: { $ref: '#/components/schemas/ReferralStatus' }
+        code: { type: string }
+        referrerEmail: { type: string }
+        refereeEmail: { type: string }
+        referrerReward: { $ref: '#/components/schemas/Money' }
+        refereeReward: { $ref: '#/components/schemas/Money' }
+        qualifyingOrderId: { type: string, format: uuid, nullable: true }
+        createdAt: { type: string, format: date-time }
+        qualifiedAt: { type: string, format: date-time, nullable: true }
+        cancelledReason: { type: string, nullable: true }
+    AdminReferralList:
+      type: object
+      properties:
+        data: { type: array, items: { $ref: '#/components/schemas/AdminReferral' } }
+        meta: { $ref: '#/components/schemas/PageMeta' }
+        summary:
+          type: object
+          properties:
+            total: { type: integer }
+            pending: { type: integer }
+            qualified: { type: integer }
+            cancelled: { type: integer }
+            rewardsPaid: { $ref: '#/components/schemas/Money' }
+    CancelReferralRequest:
+      type: object
+      required: [reason]
+      properties:
+        reason: { type: string, minLength: 1, maxLength: 500 }
+
     WarrantyClaimRef:
       type: object
       properties:
@@ -1807,6 +1879,50 @@ paths:
         '200':
           content: { application/json: { schema: { $ref: '#/components/schemas/AdminReviewListItem' } } }
         '404': { $ref: '#/components/responses/NotFound' }
+
+  # ---------------- Рефералы (E12) ----------------
+  /referrals/me:
+    get:
+      tags: [Referrals]
+      summary: Мой код-приглашение, ссылка, условия, статистика и список рефералов
+      description: >
+        Код выпускается лениво при первом обращении. Ответ содержит готовую
+        ссылку-приглашение (WEB_URL + ?ref=CODE), текущие условия вознаграждения,
+        агрегированную статистику и список рефералов (email реферала замаскирован).
+      responses:
+        '200':
+          content: { application/json: { schema: { $ref: '#/components/schemas/MyReferral' } } }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+
+  /admin/referrals:
+    get:
+      tags: [Admin]
+      summary: Очередь рефералов + сводные итоги программы (REPORTS_STAFF)
+      parameters:
+        - $ref: '#/components/parameters/Page'
+        - $ref: '#/components/parameters/Limit'
+        - { name: status, in: query, schema: { type: string, enum: [pending, qualified, cancelled] } }
+      responses:
+        '200':
+          content: { application/json: { schema: { $ref: '#/components/schemas/AdminReferralList' } } }
+  /admin/referrals/{id}/cancel:
+    patch:
+      tags: [Admin]
+      summary: Отменить ожидающий реферал (REPORTS_STAFF; только pending; аудит)
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: string, format: uuid } }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/CancelReferralRequest' }
+      responses:
+        '200':
+          content: { application/json: { schema: { $ref: '#/components/schemas/AdminReferral' } } }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409':
+          description: Реферал не в статусе pending (нельзя отменить).
+          content: { application/json: { schema: { $ref: '#/components/schemas/Error' } } }
 
   # ---------------- Корзина ----------------
   /cart:

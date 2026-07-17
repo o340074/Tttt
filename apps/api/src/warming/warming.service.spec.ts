@@ -12,6 +12,7 @@ import {
   makeCategoryRow,
   makeFakeConfigService,
   makeFakeNotificationsService,
+  makeFakeReferralsService,
   makeFakePrismaService,
   makeFakeRedisService,
   makeProductRow,
@@ -142,6 +143,7 @@ describe('WarmingService (E6 made-to-order)', () => {
       audit,
       warming,
       notifications,
+      makeFakeReferralsService(prisma),
       config,
     );
     const buyer = await prisma.user.create({

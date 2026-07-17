@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import type { FormEvent } from 'react';
 import { useTranslation } from 'react-i18next';
-import { Link, useLocation, useNavigate } from 'react-router-dom';
+import { Link, useLocation, useNavigate, useSearchParams } from 'react-router-dom';
 import { Banner } from '../../components/ui/Banner';
 import { Button } from '../../components/ui/Button';
 import { TextField } from '../../components/ui/TextField';
@@ -20,6 +20,9 @@ export function AuthPage({ view }: AuthPageProps) {
   const { login, register } = useAuth();
   const navigate = useNavigate();
   const location = useLocation();
+  const [searchParams] = useSearchParams();
+  // Invite code captured from a referral link (E12): /auth/register?ref=AV-XXXXXX.
+  const referralCode = searchParams.get('ref')?.trim() || undefined;
 
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
@@ -50,7 +53,12 @@ export function AuthPage({ view }: AuthPageProps) {
     setSubmitting(true);
     try {
       if (isRegister) {
-        await register({ email, password, locale: (i18n.resolvedLanguage as Locale) ?? 'en' });
+        await register({
+          email,
+          password,
+          locale: (i18n.resolvedLanguage as Locale) ?? 'en',
+          ...(referralCode ? { referralCode } : {}),
+        });
         navigate('/auth/verify', { state: { email } });
       } else {
         await login({ email, password });
@@ -109,6 +117,10 @@ export function AuthPage({ view }: AuthPageProps) {
       </div>
 
       {banner && <Banner tone="error">{banner}</Banner>}
+
+      {isRegister && referralCode && (
+        <Banner tone="success">{t('auth.register.invited', { code: referralCode })}</Banner>
+      )}
 
       <form onSubmit={(e) => void onSubmit(e)} noValidate>
         <TextField

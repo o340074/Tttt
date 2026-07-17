@@ -16,6 +16,7 @@ import { CartModule } from './cart/cart.module';
 import { CatalogModule } from './catalog/catalog.module';
 import { InventoryModule } from './inventory/inventory.module';
 import { OrdersModule } from './orders/orders.module';
+import { ReferralsModule } from './referrals/referrals.module';
 import { ReviewsModule } from './reviews/reviews.module';
 import { OpsModule } from './ops/ops.module';
 import { UsersModule } from './users/users.module';
@@ -42,6 +43,7 @@ import { WarmingModule } from './warming/warming.module';
     InventoryModule,
     WarmingModule,
     OrdersModule,
+    ReferralsModule,
     ReviewsModule,
     TicketsModule,
     WarrantyModule,

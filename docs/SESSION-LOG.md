@@ -51,11 +51,23 @@
   фейк) + поллинг-fallback клиента. Проверено вживую на реальном Redis (межинстансная
   доставка B→A; на источнике — ровно одна доставка, без дубля). Схема БД/публичный API
   не менялись. lint/typecheck/**358 тестов**/build зелёные.
-- **Следующий шаг:** бизнес-подтверждение платёжного провайдера/хостинга; финальная
-  юр-вычитка ToS/Privacy/Refund; прогон k6 в среде с установленным k6. Далее — пост-MVP
-  (E12+). Остаточный тех-долг realtime закрыт.
-- **Ветка:** `claude/advault-track-selection-td364b` (Трек A fan-out; отходит от
-  `…m5-release-debts-0alyde` = E0…E11 + M5 release-ops + долги Трека B). В main код ещё
+- **Трек B — E12: Реферальная программа — ГОТОВО** (см. верхнюю запись): код-приглашение
+  (`ReferralCode`, лениво), атрибуция на регистрации (`?ref=CODE`), активация на первой
+  подходящей покупке реферала → вознаграждение обеим сторонам через ledger
+  (`refType=referral`, Decimal, идемпотентно; суммы-снимок), env-конфиг (`REFERRAL_*`),
+  уведомление `referral_rewarded`, витрина `/referrals` + баннер на регистрации,
+  админ-очередь `/admin/referrals` (REPORTS_STAFF: сводка + отмена pending). EN/RU +
+  locales.spec в синхроне. Схема: +`ReferralStatus`, +`ReferralCode`/`Referral`,
+  +`LedgerRefType.referral`, +`NotificationType.referral_rewarded` (миграция
+  `20260717221308_referrals`). Проверено вживую (curl полного цикла на реальном
+  Postgres+Redis: топ-ап→checkout→оба баланса +5.00, 2 ledger-credit refType=referral,
+  referral→qualified, уведомление). lint/typecheck/**376 тестов**/build зелёные.
+- **Следующий шаг:** пост-MVP E12+ — следующая фича Трека B (напр. полу-автоматизация
+  прогрева, расширенная аналитика/BI, Octo/прокси авто-провижининг) или Трек C
+  (качество/UX). Бизнес-подтверждение платёжного провайдера/хостинга; финальная
+  юр-вычитка ToS/Privacy/Refund; прогон k6.
+- **Ветка:** `claude/advault-track-selection-3kek3w` (E12 рефералы; отходит от
+  `…track-selection-td364b` = E0…E11 + M5 release-ops + долги Трека A/B). В main код ещё
   не влит.
 - **Прогресс по эпикам (из `docs/16`):**
 
@@ -74,12 +86,61 @@
 | E9 | Поддержка и уведомления | ✅ готово (клиентский портал тикетов · in-app Notification+бейдж · email+in-app по order.paid/warming.ready/ticket.reply на per-locale шаблонах Settings) |
 | E10 | Гарантии, замены, возвраты | ✅ готово (WarrantyClaim · клиентская заявка в окне warrantyHours · замена стока/rework warm · возврат через ledger · админ-очередь approve/reject/fulfill · RBAC+аудит+уведомления) |
 | E11 | Полировка, безопасность, запуск | ✅ готово (security-заголовки+CSP · BullMQ-уведомления · отзывы/рейтинг · warm-rework↔claim · юр-страницы · E2E Playwright · чек-лист запуска docs/09 · ранбук docs/17) |
+| E12 | Пост-MVP (Трек B) | 🟡 в работе — ✅ реферальная программа (код-приглашение · атрибуция · активация+двусторонний reward через ledger · env-конфиг · уведомление · витрина+админка · EN/RU · проверено вживую). Далее: полу-автоматизация прогрева · аналитика/BI · Octo/прокси авто-провижининг · оплата картой/криптой за заказ · мультивендор |
 
 Легенда: ⬜ не начато · 🟡 в работе · ✅ готово
 
 ---
 
 ## Записи
+
+### Сессия — Трек B · E12: Реферальная программа — ГОТОВО
+- **Развилки (asking):** выбран **Трек B** (пост-MVP E12+), первая фича — **реферальная
+  программа** (полный вертикальный срез без внешних зависимостей, тестируется вживую).
+- **Контракты вперёд:** `docs/backend/prisma-schema.md` (+`ReferralStatus`,
+  `ReferralCode`, `Referral`, `LedgerRefType.referral`, `NotificationType.referral_rewarded`)
+  и `openapi.md` (тег `Referrals`; `GET /referrals/me`, `GET /admin/referrals`,
+  `PATCH /admin/referrals/{id}/cancel`; схемы `MyReferral`/`ReferralView`/`AdminReferral`/
+  `AdminReferralList`/`CancelReferralRequest`; `RegisterRequest.referralCode`).
+- **Модель:** `ReferralCode` — один код на пользователя, выпускается лениво при первом
+  `GET /referrals/me` (collision-safe). `Referral` — связь referrer→referee (уник.
+  `refereeId` = один реферал на человека), суммы-снимок вознаграждения, `qualifyingOrderId`.
+  Миграция `20260717221308_referrals` (применена на реальном Postgres).
+- **Атрибуция:** `AuthService.register` принимает `referralCode` →
+  `ReferralsService.attributeOnRegister` (best-effort, никогда не ломает регистрацию;
+  игнорирует неизвестный/собственный код; уник. `refereeId` — атрибуция один раз).
+- **Активация (деньги):** внутри транзакции checkout после дебета —
+  `qualifyWithinCheckout(tx, refereeId, order)`: при pending-реферале и `total ≥
+  REFERRAL_MIN_PURCHASE` флип `pending→qualified` (status-guarded updateMany —
+  идемпотентно) + `ledger.credit` обеим сторонам (реферер: `refId=referral.id`; реферал:
+  `refId=order.id` — разные refId держат уник. `(refType,refId,direction)`). После
+  коммита — `notifyQualified` (аудит `referral.qualified` + in-app/email
+  `referral_rewarded` рефереру). Всё Decimal, транзакции, идемпотентно.
+- **Конфиг (`env.ts`):** `REFERRAL_ENABLED` (пауза = коды резолвятся, награды не идут),
+  `REFERRAL_REFERRER_REWARD`/`REFERRAL_REFEREE_REWARD`/`REFERRAL_MIN_PURCHASE`
+  (decimal-строки; `.env.example` обновлён).
+- **Админка:** `AdminReferralsService`/`Controller` под `REPORTS_STAFF` — список с
+  фильтром по статусу + сводка (pending/qualified/cancelled/rewardsPaid), отмена
+  **только** pending (`cancel`, аудит). Пункт нав `/admin/referrals`.
+- **Фронт:** `features/referrals/api.ts`; страница `/referrals` (код, копи-ссылка,
+  условия, статистика, список с маской email); карточка на `/account`; захват `?ref=` на
+  регистрации + баннер-«приглашён»; `AdminReferralsPage`. Роуты/нав подключены.
+- **i18n:** EN/RU ключи (`referrals.*`, `account.referrals*`, `auth.register.invited`,
+  `admin.nav.referrals`, `admin.referrals.*`); `locales.spec` зелёный. Событие
+  `referralRewarded` добавлено в `NOTIFICATION_EVENTS`/`EVENT_TO_TYPE`/дефолт-шаблоны
+  (EN/RU); `TEMPLATE_KEYS` админ-настроек не трогали (событие использует дефолт).
+- **Тесты (+18 → 376 API):** `referrals.logic.spec` (код/маска/ссылка),
+  `referrals.service.spec` (минт кода, атрибуция/само-реферал/неизвестный код,
+  активация с двусторонним кредитом, идемпотентность, min-purchase, disabled, стата,
+  уведомление), `admin-referrals.service.spec` (список+сводка, фильтр, отмена pending,
+  409 на не-pending). Фейк-prisma расширен `FakeReferralStore`/`FakeReferralCodeStore`
+  (+`makeFakeReferralsService`, `TEST_ENV.REFERRAL_*`); поправлены конструкторы в
+  auth/orders/warming спеках.
+- **Проверка вживую (реальный Postgres 16 + Redis):** boot API без DI-циклов (модуль
+  `@Global`), `GET /referrals/me` минтит код, регистрация `?ref=` создаёт pending-реферал
+  (маска `f•••@…`), затем топ-ап $50 (sandbox+webhook) → checkout $24 → **реферер +5.00,
+  реферал 31.00** (50−24+5), 2 `ledger.credit refType=referral`, `referral→qualified`,
+  in-app `referral_rewarded`. lint/typecheck/376 тестов/build — зелёные.
 
 ### Сессия — Трек A: fan-out realtime-бейджа через Redis pub/sub — ГОТОВО
 - **Развилка (asking):** выбран **Трек A** (остаточный тех-долг realtime).

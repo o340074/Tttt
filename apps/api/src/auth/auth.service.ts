@@ -3,6 +3,7 @@ import type { User } from '@prisma/client';
 import { ApiException } from '../common/api-exception';
 import { MailerService } from '../mailer/mailer.service';
 import { PrismaService } from '../prisma/prisma.service';
+import { ReferralsService } from '../referrals/referrals.service';
 import { PasswordService } from './password.service';
 import { TokenService } from './token.service';
 import type { TokenPair } from './token.service';
@@ -17,9 +18,15 @@ export class AuthService {
     private readonly passwords: PasswordService,
     private readonly tokens: TokenService,
     private readonly mailer: MailerService,
+    private readonly referrals: ReferralsService,
   ) {}
 
-  async register(email: string, password: string, locale?: Locale): Promise<TokenPair> {
+  async register(
+    email: string,
+    password: string,
+    locale?: Locale,
+    referralCode?: string,
+  ): Promise<TokenPair> {
     const existing = await this.prisma.user.findUnique({ where: { email } });
     if (existing) {
       throw new ApiException('EMAIL_ALREADY_USED', 'This email is already registered', 409);
@@ -28,6 +35,8 @@ export class AuthService {
     const user = await this.prisma.user.create({
       data: { email, passwordHash, ...(locale ? { locale } : {}) },
     });
+    // Attribute an invite code (E12). Best-effort — never blocks signup.
+    await this.referrals.attributeOnRegister(user.id, referralCode);
     await this.sendVerification(user.id, user.email);
     return this.tokens.issuePair({ id: user.id, email: user.email, role: user.role as Role });
   }

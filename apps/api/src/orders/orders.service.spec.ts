@@ -14,6 +14,7 @@ import {
   makeFakeNotificationsService,
   makeFakePrismaService,
   makeFakeRedisService,
+  makeFakeReferralsService,
   makeProductRow,
   makeVariantRow,
 } from '../testing/fakes';
@@ -139,6 +140,7 @@ describe('OrdersService.checkout (E5 stock delivery)', () => {
         config,
       ),
       makeFakeNotificationsService(prisma),
+      makeFakeReferralsService(prisma),
       config,
     );
     const user = await prisma.user.create({

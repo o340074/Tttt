@@ -43,7 +43,7 @@ export class AuthController {
     @Body() dto: RegisterDto,
     @Res({ passthrough: true }) res: Response,
   ): Promise<TokenResponse> {
-    const pair = await this.auth.register(dto.email, dto.password, dto.locale);
+    const pair = await this.auth.register(dto.email, dto.password, dto.locale, dto.referralCode);
     return this.respondWithPair(res, pair);
   }
 

@@ -17,6 +17,7 @@ import { AdminPlanDetailPage } from './pages/admin/AdminPlanDetailPage';
 import { AdminPlansPage } from './pages/admin/AdminPlansPage';
 import { AdminProductDetailPage } from './pages/admin/AdminProductDetailPage';
 import { AdminPromoPage } from './pages/admin/AdminPromoPage';
+import { AdminReferralsPage } from './pages/admin/AdminReferralsPage';
 import { AdminReviewsPage } from './pages/admin/AdminReviewsPage';
 import { AdminStockPage } from './pages/admin/AdminStockPage';
 import { AdminUserDetailPage } from './pages/admin/AdminUserDetailPage';
@@ -34,6 +35,7 @@ import { LegalPage } from './pages/LegalPage';
 import { NotFoundPage } from './pages/NotFoundPage';
 import { OrderPage } from './pages/OrderPage';
 import { OrdersPage } from './pages/OrdersPage';
+import { ReferralsPage } from './pages/ReferralsPage';
 import { WarrantyPage } from './pages/WarrantyPage';
 import { ProductPage } from './pages/ProductPage';
 import { SupportPage } from './pages/SupportPage';
@@ -60,6 +62,7 @@ export function App() {
           <Route path="checkout" element={<CheckoutPage />} />
           <Route path="orders" element={<OrdersPage />} />
           <Route path="orders/:id" element={<OrderPage />} />
+          <Route path="referrals" element={<ReferralsPage />} />
           <Route path="support" element={<SupportPage />} />
           <Route path="support/:id" element={<TicketPage />} />
           <Route path="warranty" element={<WarrantyPage />} />
@@ -90,6 +93,7 @@ export function App() {
           <Route path="warranty" element={<AdminWarrantyPage />} />
           <Route path="warranty/:id" element={<AdminWarrantyDetailPage />} />
           <Route path="reviews" element={<AdminReviewsPage />} />
+          <Route path="referrals" element={<AdminReferralsPage />} />
           <Route path="dashboard" element={<AdminDashboardPage />} />
           <Route path="staff" element={<AdminStaffPage />} />
           <Route path="settings" element={<AdminSettingsPage />} />

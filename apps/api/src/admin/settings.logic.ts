@@ -32,6 +32,7 @@ export const NOTIFICATION_EVENTS: NotificationEventKey[] = [
   'warrantyReplaced',
   'warrantyRefunded',
   'warrantyRejected',
+  'referralRewarded',
 ];
 
 const DEFAULT_STORE: StoreSection = {
@@ -76,6 +77,16 @@ const DEFAULT_NOTIFICATIONS: NotificationsSection = {
     ru: tpl(
       'Гарантийная заявка отклонена',
       'Заявка {{number}} рассмотрена и не может быть одобрена.',
+    ),
+  },
+  referralRewarded: {
+    en: tpl(
+      'You earned a referral reward',
+      'A friend you invited made their first purchase — ${{reward}} has been credited to your balance.',
+    ),
+    ru: tpl(
+      'Вы получили реферальное вознаграждение',
+      'Приглашённый вами друг совершил первую покупку — ${{reward}} зачислены на ваш баланс.',
     ),
   },
 };

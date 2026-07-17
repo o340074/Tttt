@@ -95,6 +95,16 @@ enum LedgerRefType {
   refund
   adjustment
   replacement
+  referral
+}
+
+// Referral lifecycle (E12): a referee registers with a code (`pending`); their
+// first qualifying purchase posts rewards to both sides and flips it to
+// `qualified`; staff may `cancel` a pending referral for abuse.
+enum ReferralStatus {
+  pending
+  qualified
+  cancelled
 }
 
 enum TopUpStatus {
@@ -354,6 +364,10 @@ model User {
   warrantyClaimsResolved WarrantyClaim[] @relation("WarrantyClaimResolver")
 
   reviews Review[] @relation("ReviewAuthor")
+
+  referralCode     ReferralCode? @relation("UserReferralCode")
+  referralsMade    Referral[]    @relation("ReferralReferrer") // as the code owner
+  referralReceived Referral?     @relation("ReferralReferee") // at most one — as the invited buyer
 
   @@index([status])
   @@index([role])
@@ -888,6 +902,7 @@ enum NotificationType {
   warranty_replaced
   warranty_refunded
   warranty_rejected
+  referral_rewarded
 }
 
 /**
@@ -941,4 +956,48 @@ model Review {
   @@index([productId, hidden, createdAt])
   @@index([authorId])
   @@map("reviews")
+}
+
+// ============================================================
+// Referrals (E12, docs/16 §E12+). A user's stable invite code lives in
+// ReferralCode (one per user, minted lazily). A Referral records the
+// referrer→referee link captured at the referee's registration; their first
+// qualifying purchase posts a reward to each side (ledger, refType=referral,
+// Decimal + idempotent) and flips the row to `qualified`. Reward amounts are
+// snapshotted at qualification so later config changes never rewrite history.
+// ============================================================
+
+model ReferralCode {
+  id        String   @id @default(uuid()) @db.Uuid
+  userId    String   @unique @db.Uuid
+  code      String   @unique // human-shareable, e.g. AV-7QK4ZP
+  createdAt DateTime @default(now())
+
+  user      User       @relation("UserReferralCode", fields: [userId], references: [id], onDelete: Cascade)
+  referrals Referral[]
+
+  @@map("referral_codes")
+}
+
+model Referral {
+  id                String         @id @default(uuid()) @db.Uuid
+  referrerId        String         @db.Uuid // code owner (the inviter)
+  refereeId         String         @unique @db.Uuid // invited buyer — one referral per person
+  codeId            String         @db.Uuid // the code used at registration
+  status            ReferralStatus @default(pending)
+  referrerReward    Decimal        @default(0) @db.Decimal(18, 2) // snapshot at qualification
+  refereeReward     Decimal        @default(0) @db.Decimal(18, 2) // snapshot at qualification
+  qualifyingOrderId String?        @db.Uuid // the order that triggered the reward
+  qualifiedAt       DateTime?
+  cancelledReason   String? // set when staff cancel a pending referral
+  createdAt         DateTime       @default(now())
+  updatedAt         DateTime       @updatedAt
+
+  referrer User         @relation("ReferralReferrer", fields: [referrerId], references: [id], onDelete: Cascade)
+  referee  User         @relation("ReferralReferee", fields: [refereeId], references: [id], onDelete: Cascade)
+  code     ReferralCode @relation(fields: [codeId], references: [id], onDelete: Restrict)
+
+  @@index([referrerId, createdAt])
+  @@index([status, createdAt])
+  @@map("referrals")
 }

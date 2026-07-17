@@ -1,6 +1,11 @@
 import { z } from 'zod';
 import { DEV_PAYLOAD_KEY } from '../crypto/payload-crypto';
 
+/** A non-negative money amount as a fixed-point decimal string, e.g. "5.00". */
+const money = z
+  .string()
+  .regex(/^\d+(\.\d{1,2})?$/, 'must be a non-negative decimal with up to 2 places');
+
 export const envSchema = z.object({
   NODE_ENV: z.enum(['development', 'test', 'production']).default('development'),
   PORT: z.coerce.number().int().positive().default(3000),
@@ -47,6 +52,22 @@ export const envSchema = z.object({
   SENTRY_DSN: z.string().default(''),
   /** Deployment tag attached to Sentry events (e.g. git SHA or version). */
   SENTRY_RELEASE: z.string().default(''),
+  /**
+   * Referral programme (E12, docs/16 §E12+). Disabled → codes still resolve but
+   * no rewards post. Rewards are credited to both sides on the referee's first
+   * qualifying purchase and snapshotted on the Referral at that moment. Money
+   * amounts are decimal strings ("0.00" turns a side's reward off).
+   */
+  REFERRAL_ENABLED: z
+    .string()
+    .default('true')
+    .transform((v) => v !== 'false'),
+  /** Credit to the inviter when their referee first qualifies. */
+  REFERRAL_REFERRER_REWARD: money.default('5.00'),
+  /** Welcome credit to the invited buyer on their first qualifying purchase. */
+  REFERRAL_REFEREE_REWARD: money.default('5.00'),
+  /** Minimum paid order total (after discount) that qualifies a referral. */
+  REFERRAL_MIN_PURCHASE: money.default('10.00'),
 });
 
 export type Env = z.infer<typeof envSchema>;

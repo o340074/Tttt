@@ -11,6 +11,18 @@ import { PasswordService } from './password.service';
 import { TokenService } from './token.service';
 import type { MailerService } from '../mailer/mailer.service';
 import type { RedisService } from '../redis/redis.service';
+import type { ReferralsService } from '../referrals/referrals.service';
+
+/** Records attribution calls so tests can assert the referral code was passed through. */
+function makeReferrals(): ReferralsService & { attributed: { refereeId: string; code?: string }[] } {
+  const attributed: { refereeId: string; code?: string }[] = [];
+  return {
+    attributed,
+    attributeOnRegister: async (refereeId: string, code?: string) => {
+      attributed.push({ refereeId, code });
+    },
+  } as unknown as ReferralsService & { attributed: { refereeId: string; code?: string }[] };
+}
 
 function makeMailer(): MailerService & { sent: { kind: string; email: string; token: string }[] } {
   const sent: { kind: string; email: string; token: string }[] = [];
@@ -40,6 +52,7 @@ describe('AuthService', () => {
   let prisma: ReturnType<typeof makeFakePrismaService>;
   let tokens: TokenService;
   let mailer: ReturnType<typeof makeMailer>;
+  let referrals: ReturnType<typeof makeReferrals>;
   let service: AuthService;
 
   beforeEach(() => {
@@ -50,7 +63,8 @@ describe('AuthService', () => {
       makeFakeConfigService(),
     );
     mailer = makeMailer();
-    service = new AuthService(prisma, new PasswordService(), tokens, mailer);
+    referrals = makeReferrals();
+    service = new AuthService(prisma, new PasswordService(), tokens, mailer, referrals);
   });
 
   it('register creates the user, sends a verification email and returns tokens', async () => {
@@ -62,6 +76,13 @@ describe('AuthService', () => {
     expect(user!.passwordHash).toMatch(/^\$argon2id\$/);
     expect(mailer.sent).toEqual([
       expect.objectContaining({ kind: 'verify', email: 'new@advault.dev' }),
+    ]);
+  });
+
+  it('register forwards the referral code to attribution (E12)', async () => {
+    await service.register('ref@advault.dev', 'password-123', 'en', 'AV-ABC123');
+    expect(referrals.attributed).toEqual([
+      expect.objectContaining({ code: 'AV-ABC123' }),
     ]);
   });
 

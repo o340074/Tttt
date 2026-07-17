@@ -13,6 +13,7 @@ export const EVENT_TO_TYPE = {
   warrantyReplaced: 'warranty_replaced',
   warrantyRefunded: 'warranty_refunded',
   warrantyRejected: 'warranty_rejected',
+  referralRewarded: 'referral_rewarded',
 } as const satisfies Record<string, NotificationType>;
 
 export type NotificationEvent = keyof typeof EVENT_TO_TYPE;

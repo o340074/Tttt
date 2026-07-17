@@ -37,6 +37,7 @@ const NAV: NavItem[] = [
   { to: '/admin/users', labelKey: 'admin.nav.users', icon: 'user' },
   { to: '/admin/finance', labelKey: 'admin.nav.finance', icon: 'wallet' },
   { to: '/admin/promo', labelKey: 'admin.nav.promo', icon: 'tag' },
+  { to: '/admin/referrals', labelKey: 'admin.nav.referrals', icon: 'spark', roles: ELEVATED },
   { to: '/admin/staff', labelKey: 'admin.nav.staff', icon: 'lock', roles: ADMIN },
   { to: '/admin/settings', labelKey: 'admin.nav.settings', icon: 'globe', roles: ADMIN },
 ];

@@ -75,7 +75,8 @@
       "subtitle": "Start buying verified accounts in minutes.",
       "submit": "Create account",
       "haveAccount": "Already have an account?",
-      "toLogin": "Log in"
+      "toLogin": "Log in",
+      "invited": "You were invited with code {{code}} — you'll both earn a reward on your first purchase."
     },
     "forgot": {
       "title": "Forgot password?",
@@ -143,7 +144,9 @@
     "orders": "My orders",
     "ordersHint": "Purchase history and delivery status",
     "warranty": "Warranties",
-    "warrantyHint": "Replacements & refunds"
+    "warrantyHint": "Replacements & refunds",
+    "referrals": "Refer & earn",
+    "referralsHint": "Invite friends and earn account credit"
   },
   "errors": {
     "GENERIC": "Something went wrong. Please try again.",
@@ -496,7 +499,8 @@
       "staff": "Staff & roles",
       "settings": "Settings",
       "warranty": "Warranties",
-      "reviews": "Reviews"
+      "reviews": "Reviews",
+      "referrals": "Referrals"
     },
     "fulfillmentTypes": {
       "READY_STOCK": "Ready stock",
@@ -1070,6 +1074,30 @@
         "visible": "Visible",
         "hidden": "Hidden"
       }
+    },
+    "referrals": {
+      "title": "Referrals",
+      "subtitle": "The invite programme — who invited whom and what was paid out.",
+      "error": "Could not load referrals.",
+      "empty": "No referrals match this filter.",
+      "cancelError": "The referral could not be cancelled.",
+      "cancel": "Cancel",
+      "cancelReason": "Reason (shown in the audit log)",
+      "confirmCancel": "Cancel referral",
+      "dismiss": "Keep",
+      "rewarded": "paid ${{referrer}} / ${{referee}}",
+      "summary": {
+        "pending": "Pending",
+        "qualified": "Qualified",
+        "cancelled": "Cancelled",
+        "rewardsPaid": "Rewards paid"
+      },
+      "filters": {
+        "all": "All",
+        "pending": "Pending",
+        "qualified": "Qualified",
+        "cancelled": "Cancelled"
+      }
     }
   },
   "warranty": {
@@ -1124,6 +1152,31 @@
     "bodyPlaceholder": "Share your experience (no passwords or secrets)…",
     "submit": "Submit review",
     "cancel": "Cancel"
+  },
+  "referrals": {
+    "title": "Refer & earn",
+    "subtitle": "Share your link. When a friend makes their first qualifying purchase, you both get account credit.",
+    "back": "Account",
+    "error": "Couldn't load your referrals.",
+    "retry": "Retry",
+    "disabled": "The referral programme is paused right now — new invites won't earn rewards until it resumes.",
+    "yourCode": "Your invite code",
+    "inviteLink": "Invite link",
+    "copy": "Copy link",
+    "copied": "Copied",
+    "terms": "You earn ${{referrer}} and your friend gets ${{referee}} once they spend at least ${{min}}.",
+    "stats": {
+      "invited": "Invited",
+      "qualified": "Qualified",
+      "earned": "Earned"
+    },
+    "listTitle": "Your referrals",
+    "empty": "No referrals yet. Share your link to get started.",
+    "status": {
+      "pending": "Pending",
+      "qualified": "Qualified",
+      "cancelled": "Cancelled"
+    }
   },
   "legal": {
     "backHome": "Back to home",
