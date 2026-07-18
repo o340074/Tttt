@@ -1,0 +1,10 @@
+node_modules
+dist
+build
+coverage
+pnpm-lock.yaml
+prototype
+docs
+apps/api/prisma/migrations
+CLAUDE.md
+README.md

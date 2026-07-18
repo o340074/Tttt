@@ -20,8 +20,73 @@
 
 - ✅ **Фаза планирования завершена** (продукт, дизайн, архитектура, модель прогрева,
   админка, план разработки, прототипы, бэкенд-контракты).
-- 🔜 **Следующий шаг — разработка, эпик E0 (каркас монорепо)**. Далее строго по
-  порядку эпиков/вех из `docs/16-development-plan.md`.
+- ✅ **E0 — каркас монорепо готов**: `apps/web` (React+Vite+Tailwind, i18n EN/RU,
+  токены Aurora), `apps/api` (NestJS, /health, Prisma+Redis, Swagger),
+  `packages/{types,config}`, docker-compose, CI.
+- ✅ **E1 — аутентификация и аккаунты готовы**: JWT access+refresh (ротация jti в
+  Redis, HTTP-only cookie), argon2id, verify/reset email (mailer-заглушка),
+  rate-limit, единый формат ошибок `Error`, экраны auth + guard-роуты + ЛК
+  (`/account`), `GET|PATCH /me`.
+- ✅ **E2 — каталог и продуктовая модель готовы**: Prisma-модели Category/Product/
+  ProductVariant + Translation (fulfillmentType READY_STOCK|MADE_TO_ORDER, goal,
+  tier, bundleSpec, etaMinutes, warrantyHours), публичные `GET /categories`,
+  `GET /products` (фильтры/поиск/сортировка/пагинация), `GET /products/:slug`;
+  локализация EN/RU по `?locale`/Accept-Language; витрина, каталог с фильтрами,
+  карточка товара (вариант, тип выдачи, ETA, комплект); идемпотентный сидер
+  `prisma/seed.ts`.
+- ✅ **E3 — кошелёк и пополнение криптой готовы**: Prisma LedgerEntry/TopUp/
+  IdempotencyKey, ledger двойной записи (credit + balanceAfter, `User.balance` — кэш),
+  `GET /wallet`, `GET /wallet/transactions`, `POST /wallet/topups` (Idempotency-Key),
+  `GET /wallet/topups/:id`, вебхук `POST /webhooks/payments/:provider` (HMAC по raw
+  body, идемпотентный по externalId, зачисление в одной транзакции), эквайринг за
+  интерфейсом `PaymentProvider` (sandbox-реализация), expiry просроченных pending;
+  экран `/wallet` (QR/адрес/таймер, поллинг, flash, история).
+- ✅ **E4 — корзина, заказы, оплата с баланса готовы**: Prisma Cart/CartItem/Order/
+  OrderItem (снапшоты sku/имени/цены)/PromoCode; серверная корзина (`GET /cart`,
+  `POST /cart/items`, `PATCH|DELETE /cart/items/:id`), `GET /promo-codes/:code`
+  (превью скидки); `POST /orders/checkout` (Idempotency-Key; одна транзакция БД:
+  атомарный декремент stockCount + usedCount промокода + `LedgerService.debit`
+  c INSUFFICIENT_BALANCE + Order(status=paid) + очистка корзины), `GET /orders`,
+  `GET /orders/:id`; экран `/checkout` (степпер, промокод, оплата с баланса, CTA
+  «Пополнить» при нехватке, flash), кнопка Buy now, заказы в ЛК (`/orders`).
+- ✅ **E5 — выдача из стока READY_STOCK готова**: Prisma StockItem (payloadHash-дедуп)/
+  Delivery/AuditLog; шифрование payload AES-256-GCM (версионируемый ключ env
+  `PAYLOAD_ENCRYPTION_KEY`); двухфазный резерв (available→reserved+reservedUntil+Redis
+  TTL, sweep→sold) c авто-выдачей в транзакции checkout (Delivery type=auto +
+  deliveryStatus=delivered, статус заказа — агрегат по docs/14, stockCount от пула);
+  `GET /orders/:id/items/:itemId/delivery` (расшифровка только владельцу + AuditLog);
+  импорт стока `POST /admin/products/:id/variants/:variantId/stock/import` (RBAC admin,
+  JSON/text-plain, отчёт added/skipped); Vault-блок в `/orders/:id`
+  (маска→показать/копировать/скачать .txt).
+- ✅ **E6 — прогрев MADE_TO_ORDER готов**: WarmingPlan/StageTemplate/Job/Task/
+  AccountAsset/Bundle/BundleComponent; при checkout warm-позиции — `WarmingJob(queued)`
+  + этапы + ETA в транзакции оплаты (`ProductVariant.warmingPlanId`); переходы
+  queued→assigned→in_progress→qc→ready→delivered (+on_hold с пересчётом ETA,
+  fail→reassign/refund); при delivered — сборка Bundle + `Delivery(type=warm)` в Vault;
+  RBAC-маршруты `/admin/warming/*`; экран `/orders/:id` со статусом warm и «этап k из N».
+- ✅ **E7 — инвентарь прокси/Octo готов**: Prisma `ProxyItem`/`OctoProfile` (шифрование
+  `credentials`/`exportRef` тем же AES-256-GCM key-ring); `/admin/inventory/*` — CRUD,
+  импорт прокси (JSON/text-plain, дедуп по хэшу), bind/unbind к WarmingJob **exactly-once**
+  (available→assigned); реальные `BundleComponent` PROXY/OCTO_PROFILE с `refId` в комплекте
+  Vault (вместо заглушек E6); `GET /admin/warming/jobs/:id/inventory`; RBAC admin/support;
+  сидер прокси/Octo. Ресурс выделенный (после выдачи — покупателя). Актуальная база кода —
+  ветка `claude/advault-e7-proxy-octo-inventory-vsnw75`.
+- ✅ **E8 — полная админка/операторка готова**: RBAC operator/manager/admin; Orders +
+  Warming Kanban/operator-workspace + Inventory-UI + Stock read (ч.1); Finance (refund+
+  ручная выдача+сверка) + Users + Promo (ч.2); Catalog & Bundles CRUD + Warming plans
+  CRUD с версионированием (ч.3); **Dashboard/Reports + Tickets (Ticket/TicketMessage) +
+  Staff&roles UI + Settings (key-value)** (ч.4). Всё под RBAC/аудитом, проверено вживую.
+- ✅ **E9…E11 готовы** (поддержка/уведомления · гарантии/замены/возвраты · полировка/
+  безопасность/запуск). **ВЕСЬ MVP (E0…E11) готов по коду — веха M5.** Отзывы/рейтинг,
+  security-заголовки+CSP (helmet), BullMQ-уведомления, warm-rework↔claim (`reworking`),
+  юр-страницы, E2E Playwright; чек-лист запуска `docs/09` закрыт; прод-ранбук `docs/17`.
+- ✅ **M5 Release-операции (Трек A)** готовы; **долги Трека B ЗАКРЫТЫ**: аллокация
+  discount при частичном возврате (E10), grace-период гарантийного окна (E10, env
+  `WARRANTY_GRACE_MINUTES`), inline-edit промо (E8), WebSocket realtime-бейдж уведомлений
+  (E9, `/api/ws/notifications` в том же Nest-процессе, деградация к поллингу).
+- 🔜 **Следующий шаг** — эксплуатационные подтверждения M5 (`docs/17`) и/или пост-MVP E12+
+  (см. `docs/16` §E12, `docs/NEXT-SESSION-PROMPT.md`); realtime-остаток — Redis pub/sub
+  fan-out при мультиинстансе.
 - Живой статус и «что дальше» — всегда в `docs/SESSION-LOG.md`.
 
 ## Где что лежит
@@ -29,6 +94,10 @@
 ```
 CLAUDE.md                     ← этот файл (ориентир)
 README.md                     ← индекс всей документации
+apps/web · apps/api           ← код: фронт (React+Vite+Tailwind) и бэк (NestJS)
+packages/{types,config}       ← общие контракты/типы и базовые tsconfig
+docker-compose.yml            ← dev-окружение (postgres, redis, api, web)
+.github/workflows/ci.yml      ← CI: lint + typecheck + test + build
 docs/00..10                   ← продукт: обзор, видение, фичи, стек, архитектура,
                                  модель данных, дизайн-обзор, API, оплата/выдача,
                                  безопасность, краткая дорожная карта

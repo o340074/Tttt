@@ -1,0 +1,11 @@
+# AdVault — Caddy reverse proxy with automatic HTTPS (Let's Encrypt).
+# `<ip-with-dashes>.sslip.io` resolves to that IP with zero DNS setup, so Caddy
+# can obtain a real TLS cert for a bare-IP host. TLS lets the API's `secure`
+# refresh cookie round-trip, so login actually persists.
+#
+# Replace the hostname with YOUR server IP (dots → dashes). WebSocket upgrades
+# (/api/ws/notifications) are proxied transparently by Caddy.
+74-0-48-138.sslip.io {
+    encode gzip
+    reverse_proxy web:80
+}

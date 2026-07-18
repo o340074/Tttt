@@ -1,0 +1,14 @@
+{
+  "name": "@advault/config",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Shared configs (tsconfig) for the AdVault monorepo",
+  "files": [
+    "tsconfig.base.json"
+  ],
+  "scripts": {
+    "build": "true",
+    "typecheck": "true",
+    "test": "true"
+  }
+}

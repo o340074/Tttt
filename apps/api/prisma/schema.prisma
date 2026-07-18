@@ -1,0 +1,1003 @@
+// AdVault — Prisma schema.
+// Contract source of truth: docs/backend/prisma-schema.md.
+// Models arrive with their epics; E1 brings User (auth & accounts),
+// E2 brings the catalog (Category, Product, ProductVariant + translations),
+// E3 brings the wallet (LedgerEntry, TopUp, IdempotencyKey),
+// E4 brings cart & orders (Cart, CartItem, Order, OrderItem, PromoCode),
+// E5 brings ready-stock delivery (StockItem, Delivery, AuditLog).
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+enum Role {
+  user
+  support
+  operator
+  manager
+  admin
+}
+
+enum UserStatus {
+  active
+  blocked
+}
+
+enum ProductStatus {
+  draft
+  published
+  hidden
+}
+
+enum DeliveryType {
+  auto
+  manual
+}
+
+// How a Delivery record came to be (docs/08, docs/15): instant from stock,
+// entered by an operator, assembled by warming (bundle), or a warranty replacement.
+enum DeliveryKind {
+  auto
+  manual
+  warm
+  replacement
+}
+
+enum StockStatus {
+  available
+  reserved
+  sold
+}
+
+// Proxy inventory kinds (docs/12, docs/15).
+enum ProxyType {
+  residential
+  mobile
+  isp
+  datacenter
+}
+
+// Proxy lifecycle: available in the pool → assigned to a warm job → expired/disabled.
+enum ProxyStatus {
+  available
+  assigned
+  expired
+  disabled
+}
+
+// Octo antidetect-profile registry state (docs/15).
+enum OctoProfileStatus {
+  draft
+  ready
+  delivered
+}
+
+// Модель выдачи варианта (docs/11): READY_STOCK — мгновенно из стока,
+// MADE_TO_ORDER — прогрев под заказ оператором (очередь, ETA).
+enum FulfillmentType {
+  READY_STOCK
+  MADE_TO_ORDER
+}
+
+enum LedgerDirection {
+  credit
+  debit
+}
+
+enum LedgerRefType {
+  topup
+  order
+  refund
+  adjustment
+  replacement
+  referral
+}
+
+// Referral lifecycle (E12): a referee registers with a code (`pending`); their
+// first qualifying purchase posts rewards to both sides and flips it to
+// `qualified`; staff may `cancel` a pending referral for abuse.
+enum ReferralStatus {
+  pending
+  qualified
+  cancelled
+}
+
+enum TopUpStatus {
+  pending
+  paid
+  expired
+  failed
+}
+
+enum OrderStatus {
+  pending
+  paid
+  partially_delivered
+  delivered
+  cancelled
+  refunded
+}
+
+// Line-level delivery state (docs/14). READY_STOCK jumps pending→delivered;
+// MADE_TO_ORDER walks the warming stages (queued…ready) and ends delivered,
+// with on_hold/failed branches and refunded as a terminal money-returned state.
+enum OrderItemDeliveryStatus {
+  pending
+  awaiting_manual
+  queued
+  assigned
+  in_progress
+  qc
+  ready
+  on_hold
+  failed
+  delivered
+  replaced
+  refunded
+}
+
+// Warranty claim type (E10): the buyer asks for a fresh asset or their money back.
+enum WarrantyClaimType {
+  replace
+  refund
+}
+
+// Warranty claim lifecycle (docs/14, E10; `reworking` added E11). `requested` by
+// the buyer inside the warranty window; staff move it to `approved`/`rejected`.
+// An approved claim is fulfilled to `refunded` (ledger credit) or to a
+// replacement: READY_STOCK issues a new asset straight to `replaced`, while
+// MADE_TO_ORDER re-opens the warm job and the claim sits in `reworking` until
+// the operator re-delivers, which flips it to `replaced`.
+enum WarrantyClaimStatus {
+  requested
+  approved
+  reworking
+  rejected
+  replaced
+  refunded
+}
+
+// Warming Job lifecycle (docs/12, docs/14, docs/15). `queued` is the entry
+// state at checkout; operators walk it to `delivered`. `on_hold` pauses with a
+// recomputed ETA; `failed` is non-terminal — an operator resolves it by
+// reassigning (→queued) or refunding.
+enum WarmingJobStatus {
+  queued
+  assigned
+  in_progress
+  qc
+  ready
+  delivered
+  on_hold
+  failed
+  refunded
+}
+
+// One warming stage instance inside a Job.
+enum WarmingTaskStatus {
+  pending
+  in_progress
+  done
+  skipped
+  blocked
+}
+
+// Delivery bundle assembly state (docs/15).
+enum BundleStatus {
+  assembling
+  qc
+  ready
+  delivered
+}
+
+// Component kinds a delivery bundle can carry (docs/11, docs/15).
+enum BundleComponentType {
+  ACCOUNT
+  PROXY
+  OCTO_PROFILE
+  RECOVERY
+  SECRETS
+  GUIDE
+  WARRANTY
+}
+
+enum PromoType {
+  percent
+  fixed
+}
+
+model Category {
+  id       String  @id @default(uuid()) @db.Uuid
+  parentId String? @db.Uuid
+  slug     String  @unique
+  position Int     @default(0)
+
+  parent       Category?             @relation("CategoryTree", fields: [parentId], references: [id], onDelete: SetNull)
+  children     Category[]            @relation("CategoryTree")
+  translations CategoryTranslation[]
+  products     Product[]
+
+  @@index([parentId])
+  @@index([position])
+  @@map("categories")
+}
+
+model CategoryTranslation {
+  id         String @id @default(uuid()) @db.Uuid
+  categoryId String @db.Uuid
+  locale     String
+  name       String
+
+  category Category @relation(fields: [categoryId], references: [id], onDelete: Cascade)
+
+  @@unique([categoryId, locale])
+  @@map("category_translations")
+}
+
+model Product {
+  id         String        @id @default(uuid()) @db.Uuid
+  categoryId String        @db.Uuid
+  slug       String        @unique
+  status     ProductStatus @default(draft)
+  ratingAvg  Decimal?      @db.Decimal(3, 2) // денормализация из Review (придёт позже)
+  attributes Json          @default("{}") @db.JsonB // гео, тип аккаунта, лимиты
+  createdAt  DateTime      @default(now())
+  updatedAt  DateTime      @updatedAt
+
+  category     Category             @relation(fields: [categoryId], references: [id], onDelete: Restrict)
+  translations ProductTranslation[]
+  variants     ProductVariant[]
+  reviews      Review[]
+
+  @@index([categoryId])
+  @@index([status])
+  @@map("products")
+}
+
+model ProductTranslation {
+  id          String  @id @default(uuid()) @db.Uuid
+  productId   String  @db.Uuid
+  locale      String
+  name        String
+  description String? @db.Text
+
+  product Product @relation(fields: [productId], references: [id], onDelete: Cascade)
+
+  @@unique([productId, locale])
+  @@map("product_translations")
+}
+
+model ProductVariant {
+  id           String       @id @default(uuid()) @db.Uuid
+  productId    String       @db.Uuid
+  sku          String       @unique
+  price        Decimal      @db.Decimal(18, 2)
+  currency     String       @default("USD") // валюта учёта
+  deliveryType DeliveryType // производный снимок: auto ⇔ READY_STOCK, manual ⇔ MADE_TO_ORDER
+  stockCount   Int          @default(0) // кэш: COUNT(StockItem WHERE status=available) — пересчитывается при мутациях пула
+  isActive     Boolean      @default(true)
+  attributes   Json         @default("{}") @db.JsonB
+
+  // --- Расширения docs/15 (модель выдачи и прогрев) ---
+  fulfillmentType FulfillmentType @default(READY_STOCK)
+  goal            String? // цель прогрева: google_ads, chrome_extension_dev, … (для MADE_TO_ORDER)
+  tier            String? // тариф прогрева, напр. warm_7d
+  warmingPlanId   String?         @db.Uuid // план прогрева (для MADE_TO_ORDER) — E6
+  bundleSpec      Json            @default("[]") @db.JsonB // состав комплекта: [{ "type": "ACCOUNT" }, …]
+  etaMinutes      Int? // кэш расчётной ETA (для MADE_TO_ORDER)
+  warrantyHours   Int? // окно гарантии/замены
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  product     Product      @relation(fields: [productId], references: [id], onDelete: Cascade)
+  warmingPlan WarmingPlan? @relation(fields: [warmingPlanId], references: [id], onDelete: SetNull)
+  orderItems  OrderItem[]
+  cartItems   CartItem[]
+  stockItems  StockItem[]
+
+  @@index([productId])
+  @@index([isActive])
+  @@index([fulfillmentType])
+  @@index([goal])
+  @@index([warmingPlanId])
+  @@map("product_variants")
+}
+
+// ============================================================
+// Stock (auto-delivery pool) — E5
+// ============================================================
+
+model StockItem {
+  id            String      @id @default(uuid()) @db.Uuid
+  variantId     String      @db.Uuid
+  payload       String      @db.Text // ENCRYPTED app-side (AES-256-GCM, v-prefixed ciphertext)
+  payloadHash   String // SHA-256 of the plaintext — import dedup within a variant
+  status        StockStatus @default(available)
+  reservedUntil DateTime? // reserve TTL; the sweep returns overdue reserves to available
+  orderItemId   String?     @db.Uuid // set on sale; qty > 1 → several units per order item
+  createdAt     DateTime    @default(now())
+
+  variant   ProductVariant @relation(fields: [variantId], references: [id], onDelete: Cascade)
+  orderItem OrderItem?     @relation(fields: [orderItemId], references: [id], onDelete: SetNull)
+  delivery  Delivery?
+
+  @@unique([variantId, payloadHash]) // re-importing the same line is a no-op
+  @@index([variantId, status]) // picking available units for a reserve
+  @@index([status, reservedUntil]) // overdue-reserve sweep
+  @@index([orderItemId])
+  @@map("stock_items")
+}
+
+model User {
+  id              String     @id @default(uuid()) @db.Uuid
+  email           String     @unique
+  passwordHash    String
+  role            Role       @default(user)
+  status          UserStatus @default(active)
+  balance         Decimal    @default(0) @db.Decimal(18, 2) // кэш; истина — LedgerEntry (E3)
+  locale          String     @default("en")
+  emailVerifiedAt DateTime?
+  twoFactorSecret String? // TOTP (v2)
+  createdAt       DateTime   @default(now())
+  updatedAt       DateTime   @updatedAt
+
+  ledgerEntries LedgerEntry[]
+  topUps        TopUp[]
+  orders        Order[]
+  cart          Cart?
+  auditLogs     AuditLog[]    @relation("AuditActor")
+  deliveries    Delivery[]    @relation("DeliveredBy")
+  warmingJobs   WarmingJob[]  @relation("WarmingAssignee")
+
+  ticketsRequested TicketMessage[] @relation("TicketMessageAuthor")
+  ticketsAssigned  Ticket[]        @relation("TicketAssignee")
+  ticketsRaised    Ticket[]        @relation("TicketRequester")
+  notifications    Notification[]  @relation("UserNotifications")
+
+  warrantyClaimsRaised   WarrantyClaim[] @relation("WarrantyClaimRequester")
+  warrantyClaimsResolved WarrantyClaim[] @relation("WarrantyClaimResolver")
+
+  reviews Review[] @relation("ReviewAuthor")
+
+  referralCode     ReferralCode? @relation("UserReferralCode")
+  referralsMade    Referral[]    @relation("ReferralReferrer") // as the code owner
+  referralReceived Referral?     @relation("ReferralReferee") // at most one — as the invited buyer
+
+  @@index([status])
+  @@index([role])
+  @@map("users")
+}
+
+// ============================================================
+// Cart (черновик заказа пользователя) — E4
+// ============================================================
+
+model Cart {
+  id        String   @id @default(uuid()) @db.Uuid
+  userId    String   @unique @db.Uuid
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  user  User       @relation(fields: [userId], references: [id], onDelete: Cascade)
+  items CartItem[]
+
+  @@map("carts")
+}
+
+model CartItem {
+  id        String   @id @default(uuid()) @db.Uuid
+  cartId    String   @db.Uuid
+  variantId String   @db.Uuid
+  quantity  Int      @default(1)
+  createdAt DateTime @default(now())
+
+  cart    Cart           @relation(fields: [cartId], references: [id], onDelete: Cascade)
+  variant ProductVariant @relation(fields: [variantId], references: [id], onDelete: Cascade)
+
+  @@unique([cartId, variantId])
+  @@map("cart_items")
+}
+
+// ============================================================
+// Orders — E4
+// ============================================================
+
+model Order {
+  id          String      @id @default(uuid()) @db.Uuid
+  userId      String      @db.Uuid
+  number      String      @unique // человекочитаемый номер, напр. AV-2026-482913
+  status      OrderStatus @default(pending)
+  subtotal    Decimal     @db.Decimal(18, 2)
+  discount    Decimal     @default(0) @db.Decimal(18, 2)
+  total       Decimal     @db.Decimal(18, 2)
+  currency    String      @default("USD")
+  promoCodeId String?     @db.Uuid
+  createdAt   DateTime    @default(now())
+  updatedAt   DateTime    @updatedAt
+
+  user      User        @relation(fields: [userId], references: [id], onDelete: Restrict)
+  promoCode PromoCode?  @relation(fields: [promoCodeId], references: [id], onDelete: SetNull)
+  items     OrderItem[]
+  tickets   Ticket[]
+
+  @@index([userId, createdAt])
+  @@index([status])
+  @@map("orders")
+}
+
+model OrderItem {
+  id             String                  @id @default(uuid()) @db.Uuid
+  orderId        String                  @db.Uuid
+  variantId      String                  @db.Uuid
+  sku            String // снимок SKU на момент покупки
+  nameSnapshot   Json                    @default("{}") @db.JsonB // снимок имени { "en": "...", "ru": "..." }
+  quantity       Int
+  unitPrice      Decimal                 @db.Decimal(18, 2) // снимок цены на момент покупки
+  deliveryType   DeliveryType // снимок типа выдачи
+  deliveryStatus OrderItemDeliveryStatus @default(pending)
+
+  order      Order          @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  variant    ProductVariant @relation(fields: [variantId], references: [id], onDelete: Restrict)
+  deliveries Delivery[] // qty > 1 → one Delivery per sold StockItem
+  stockItems StockItem[]
+  warmingJob WarmingJob? // MADE_TO_ORDER: 1:1 warming job
+  warrantyClaims WarrantyClaim[] // E10: replace/refund claims on this line
+  review     Review? // E11: one review per delivered line (proof of purchase)
+
+  @@index([orderId])
+  @@index([deliveryStatus])
+  @@map("order_items")
+}
+
+// ============================================================
+// Delivery (handing data to the buyer) — E5
+// ============================================================
+
+model Delivery {
+  id          String       @id @default(uuid()) @db.Uuid
+  orderItemId String       @db.Uuid
+  stockItemId String?      @unique @db.Uuid // source unit for auto deliveries
+  bundleId    String?      @unique @db.Uuid // source bundle for warm deliveries
+  payload     String       @db.Text // ENCRYPTED snapshot of what was handed over
+  deliveredBy String?      @db.Uuid // operator (manual/warm/replacement)
+  deliveredAt DateTime?
+  type        DeliveryKind
+  createdAt   DateTime     @default(now())
+
+  orderItem       OrderItem  @relation(fields: [orderItemId], references: [id], onDelete: Cascade)
+  stockItem       StockItem? @relation(fields: [stockItemId], references: [id], onDelete: SetNull)
+  bundle          Bundle?    @relation(fields: [bundleId], references: [id], onDelete: SetNull)
+  deliveredByUser User?      @relation("DeliveredBy", fields: [deliveredBy], references: [id], onDelete: SetNull)
+  warrantyClaims  WarrantyClaim[] // E10: claims opened against this delivery
+
+  @@index([orderItemId])
+  @@map("deliveries")
+}
+
+// ============================================================
+// Warranty claims: replacements & refunds — E10 (docs/11, docs/14)
+// A buyer opens a claim on one delivered line inside its warranty window
+// (warrantyHours from delivery). Staff approve/reject; approved claims are
+// fulfilled to a fresh asset (replace) or a ledger credit (refund). Every
+// transition is audited; money moves only through the ledger (Decimal).
+// ============================================================
+model WarrantyClaim {
+  id                    String              @id @default(uuid()) @db.Uuid
+  number                String              @unique // human-readable, e.g. WC-2026-004821
+  orderItemId           String              @db.Uuid
+  deliveryId            String?             @db.Uuid // the delivery under warranty (source)
+  requesterId           String              @db.Uuid // owner (buyer)
+  type                  WarrantyClaimType
+  status                WarrantyClaimStatus @default(requested)
+  reason                String              @db.Text // buyer's description (no secrets)
+  resolutionNote        String?             @db.Text // staff note on approve/reject/fulfill
+  resolvedById          String?             @db.Uuid // staff who last resolved
+  replacementDeliveryId String?             @db.Uuid // new Delivery id on a fulfilled replace
+  warrantyExpiresAt     DateTime // snapshot of the window end at claim time
+  createdAt             DateTime            @default(now())
+  updatedAt             DateTime            @updatedAt
+  resolvedAt            DateTime?
+
+  orderItem  OrderItem @relation(fields: [orderItemId], references: [id], onDelete: Cascade)
+  delivery   Delivery? @relation(fields: [deliveryId], references: [id], onDelete: SetNull)
+  requester  User      @relation("WarrantyClaimRequester", fields: [requesterId], references: [id], onDelete: Cascade)
+  resolvedBy User?     @relation("WarrantyClaimResolver", fields: [resolvedById], references: [id], onDelete: SetNull)
+
+  @@index([requesterId, createdAt])
+  @@index([status, createdAt])
+  @@index([orderItemId])
+  @@map("warranty_claims")
+}
+
+model PromoCode {
+  id        String    @id @default(uuid()) @db.Uuid
+  code      String    @unique
+  type      PromoType
+  value     Decimal   @db.Decimal(18, 2)
+  maxUses   Int?
+  usedCount Int       @default(0)
+  expiresAt DateTime?
+  createdAt DateTime  @default(now())
+
+  orders Order[]
+
+  @@map("promo_codes")
+}
+
+// ============================================================
+// Wallet / Ledger (двойная запись) — E3
+// ============================================================
+
+model LedgerEntry {
+  id           String          @id @default(uuid()) @db.Uuid
+  userId       String          @db.Uuid
+  direction    LedgerDirection
+  amount       Decimal         @db.Decimal(18, 2) // всегда положительное
+  balanceAfter Decimal         @db.Decimal(18, 2) // снимок баланса после операции
+  refType      LedgerRefType
+  refId        String          @db.Uuid // ссылка на источник (topup/order/...)
+  createdAt    DateTime        @default(now())
+
+  user User @relation(fields: [userId], references: [id], onDelete: Restrict)
+
+  @@unique([refType, refId, direction]) // защита от двойного проведения одного источника
+  @@index([userId, createdAt])
+  @@map("ledger_entries")
+}
+
+model TopUp {
+  id         String      @id @default(uuid()) @db.Uuid
+  userId     String      @db.Uuid
+  provider   String // напр. sandbox, cryptomus
+  externalId String?     @unique // id платежа у эквайринга (идемпотентность); null пока не получен
+  amount     Decimal     @db.Decimal(18, 2)
+  asset      String // USDT-TRC20 / USDT-ERC20 / BTC / ETH
+  fee        Decimal?    @db.Decimal(18, 2) // комиссия эквайринга для сходимости
+  status     TopUpStatus @default(pending)
+  paymentUrl String?
+  address    String?
+  expiresAt  DateTime?
+  createdAt  DateTime    @default(now())
+  paidAt     DateTime?
+
+  user User @relation(fields: [userId], references: [id], onDelete: Restrict)
+
+  @@index([userId, createdAt])
+  @@index([status, expiresAt]) // sweep закрытия просроченных pending
+  @@map("topups")
+}
+
+// ============================================================
+// Audit — E5
+// ============================================================
+
+model AuditLog {
+  id        String   @id @default(uuid()) @db.Uuid
+  actorId   String?  @db.Uuid
+  action    String // e.g. delivery.payload_accessed, stock.import
+  entity    String // e.g. Delivery, StockItem
+  entityId  String?  @db.Uuid
+  diff      Json     @default("{}") @db.JsonB // context of the action (no secrets!)
+  createdAt DateTime @default(now())
+
+  actor User? @relation("AuditActor", fields: [actorId], references: [id], onDelete: SetNull)
+
+  @@index([entity, entityId])
+  @@index([actorId, createdAt])
+  @@map("audit_logs")
+}
+
+// ============================================================
+// Warming (MADE_TO_ORDER) — E6 (docs/11, docs/12, docs/14, docs/15)
+// ============================================================
+
+// A warming plan: an ordered template of stages for a goal/tier. Versioned so
+// edits never break in-flight jobs (a Job pins planVersion + a stage snapshot).
+model WarmingPlan {
+  id        String   @id @default(uuid()) @db.Uuid
+  goal      String // цель, к которой применим (google_ads, chrome_extension_dev, …)
+  tier      String? // тариф прогрева (warm_7d, …)
+  name      String
+  version   Int      @default(1) // версия плана
+  isActive  Boolean  @default(true)
+  qcRules   Json     @default("{}") @db.JsonB // правила проверки качества
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  stages   WarmingStageTemplate[]
+  variants ProductVariant[]
+  jobs     WarmingJob[]
+
+  @@unique([goal, tier, version]) // seed upsert key; edits bump version
+  @@index([goal, isActive])
+  @@map("warming_plans")
+}
+
+// One stage of a plan: expected duration (для ETA/SLA) + operator checklist.
+model WarmingStageTemplate {
+  id                 String @id @default(uuid()) @db.Uuid
+  planId             String @db.Uuid
+  order              Int // порядок этапа (0-based)
+  name               String
+  expectedMinutes    Int // ожидаемая длительность — вклад в ETA
+  checklist          Json   @default("[]") @db.JsonB // пункты чек-листа
+  requiredComponents Json   @default("[]") @db.JsonB // какие компоненты этап готовит (PROXY/OCTO/…)
+
+  plan WarmingPlan @relation(fields: [planId], references: [id], onDelete: Cascade)
+
+  @@unique([planId, order])
+  @@index([planId])
+  @@map("warming_stage_templates")
+}
+
+// A warming job: one per MADE_TO_ORDER order item. Pins the plan (planId +
+// planVersion) and a stagesSnapshot so ETA/progress survive later plan edits.
+model WarmingJob {
+  id             String           @id @default(uuid()) @db.Uuid
+  orderItemId    String           @unique @db.Uuid
+  planId         String?          @db.Uuid // may be null if the plan was later deleted
+  planVersion    Int // зафиксированная версия плана на момент старта
+  goal           String? // снимок цели (для очереди/фильтрации)
+  status         WarmingJobStatus @default(queued)
+  assignedTo     String?          @db.Uuid // operator (User with role support/admin — StaffUser в E8)
+  etaAt          DateTime? // ожидаемое время выдачи покупателю
+  slaDueAt       DateTime? // внутренний дедлайн
+  startedAt      DateTime?
+  readyAt        DateTime?
+  deliveredAt    DateTime?
+  currentStage   Int              @default(0) // индекс текущего этапа (0-based)
+  stageCount     Int              @default(0) // число этапов (из снимка)
+  stagesSnapshot Json             @default("[]") @db.JsonB // [{order,name,expectedMinutes}] — снимок плана
+  notes          String?          @db.Text // внутренние заметки
+  createdAt      DateTime         @default(now())
+  updatedAt      DateTime         @updatedAt
+
+  orderItem    OrderItem     @relation(fields: [orderItemId], references: [id], onDelete: Cascade)
+  plan         WarmingPlan?  @relation(fields: [planId], references: [id], onDelete: SetNull)
+  assignedUser User?         @relation("WarmingAssignee", fields: [assignedTo], references: [id], onDelete: SetNull)
+  tasks        WarmingTask[]
+  accountAsset AccountAsset?
+  bundle       Bundle?
+  proxyItem    ProxyItem?    @relation("JobProxy") // at most one proxy bound per job (E7)
+  octoProfile  OctoProfile?  @relation("JobOcto") // at most one Octo profile bound per job (E7)
+
+  @@index([status])
+  @@index([goal, status])
+  @@index([assignedTo])
+  @@map("warming_jobs")
+}
+
+// A stage instance inside a Job (snapshot of a stage template for this job).
+model WarmingTask {
+  id              String            @id @default(uuid()) @db.Uuid
+  jobId           String            @db.Uuid
+  stageTemplateId String?           @db.Uuid // источник (может быть null после правок плана)
+  order           Int
+  name            String // снимок названия этапа
+  expectedMinutes Int // снимок длительности
+  status          WarmingTaskStatus @default(pending)
+  checklistState  Json              @default("{}") @db.JsonB // отметки по пунктам
+  startedAt       DateTime?
+  doneAt          DateTime?
+  operatorId      String?           @db.Uuid
+  attachments     Json              @default("[]") @db.JsonB // артефакты/заметки (без секретов)
+
+  job WarmingJob @relation(fields: [jobId], references: [id], onDelete: Cascade)
+
+  @@unique([jobId, order])
+  @@index([jobId])
+  @@map("warming_tasks")
+}
+
+// Encrypted account data prepared for a warm order (docs/15). App-side AES-256-GCM.
+model AccountAsset {
+  id        String   @id @default(uuid()) @db.Uuid
+  jobId     String   @unique @db.Uuid
+  payload   String   @db.Text // ENCRYPTED — login/password and related data
+  recovery  String?  @db.Text // ENCRYPTED — recovery data
+  meta      Json     @default("{}") @db.JsonB // гео, тип и т.п. (без секретов)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  job WarmingJob @relation(fields: [jobId], references: [id], onDelete: Cascade)
+
+  @@map("account_assets")
+}
+
+// ============================================================
+// Inventory: proxies & Octo profiles — E7 (docs/12, docs/15)
+// The platform only records resources and their bindings; provisioning
+// (buying proxies, creating Octo profiles) is manual operator work outside
+// the code (platform boundary, docs/09). Secrets are encrypted app-side.
+// ============================================================
+
+// A proxy in the inventory pool. `credentials` (host:port:user:pass) is
+// AES-256-GCM encrypted app-side and only decrypted when assembling a bundle
+// for its owner. At most one active binding to a warming job (assignedJobId).
+model ProxyItem {
+  id              String      @id @default(uuid()) @db.Uuid
+  type            ProxyType
+  geo             String // страна/город
+  provider        String // источник
+  credentials     String      @db.Text // ENCRYPTED — host:port:user:pass
+  credentialsHash String      @unique // SHA-256 of plaintext — import dedup / global uniqueness
+  status          ProxyStatus @default(available)
+  expiresAt       DateTime?
+  assignedJobId   String?     @unique @db.Uuid // active binding (one job at a time)
+  meta            Json        @default("{}") @db.JsonB // непарольные параметры (label, term, …)
+  createdBy       String?     @db.Uuid
+  createdAt       DateTime    @default(now())
+  updatedAt       DateTime    @updatedAt
+
+  assignedJob  WarmingJob?   @relation("JobProxy", fields: [assignedJobId], references: [id], onDelete: SetNull)
+  octoProfiles OctoProfile[]
+
+  @@index([status])
+  @@index([type, geo])
+  @@map("proxy_items")
+}
+
+// An antidetect (Octo) profile in the registry. `exportRef` (export/share
+// reference) is ENCRYPTED app-side. At most one binding to a warming job.
+model OctoProfile {
+  id             String            @id @default(uuid()) @db.Uuid
+  externalId     String? // идентификатор профиля в Octo
+  name           String
+  proxyItemId    String?           @db.Uuid // linked proxy (usually the job's proxy)
+  jobId          String?           @unique @db.Uuid // binding to a warming job (one profile per job)
+  status         OctoProfileStatus @default(draft)
+  exportRef      String?           @db.Text // ENCRYPTED — export/share reference
+  fingerprintRef Json? // референс конфигурации отпечатка (без секретов)
+  meta           Json              @default("{}") @db.JsonB
+  createdBy      String?           @db.Uuid
+  createdAt      DateTime          @default(now())
+  updatedAt      DateTime          @updatedAt
+
+  proxyItem ProxyItem?  @relation(fields: [proxyItemId], references: [id], onDelete: SetNull)
+  job       WarmingJob? @relation("JobOcto", fields: [jobId], references: [id], onDelete: SetNull)
+
+  @@index([status])
+  @@map("octo_profiles")
+}
+
+// The assembled delivery bundle for a warm job (docs/15).
+model Bundle {
+  id          String       @id @default(uuid()) @db.Uuid
+  jobId       String       @unique @db.Uuid
+  status      BundleStatus @default(assembling)
+  assembledBy String?      @db.Uuid
+  qcBy        String?      @db.Uuid
+  deliveredAt DateTime?
+  createdAt   DateTime     @default(now())
+  updatedAt   DateTime     @updatedAt
+
+  job        WarmingJob        @relation(fields: [jobId], references: [id], onDelete: Cascade)
+  components BundleComponent[]
+  delivery   Delivery?
+
+  @@map("bundles")
+}
+
+model BundleComponent {
+  id        String              @id @default(uuid()) @db.Uuid
+  bundleId  String              @db.Uuid
+  type      BundleComponentType
+  refId     String?             @db.Uuid // ProxyItem/OctoProfile/AccountAsset (ресурсы — E7)
+  payload   String?             @db.Text // ENCRYPTED inline data/reference, if any
+  meta      Json                @default("{}") @db.JsonB // параметры (geo, term, …)
+  createdAt DateTime            @default(now())
+
+  bundle Bundle @relation(fields: [bundleId], references: [id], onDelete: Cascade)
+
+  @@index([bundleId])
+  @@map("bundle_components")
+}
+
+model IdempotencyKey {
+  id           String   @id @default(uuid()) @db.Uuid
+  key          String // значение заголовка Idempotency-Key
+  userId       String?  @db.Uuid
+  endpoint     String // напр. POST /wallet/topups
+  requestHash  String // хэш тела запроса + userId — защита от коллизий ключа
+  responseCode Int?
+  responseBody Json?    @db.JsonB
+  createdAt    DateTime @default(now())
+
+  @@unique([key, endpoint])
+  @@index([createdAt])
+  @@map("idempotency_keys")
+}
+
+// --- E8: Tickets (поддержка, docs/13 §13) ---
+
+enum TicketStatus {
+  open
+  pending
+  resolved
+  closed
+}
+
+enum TicketPriority {
+  low
+  normal
+  high
+  urgent
+}
+
+/**
+ * Support ticket (docs/13 §13). Raised by (or on behalf of) a customer, may
+ * link to an order, is assigned to a support/manager and tracked through a
+ * small status machine. The conversation lives in TicketMessage rows; internal
+ * notes are ordinary messages with `isInternal = true` (never shown to buyers).
+ */
+model Ticket {
+  id          String         @id @default(uuid()) @db.Uuid
+  number      String         @unique // человекочитаемый, напр. TK-2026-000042
+  subject     String
+  status      TicketStatus   @default(open)
+  priority    TicketPriority @default(normal)
+  requesterId String         @db.Uuid // покупатель, от лица которого тикет
+  assigneeId  String?        @db.Uuid // сотрудник (support/manager/admin)
+  orderId     String?        @db.Uuid // опц. привязка к заказу
+  lastReplyAt DateTime       @default(now()) // для сортировки очереди
+  closedAt    DateTime?
+  createdAt   DateTime       @default(now())
+  updatedAt   DateTime       @updatedAt
+
+  requester User            @relation("TicketRequester", fields: [requesterId], references: [id], onDelete: Restrict)
+  assignee  User?           @relation("TicketAssignee", fields: [assigneeId], references: [id], onDelete: SetNull)
+  order     Order?          @relation(fields: [orderId], references: [id], onDelete: SetNull)
+  messages  TicketMessage[]
+
+  @@index([status, lastReplyAt])
+  @@index([assigneeId])
+  @@index([requesterId])
+  @@map("tickets")
+}
+
+model TicketMessage {
+  id         String   @id @default(uuid()) @db.Uuid
+  ticketId   String   @db.Uuid
+  authorId   String?  @db.Uuid // сотрудник или покупатель; null — системное событие
+  body       String   @db.Text
+  isInternal Boolean  @default(false) // внутренняя заметка — не видна покупателю
+  createdAt  DateTime @default(now())
+
+  ticket Ticket @relation(fields: [ticketId], references: [id], onDelete: Cascade)
+  author User?  @relation("TicketMessageAuthor", fields: [authorId], references: [id], onDelete: SetNull)
+
+  @@index([ticketId, createdAt])
+  @@map("ticket_messages")
+}
+
+// --- E8: Settings / Integrations (docs/13 §17) ---
+
+/**
+ * Key-value store for shop settings (docs/13 §17). A typed layer in code maps
+ * known keys to typed sections (store name, languages, notification templates,
+ * integration placeholders). Secrets are NOT stored here in plaintext — crypto/
+ * KMS/Octo credentials remain placeholders until the real integrations land.
+ */
+model Setting {
+  key       String   @id
+  value     Json     @default("{}") @db.JsonB
+  updatedAt DateTime @updatedAt
+  updatedBy String?  @db.Uuid
+
+  @@map("settings")
+}
+
+// ---------- Notifications (E9) ----------
+
+enum NotificationType {
+  order_paid
+  warming_ready
+  ticket_reply
+  warranty_replaced
+  warranty_refunded
+  warranty_rejected
+  referral_rewarded
+}
+
+/**
+ * In-app notification for a buyer (E9). Rendered from a Settings template in the
+ * recipient's locale at send time; email is delivered in parallel via the mailer.
+ * `data` carries only non-secret deep-link context (order/ticket id + number).
+ * `readAt` is null until acknowledged.
+ */
+model Notification {
+  id        String           @id @default(uuid()) @db.Uuid
+  userId    String           @db.Uuid
+  type      NotificationType
+  title     String
+  body      String           @db.Text
+  data      Json             @default("{}") @db.JsonB
+  readAt    DateTime?
+  createdAt DateTime         @default(now())
+
+  user User @relation("UserNotifications", fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, readAt])
+  @@index([userId, createdAt])
+  @@map("notifications")
+}
+
+// ---------- Reviews & ratings (E11) ----------
+
+/**
+ * A buyer's product review (E11). Tied to a delivered OrderItem as proof of
+ * purchase — the `orderItemId` unique means at most one review per line, and a
+ * review can only be written by the line's owner for a delivered/replaced line.
+ * `hidden` lets moderators suppress abuse without deleting the row. The
+ * product's `ratingAvg` is a denormalized cache of the visible reviews' mean.
+ */
+model Review {
+  id          String   @id @default(uuid()) @db.Uuid
+  productId   String   @db.Uuid
+  orderItemId String   @unique @db.Uuid
+  authorId    String   @db.Uuid
+  rating      Int // 1..5 (validated app-side)
+  title       String?
+  body        String?  @db.Text
+  hidden      Boolean  @default(false)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  product   Product   @relation(fields: [productId], references: [id], onDelete: Cascade)
+  orderItem OrderItem @relation(fields: [orderItemId], references: [id], onDelete: Cascade)
+  author    User      @relation("ReviewAuthor", fields: [authorId], references: [id], onDelete: Cascade)
+
+  @@index([productId, hidden, createdAt])
+  @@index([authorId])
+  @@map("reviews")
+}
+
+// ============================================================
+// Referrals (E12, docs/16 §E12+). A user's stable invite code lives in
+// ReferralCode (one per user, minted lazily). A Referral records the
+// referrer→referee link captured at the referee's registration; their first
+// qualifying purchase posts a reward to each side (ledger, refType=referral,
+// Decimal + idempotent) and flips the row to `qualified`. Reward amounts are
+// snapshotted at qualification so later config changes never rewrite history.
+// ============================================================
+
+model ReferralCode {
+  id        String   @id @default(uuid()) @db.Uuid
+  userId    String   @unique @db.Uuid
+  code      String   @unique // human-shareable, e.g. AV-7QK4ZP
+  createdAt DateTime @default(now())
+
+  user      User       @relation("UserReferralCode", fields: [userId], references: [id], onDelete: Cascade)
+  referrals Referral[]
+
+  @@map("referral_codes")
+}
+
+model Referral {
+  id                String         @id @default(uuid()) @db.Uuid
+  referrerId        String         @db.Uuid // code owner (the inviter)
+  refereeId         String         @unique @db.Uuid // invited buyer — one referral per person
+  codeId            String         @db.Uuid // the code used at registration
+  status            ReferralStatus @default(pending)
+  referrerReward    Decimal        @default(0) @db.Decimal(18, 2) // snapshot at qualification
+  refereeReward     Decimal        @default(0) @db.Decimal(18, 2) // snapshot at qualification
+  qualifyingOrderId String?        @db.Uuid // the order that triggered the reward
+  qualifiedAt       DateTime?
+  cancelledReason   String? // set when staff cancel a pending referral
+  createdAt         DateTime       @default(now())
+  updatedAt         DateTime       @updatedAt
+
+  referrer User         @relation("ReferralReferrer", fields: [referrerId], references: [id], onDelete: Cascade)
+  referee  User         @relation("ReferralReferee", fields: [refereeId], references: [id], onDelete: Cascade)
+  code     ReferralCode @relation(fields: [codeId], references: [id], onDelete: Restrict)
+
+  @@index([referrerId, createdAt])
+  @@index([status, createdAt])
+  @@map("referrals")
+}

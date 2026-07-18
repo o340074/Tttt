@@ -1,8 +1,8 @@
 # AdsMarket — платформа продажи цифровых товаров (Google Ads аккаунты)
 
-> **Статус проекта:** 🟡 Планирование. Код ещё не пишется — эта фаза посвящена
-> проектированию продукта, архитектуры и подготовке подробной документации для
-> следующих сессий разработки.
+> **Статус проекта:** 🟢 Разработка. Планирование завершено, каркас монорепо (E0)
+> готов: `apps/web` + `apps/api` + `packages/*`, docker-compose, CI.
+> Следующий эпик — E1 (аутентификация). Живой статус — `docs/SESSION-LOG.md`.
 
 **AdsMarket** — профессиональная торговая площадка цифровых товаров, выполненная
 в визуальном стиле Google Ads. Основной ассортимент — рекламные аккаунты Google Ads
@@ -20,7 +20,21 @@
 3. **[`docs/NEXT-SESSION-PROMPT.md`](./docs/NEXT-SESSION-PROMPT.md)** — готовый промт под следующий эпик + универсальный шаблон.
 4. **[`docs/16-development-plan.md`](./docs/16-development-plan.md)** — детальный план (эпики, вехи, оценки).
 
-> Следующий шаг разработки — **эпик E0 (каркас монорепо)**. Готовый промт — в `docs/NEXT-SESSION-PROMPT.md`.
+> Следующий шаг разработки — **эпик E1 (аутентификация и аккаунты)**. Готовый промт — в `docs/NEXT-SESSION-PROMPT.md`.
+
+---
+
+## 🚀 Быстрый старт (dev)
+
+```bash
+pnpm install                      # зависимости (Node ≥22, pnpm 10)
+docker compose up -d postgres redis
+cp apps/api/.env.example apps/api/.env
+pnpm dev                          # api → http://localhost:3000/api/v1 (+ /api/docs), web → http://localhost:5173
+```
+
+Проверки: `pnpm lint` · `pnpm typecheck` · `pnpm test` · `pnpm build`.
+Полный стек в контейнерах: `docker compose up` (postgres, redis, api, web).
 
 ---
 

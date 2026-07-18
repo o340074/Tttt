@@ -1,0 +1,14 @@
+{
+  "extends": "@advault/config/tsconfig.base.json",
+  "compilerOptions": {
+    "module": "NodeNext",
+    "moduleResolution": "NodeNext",
+    "outDir": "dist",
+    "baseUrl": ".",
+    "experimentalDecorators": true,
+    "emitDecoratorMetadata": true,
+    "strictPropertyInitialization": false,
+    "declaration": false
+  },
+  "include": ["src", "test", "vitest.config.ts"]
+}
